@@ -1,194 +1,124 @@
-# relatorios.py atualizado com nova função de relatório por praça/data/turno
+import streamlit as st
+from auth import autenticar, USUARIOS
+from data_loader import carregar_dados
+from relatorios import (
+    gerar_dados, gerar_simplicado, gerar_alertas_de_faltas, get_entregadores,
+    gerar_por_praca_data_turno
+)
+from datetime import date
 
-from utils import normalizar, tempo_para_segundos
-from datetime import datetime, timedelta, date
-import pandas as pd
+st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 
-def get_entregadores(df):
-    return [""] + sorted(df["pessoa_entregadora"].dropna().unique().tolist())
+if "logado" not in st.session_state:
+    st.session_state.logado = False
+    st.session_state.usuario = ""
 
-def gerar_texto(nome, periodo, dias_esperados, presencas, faltas, tempo_pct,
-                turnos, ofertadas, aceitas, rejeitadas, completas,
-                tx_aceitas, tx_rejeitadas, tx_completas):
-    return f"""📋 {nome} – {periodo}
+if not st.session_state.logado:
+    st.title("🔐 Login do Painel")
+    usuario = st.text_input("Usuário")
+    senha = st.text_input("Senha", type="password")
+    if st.button("Entrar"):
+        if autenticar(usuario, senha):
+            st.session_state.logado = True
+            st.session_state.usuario = usuario
+            st.rerun()
+        else:
+            st.error("Usuário ou senha incorretos")
+    st.stop()
 
-📆 Dias esperados: {dias_esperados}
-✅ Presenças: {presencas}
-❌ Faltas: {faltas}
+st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
+modo = st.sidebar.radio("Escolha uma opção:", [
+    "Ver 1 mês", "Ver 2 meses", "Ver geral",
+    "Simplificada (WhatsApp)", "Alertas de Faltas",
+    "Relatório por Praça/Data/Turno"
+])
 
-⏱️ Tempo online: {tempo_pct}%
+df = carregar_dados()
+entregadores = get_entregadores(df)
 
-🧾 Turnos realizados: {turnos}
+nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
+if nivel == "admin":
+    if st.button("🔄 Atualizar dados"):
+        st.cache_data.clear()
+        st.rerun()
 
-🚗 Corridas:
-• 📦 Ofertadas: {ofertadas}
-• 👍 Aceitas: {aceitas} ({tx_aceitas}%)
-• 👎 Rejeitadas: {rejeitadas} ({tx_rejeitadas}%)
-• 🏁 Completas: {completas} ({tx_completas}%)
-"""
+if modo in ["Ver 1 mês", "Ver 2 meses", "Ver geral", "Simplificada (WhatsApp)"]:
+    with st.form("formulario"):
+        nome = st.selectbox("Nome do entregador:", entregadores)
 
-def gerar_dados(nome, mes, ano, df):
-    nome_norm = normalizar(nome)
-    df["tempo_segundos"] = df["tempo_disponivel_absoluto"].apply(tempo_para_segundos)
-    df["duracao_segundos"] = df["duracao_do_periodo"].apply(tempo_para_segundos)
-    dados = df[(df["pessoa_entregadora_normalizado"] == nome_norm)]
-    if mes and ano:
-        dados = dados[(df["mes"] == mes) & (df["ano"] == ano)]
-    if dados.empty:
-        return None
+        if modo == "Ver 1 mês":
+            col1, col2 = st.columns(2)
+            mes = col1.selectbox("Mês:", list(range(1, 13)))
+            ano = col2.selectbox("Ano:", sorted(df["ano"].unique(), reverse=True))
 
-    tempo_disp = dados["tempo_segundos"].mean()
-    duracao_media = dados["duracao_segundos"].mean()
-    tempo_pct = round(tempo_disp / duracao_media * 100, 1) if duracao_media else 0.0
+        elif modo in ["Ver 2 meses", "Simplificada (WhatsApp)"]:
+            col1, col2 = st.columns(2)
+            mes1 = col1.selectbox("1º Mês:", list(range(1, 13)), key="mes1")
+            ano1 = col2.selectbox("1º Ano:", sorted(df["ano"].unique(), reverse=True), key="ano1")
+            mes2 = col1.selectbox("2º Mês:", list(range(1, 13)), key="mes2")
+            ano2 = col2.selectbox("2º Ano:", sorted(df["ano"].unique(), reverse=True), key="ano2")
 
-    presencas = dados["data"].nunique()
-    if mes and ano:
-        dias_no_mes = pd.date_range(start=f"{ano}-{mes:02d}-01", periods=31, freq='D')
-        dias_no_mes = dias_no_mes[dias_no_mes.month == mes]
-        faltas = len(dias_no_mes) - presencas
-        dias_esperados = len(dias_no_mes)
+        gerar = st.form_submit_button("🔍 Gerar relatório")
+
+    if gerar and nome:
+        with st.spinner("Gerando relatório..."):
+            if modo == "Ver 1 mês":
+                texto = gerar_dados(nome, mes, ano, df)
+                st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=350)
+
+            elif modo == "Ver 2 meses":
+                t1 = gerar_dados(nome, mes1, ano1, df)
+                t2 = gerar_dados(nome, mes2, ano2, df)
+                st.text_area("Resultado:", value=(t1 or "") + "\n\n" + (t2 or ""), height=700)
+
+            elif modo == "Ver geral":
+                texto = gerar_dados(nome, None, None, df[df["pessoa_entregadora"] == nome])
+                st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
+
+            elif modo == "Simplificada (WhatsApp)":
+                t1 = gerar_simplicado(nome, mes1, ano1, df)
+                t2 = gerar_simplicado(nome, mes2, ano2, df)
+                st.text_area("Resultado:", value="\n\n".join([t for t in [t1, t2] if t]), height=600)
+
+elif modo == "Alertas de Faltas":
+    mensagens = gerar_alertas_de_faltas(df)
+    if mensagens:
+        st.text_area("Resultado:", value="\n".join(mensagens), height=400)
     else:
-        min_data = dados["data"].min()
-        max_data = dados["data"].max()
-        dias_esperados = (max_data - min_data).days + 1
-        faltas = dias_esperados - presencas
+        st.success("✅ Nenhum entregador ativo com faltas consecutivas.")
 
-    turnos = len(dados)
-    ofertadas = int(dados["numero_de_corridas_ofertadas"].sum())
-    aceitas = int(dados["numero_de_corridas_aceitas"].sum())
-    rejeitadas = int(dados["numero_de_corridas_rejeitadas"].sum())
-    completas = int(dados["numero_de_corridas_completadas"].sum())
+elif modo == "Relatório por Praça/Data/Turno":
+    st.subheader("📍 Relatório por Praça / Data / Turno")
 
-    tx_aceitas = round(aceitas / ofertadas * 100, 1) if ofertadas else 0.0
-    tx_rejeitadas = round(rejeitadas / ofertadas * 100, 1) if ofertadas else 0.0
-    tx_completas = round(completas / aceitas * 100, 1) if aceitas else 0.0
+    pracas = sorted(df["praca"].dropna().unique().tolist()) if "praca" in df.columns else []
+    entregadores = get_entregadores(df)
 
-    if mes and ano:
-        meses_pt = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-                    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
-        periodo = f"{meses_pt[mes - 1]}/{ano}"
+    col1, col2 = st.columns(2)
+    nome = col1.selectbox("Entregador:", entregadores)
+    praca = col2.selectbox("Praça:", [""] + pracas if pracas else [""])
+
+    filtro = st.radio("Filtro de período:", ["Intervalo de datas", "Últimos 1 dia", "Últimos 3 dias", "Últimos 7 dias"])
+    data_inicio = data_fim = dias = None
+
+    if filtro == "Intervalo de datas":
+        col3, col4 = st.columns(2)
+        data_inicio = col3.date_input("Data início")
+        data_fim = col4.date_input("Data fim")
     else:
-        min_data = dados["data"].min().strftime('%d/%m/%Y')
-        max_data = dados["data"].max().strftime('%d/%m/%Y')
-        periodo = f"{min_data} a {max_data}"
+        dias = int(filtro.split()[1])
 
-    return gerar_texto(nome, periodo, dias_esperados, presencas, faltas, tempo_pct,
-                       turnos, ofertadas, aceitas, rejeitadas, completas,
-                       tx_aceitas, tx_rejeitadas, tx_completas)
+    turno = st.selectbox("Turno:", ["", "manhã", "tarde", "noite"] if "turno" in df.columns else [""])
 
-def gerar_simplicado(nome, mes, ano, df):
-    nome_norm = normalizar(nome)
-    dados = df[(df["pessoa_entregadora_normalizado"] == nome_norm) &
-               (df["mes"] == mes) & (df["ano"] == ano)]
-    if dados.empty:
-        return None
-    tempo_disp = dados["tempo_disponivel_absoluto"].apply(tempo_para_segundos).mean()
-    duracao = dados["duracao_do_periodo"].apply(tempo_para_segundos).mean()
-    tempo_pct = round(tempo_disp / duracao * 100, 1) if duracao else 0.0
-    turnos = len(dados)
-    ofertadas = int(dados["numero_de_corridas_ofertadas"].sum())
-    aceitas = int(dados["numero_de_corridas_aceitas"].sum())
-    rejeitadas = int(dados["numero_de_corridas_rejeitadas"].sum())
-    completas = int(dados["numero_de_corridas_completadas"].sum())
-    tx_aceitas = round(aceitas / ofertadas * 100, 1) if ofertadas else 0.0
-    tx_rejeitadas = round(rejeitadas / ofertadas * 100, 1) if ofertadas else 0.0
-    tx_completas = round(completas / aceitas * 100, 1) if aceitas else 0.0
-    meses_pt = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
-    periodo = f"{meses_pt[mes-1]}/{ano}"
-    return f"""{nome} – {periodo}
+    gerar = st.button("🔍 Gerar relatório")
 
-Tempo online: {tempo_pct}%
-
-Turnos realizados: {turnos}
-
-Corridas:
-* Ofertadas: {ofertadas}
-* Aceitas: {aceitas} ({tx_aceitas}%)
-* Rejeitadas: {rejeitadas} ({tx_rejeitadas}%)
-* Completas: {completas} ({tx_completas}%)
-"""
-
-def gerar_alertas_de_faltas(df):
-    hoje = datetime.now().date()
-    ultimos_15_dias = hoje - timedelta(days=15)
-    ativos = df[df["data"] >= ultimos_15_dias]["pessoa_entregadora_normalizado"].unique()
-    mensagens = []
-
-    for nome in ativos:
-        entregador = df[df["pessoa_entregadora_normalizado"] == nome]
-        if entregador.empty:
-            continue
-        dias = pd.date_range(end=hoje - timedelta(days=1), periods=30).date
-        presencas = set(entregador["data"])
-        sequencia = 0
-        for dia in sorted(dias):
-            sequencia = 0 if dia in presencas else sequencia + 1
-        if sequencia >= 4:
-            nome_original = entregador["pessoa_entregadora"].iloc[0]
-            mensagens.append(
-                f"• {nome_original} – {sequencia} dias consecutivos ausente (última presença: {entregador['data'].max().strftime('%d/%m')})"
-            )
-    return mensagens
-
-def gerar_por_praca_data_turno(df, nome=None, praca=None, data_inicio=None, data_fim=None, dias=None, turno=None):
-    df = df.copy()
-
-    if nome:
-        nome_norm = normalizar(nome)
-        df = df[df["pessoa_entregadora_normalizado"] == nome_norm]
-
-    if praca:
-        df = df[df["praca"] == praca]
-
-    if dias:
-        data_fim = date.today()
-        data_inicio = data_fim - timedelta(days=dias)
-
-    if data_inicio and data_fim:
-        df = df[(df["data"] >= data_inicio) & (df["data"] <= data_fim)]
-
-    if turno and "turno" in df.columns:
-        df = df[df["turno"] == turno]
-
-    if df.empty:
-        return "❌ Nenhum dado encontrado com os filtros aplicados."
-
-    ofertadas = int(df["numero_de_corridas_ofertadas"].sum())
-    aceitas = int(df["numero_de_corridas_aceitas"].sum())
-    rejeitadas = int(df["numero_de_corridas_rejeitadas"].sum())
-    completas = int(df["numero_de_corridas_completadas"].sum())
-    turnos = len(df)
-    presencas = df["data"].nunique()
-
-    try:
-        tempo_pct = round(
-            df["tempo_disponivel_absoluto"].apply(tempo_para_segundos).mean() /
-            df["duracao_do_periodo"].apply(tempo_para_segundos).mean() * 100, 1
+    if gerar:
+        texto = gerar_por_praca_data_turno(
+            df,
+            nome=nome or None,
+            praca=praca or None,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            dias=dias,
+            turno=turno or None
         )
-    except:
-        tempo_pct = 0.0
-
-    tx_aceitas = round(aceitas / ofertadas * 100, 1) if ofertadas else 0.0
-    tx_rejeitadas = round(rejeitadas / ofertadas * 100, 1) if ofertadas else 0.0
-    tx_completas = round(completas / aceitas * 100, 1) if aceitas else 0.0
-
-    periodo = f"{data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
-
-    return f"""📍 Relatório por Praça/Data/Turno
-
-• Nome: {nome or 'Todos'}
-• Praça: {praca or 'Todas'}
-• Período: {periodo}
-• Turno: {turno or 'Todos'}
-
-⏱️ Tempo online: {tempo_pct}%
-🧾 Turnos realizados: {turnos}
-📆 Dias presentes: {presencas}
-
-🚗 Corridas:
-• 📦 Ofertadas: {ofertadas}
-• 👍 Aceitas: {aceitas} ({tx_aceitas}%)
-• 👎 Rejeitadas: {rejeitadas} ({tx_rejeitadas}%)
-• 🏁 Completas: {completas} ({tx_completas}%)
-"""
+        st.text_area("Resultado:", value=texto, height=600)
