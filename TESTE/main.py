@@ -4,6 +4,8 @@ from data_loader import carregar_dados
 from relatorios import (
     gerar_dados, gerar_simplicado, gerar_alertas_de_faltas, get_entregadores
 )
+from relatorio_detalhado import relatorio_detalhado
+
 
 if "logado" not in st.session_state:
     st.session_state.logado = False
