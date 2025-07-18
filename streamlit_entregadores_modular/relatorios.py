@@ -2,6 +2,29 @@ from utils import normalizar, tempo_para_segundos
 import pandas as pd
 from datetime import datetime, timedelta
 
+# ✅ NOVA FUNÇÃO: Consolida múltiplas linhas no mesmo turno (ex: entregador muda de praça no mesmo período)
+def consolidar_turnos_por_nome(df):
+    import pandas as pd
+
+    # Converte para data (sem hora)
+    df['data'] = pd.to_datetime(df['data_do_periodo']).dt.date
+
+    # Converte colunas de tempo para timedelta
+    df['tempo_disponivel_absoluto'] = pd.to_timedelta(df['tempo_disponivel_absoluto'].astype(str) + ':00', errors='coerce')
+    df['duracao_do_periodo'] = pd.to_timedelta(df['duracao_do_periodo'].astype(str) + ':00', errors='coerce')
+
+    # Agrupa por entregador + dia + turno
+    resumo = df.groupby(['pessoa_entregadora', 'data', 'periodo']).agg({
+        'tempo_disponivel_absoluto': 'sum',
+        'duracao_do_periodo': 'first'
+    }).reset_index()
+
+    # Calcula % de presença
+    resumo['percentual_presenca'] = (resumo['tempo_disponivel_absoluto'] / resumo['duracao_do_periodo']) * 100
+    resumo['percentual_presenca'] = resumo['percentual_presenca'].round(1)
+
+    return resumo
+
 def get_entregadores(df):
     return [""] + sorted(df["pessoa_entregadora"].dropna().unique().tolist())
 
