@@ -1,6 +1,8 @@
+# relatorios.py atualizado com nova função de relatório por praça/data/turno
+
 from utils import normalizar, tempo_para_segundos
+from datetime import datetime, timedelta, date
 import pandas as pd
-from datetime import datetime, timedelta
 
 def get_entregadores(df):
     return [""] + sorted(df["pessoa_entregadora"].dropna().unique().tolist())
@@ -128,3 +130,65 @@ def gerar_alertas_de_faltas(df):
                 f"• {nome_original} – {sequencia} dias consecutivos ausente (última presença: {entregador['data'].max().strftime('%d/%m')})"
             )
     return mensagens
+
+def gerar_por_praca_data_turno(df, nome=None, praca=None, data_inicio=None, data_fim=None, dias=None, turno=None):
+    df = df.copy()
+
+    if nome:
+        nome_norm = normalizar(nome)
+        df = df[df["pessoa_entregadora_normalizado"] == nome_norm]
+
+    if praca:
+        df = df[df["praca"] == praca]
+
+    if dias:
+        data_fim = date.today()
+        data_inicio = data_fim - timedelta(days=dias)
+
+    if data_inicio and data_fim:
+        df = df[(df["data"] >= data_inicio) & (df["data"] <= data_fim)]
+
+    if turno and "turno" in df.columns:
+        df = df[df["turno"] == turno]
+
+    if df.empty:
+        return "❌ Nenhum dado encontrado com os filtros aplicados."
+
+    ofertadas = int(df["numero_de_corridas_ofertadas"].sum())
+    aceitas = int(df["numero_de_corridas_aceitas"].sum())
+    rejeitadas = int(df["numero_de_corridas_rejeitadas"].sum())
+    completas = int(df["numero_de_corridas_completadas"].sum())
+    turnos = len(df)
+    presencas = df["data"].nunique()
+
+    try:
+        tempo_pct = round(
+            df["tempo_disponivel_absoluto"].apply(tempo_para_segundos).mean() /
+            df["duracao_do_periodo"].apply(tempo_para_segundos).mean() * 100, 1
+        )
+    except:
+        tempo_pct = 0.0
+
+    tx_aceitas = round(aceitas / ofertadas * 100, 1) if ofertadas else 0.0
+    tx_rejeitadas = round(rejeitadas / ofertadas * 100, 1) if ofertadas else 0.0
+    tx_completas = round(completas / aceitas * 100, 1) if aceitas else 0.0
+
+    periodo = f"{data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
+
+    return f"""📍 Relatório por Praça/Data/Turno
+
+• Nome: {nome or 'Todos'}
+• Praça: {praca or 'Todas'}
+• Período: {periodo}
+• Turno: {turno or 'Todos'}
+
+⏱️ Tempo online: {tempo_pct}%
+🧾 Turnos realizados: {turnos}
+📆 Dias presentes: {presencas}
+
+🚗 Corridas:
+• 📦 Ofertadas: {ofertadas}
+• 👍 Aceitas: {aceitas} ({tx_aceitas}%)
+• 👎 Rejeitadas: {rejeitadas} ({tx_rejeitadas}%)
+• 🏁 Completas: {completas} ({tx_completas}%)
+"""
