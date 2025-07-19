@@ -105,33 +105,28 @@ if modo == "Relatório Customizado":
     # Filtro de datas
     tipo_periodo = st.radio("Como deseja escolher as datas?", ("Período contínuo", "Dias específicos"))
 
-    if tipo_periodo == "Período contínuo":
-        data_min = df["data"].min()
-        data_max = df["data"].max()
-        periodo = st.date_input("Selecione o intervalo de datas:", [data_min, data_max], format="DD/MM/YYYY")
+    dias_escolhidos = []  # inicializa sempre
+
+if tipo_periodo == "Período contínuo":
+    data_min = df["data"].min()
+    data_max = df["data"].max()
+    periodo = st.date_input("Selecione o intervalo de datas:", [data_min, data_max], format="DD/MM/YYYY")
+    # 'periodo' pode ser um único valor se o usuário selecionar só um dia
+    if isinstance(periodo, list) or isinstance(periodo, tuple):
         if len(periodo) == 2:
             dias_escolhidos = pd.date_range(start=periodo[0], end=periodo[1]).date
-        else:
-            dias_escolhidos = []
-    else:
-        dias_opcoes = sorted(df["data"].unique())
-        dias_escolhidos = st.multiselect(
-            "Selecione os dias desejados:",
-            dias_opcoes,
-            format_func=lambda x: x.strftime("%d/%m/%Y")
-        )
-        st.caption("Dica: Para escolher vários dias, segure Ctrl (ou Command no Mac) ao clicar.")
+        elif len(periodo) == 1:
+            dias_escolhidos = [periodo[0]]
+    elif isinstance(periodo, pd.Timestamp) or isinstance(periodo, pd._libs.tslibs.nattype.NaTType):
+        dias_escolhidos = [periodo]
+    # Se não, permanece vazio
+else:
+    dias_opcoes = sorted(df["data"].unique())
+    dias_escolhidos = st.multiselect(
+        "Selecione os dias desejados:",
+        dias_opcoes,
+        format_func=lambda x: x.strftime("%d/%m/%Y")
+    )
+    st.caption("Dica: Para escolher vários dias, segure Ctrl (ou Command no Mac) ao clicar.")
 
-    gerar_custom = st.button("Gerar relatório customizado")
-
-    if gerar_custom and entregador:
-        df_filt = df[df["pessoa_entregadora"] == entregador]
-        if filtro_subpraca:
-            df_filt = df_filt[df_filt["sub_praca"].isin(filtro_subpraca)]
-        if filtro_turno:
-            df_filt = df_filt[df_filt["periodo"].isin(filtro_turno)]
-        if dias_escolhidos:
-            df_filt = df_filt[df_filt["data"].isin(dias_escolhidos)]
-
-        texto = gerar_dados(entregador, None, None, df_filt)
         st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
