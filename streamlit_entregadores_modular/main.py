@@ -48,7 +48,8 @@ if nivel == "admin":
 # Relatórios "Ver geral" e "Simplificada (WhatsApp)"
 if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
-        nome = st.selectbox("Nome do entregador:", entregadores)
+        nomes = [""] + entregadores
+        nome = st.selectbox("Nome do entregador:", nomes, format_func=lambda x: x if x else "Selecione um entregador")
         if modo == "Simplificada (WhatsApp)":
             col1, col2 = st.columns(2)
             mes1 = col1.selectbox("1º Mês:", list(range(1, 13)), key="mes1")
@@ -77,42 +78,53 @@ if modo == "Alertas de Faltas":
     else:
         st.success("✅ Nenhum entregador ativo com faltas consecutivas.")
 
-# --- NOVO MODO: RELATÓRIO CUSTOMIZADO ---
+# --- RELATÓRIO CUSTOMIZADO --- #
 if modo == "Relatório Customizado":
     st.header("Relatório Customizado do Entregador")
 
-    entregador = st.selectbox("Nome do entregador:", sorted(df["pessoa_entregadora"].dropna().unique()))
+    # Carrega e ordena entregadores, adicionando opção vazia
+    entregadores_custom = [""] + sorted(df["pessoa_entregadora"].dropna().unique())
+    entregador = st.selectbox(
+        "Nome do entregador:",
+        entregadores_custom,
+        format_func=lambda x: x if x else "Selecione um entregador"
+    )
 
     # Filtro por subpraça
     subpracas = sorted(df["sub_praca"].dropna().unique())
-    filtro_subpraca = st.multiselect("Filtrar por Subpraça:", subpracas)
+    filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
 
     # Filtro por turno (periodo)
     turnos = sorted(df["periodo"].dropna().unique())
-    filtro_turno = st.multiselect("Filtrar por Turno:", turnos)
+    filtro_turno = st.multiselect("Filtrar por turno:", turnos)
 
-    # Filtro de datas
-    tipo_periodo = st.radio("Como deseja escolher as datas?", ("Período sequencial", "Dias específicos"))
-
+    # Garante datas no formato correto
     df['data_do_periodo'] = pd.to_datetime(df['data_do_periodo'])
     df['data'] = df['data_do_periodo'].dt.date
 
-    if tipo_periodo == "Período sequencial":
+    # Filtro de datas
+    tipo_periodo = st.radio("Como deseja escolher as datas?", ("Período contínuo", "Dias específicos"))
+
+    if tipo_periodo == "Período contínuo":
         data_min = df["data"].min()
         data_max = df["data"].max()
-        periodo = st.date_input("Selecione o período:", [data_min, data_max])
+        periodo = st.date_input("Selecione o intervalo de datas:", [data_min, data_max], format="DD/MM/YYYY")
         if len(periodo) == 2:
             dias_escolhidos = pd.date_range(start=periodo[0], end=periodo[1]).date
         else:
             dias_escolhidos = []
     else:
         dias_opcoes = sorted(df["data"].unique())
-        dias_escolhidos = st.multiselect("Selecione os dias específicos:", dias_opcoes)
+        dias_escolhidos = st.multiselect(
+            "Selecione os dias desejados:",
+            dias_opcoes,
+            format_func=lambda x: x.strftime("%d/%m/%Y")
+        )
+        st.caption("Dica: Para escolher vários dias, segure Ctrl (ou Command no Mac) ao clicar.")
 
     gerar_custom = st.button("Gerar relatório customizado")
 
     if gerar_custom and entregador:
-        # Aplica filtros
         df_filt = df[df["pessoa_entregadora"] == entregador]
         if filtro_subpraca:
             df_filt = df_filt[df_filt["sub_praca"].isin(filtro_subpraca)]
