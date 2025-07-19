@@ -4,6 +4,7 @@ from data_loader import carregar_dados
 from relatorios import (
     gerar_dados, gerar_simplicado, gerar_alertas_de_faltas, get_entregadores
 )
+import pandas as pd
 
 # Autenticação do usuário
 if "logado" not in st.session_state:
@@ -26,11 +27,12 @@ if not st.session_state.logado:
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
-# Menu lateral apenas com os 3 modos
+# Menu lateral com novo modo
 modo = st.sidebar.radio("Escolha uma opção:", [
     "Ver geral",
     "Simplificada (WhatsApp)",
-    "Alertas de Faltas"
+    "Alertas de Faltas",
+    "Relatório Customizado"
 ])
 
 df = carregar_dados()
@@ -74,3 +76,50 @@ if modo == "Alertas de Faltas":
         st.text_area("Resultado:", value="\n".join(mensagens), height=400)
     else:
         st.success("✅ Nenhum entregador ativo com faltas consecutivas.")
+
+# --- NOVO MODO: RELATÓRIO CUSTOMIZADO ---
+if modo == "Relatório Customizado":
+    st.header("Relatório Customizado do Entregador")
+
+    entregador = st.selectbox("Nome do entregador:", sorted(df["pessoa_entregadora"].dropna().unique()))
+
+    # Filtro por subpraça
+    subpracas = sorted(df["sub_praca"].dropna().unique())
+    filtro_subpraca = st.multiselect("Filtrar por Subpraça:", subpracas)
+
+    # Filtro por turno (periodo)
+    turnos = sorted(df["periodo"].dropna().unique())
+    filtro_turno = st.multiselect("Filtrar por Turno:", turnos)
+
+    # Filtro de datas
+    tipo_periodo = st.radio("Como deseja escolher as datas?", ("Período sequencial", "Dias específicos"))
+
+    df['data_do_periodo'] = pd.to_datetime(df['data_do_periodo'])
+    df['data'] = df['data_do_periodo'].dt.date
+
+    if tipo_periodo == "Período sequencial":
+        data_min = df["data"].min()
+        data_max = df["data"].max()
+        periodo = st.date_input("Selecione o período:", [data_min, data_max])
+        if len(periodo) == 2:
+            dias_escolhidos = pd.date_range(start=periodo[0], end=periodo[1]).date
+        else:
+            dias_escolhidos = []
+    else:
+        dias_opcoes = sorted(df["data"].unique())
+        dias_escolhidos = st.multiselect("Selecione os dias específicos:", dias_opcoes)
+
+    gerar_custom = st.button("Gerar relatório customizado")
+
+    if gerar_custom and entregador:
+        # Aplica filtros
+        df_filt = df[df["pessoa_entregadora"] == entregador]
+        if filtro_subpraca:
+            df_filt = df_filt[df_filt["sub_praca"].isin(filtro_subpraca)]
+        if filtro_turno:
+            df_filt = df_filt[df_filt["periodo"].isin(filtro_turno)]
+        if dias_escolhidos:
+            df_filt = df_filt[df_filt["data"].isin(dias_escolhidos)]
+
+        texto = gerar_dados(entregador, None, None, df_filt)
+        st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
