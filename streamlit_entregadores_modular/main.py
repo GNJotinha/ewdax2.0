@@ -28,9 +28,9 @@ if not st.session_state.logado:
 
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 modo = st.sidebar.radio("Escolha uma opção:", [
-    "Ver 1 mês", "Ver 2 meses", "Ver geral",
-    "Simplificada (WhatsApp)", "Alertas de Faltas",
-    "Relatório por Praça/Data/Turno"
+    "Ver geral",
+    "Simplificada (WhatsApp)",
+    "Alertas de Faltas"
 ])
 
 df = carregar_dados()
