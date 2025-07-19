@@ -42,16 +42,10 @@ if nivel == "admin":
         st.cache_data.clear()
         st.rerun()
 
-if modo in ["Ver 1 mês", "Ver 2 meses", "Ver geral", "Simplificada (WhatsApp)"]:
+if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
         nome = st.selectbox("Nome do entregador:", entregadores)
-
-        if modo == "Ver 1 mês":
-            col1, col2 = st.columns(2)
-            mes = col1.selectbox("Mês:", list(range(1, 13)))
-            ano = col2.selectbox("Ano:", sorted(df["ano"].unique(), reverse=True))
-
-        elif modo in ["Ver 2 meses", "Simplificada (WhatsApp)"]:
+        if modo == "Simplificada (WhatsApp)":
             col1, col2 = st.columns(2)
             mes1 = col1.selectbox("1º Mês:", list(range(1, 13)), key="mes1")
             ano1 = col2.selectbox("1º Ano:", sorted(df["ano"].unique(), reverse=True), key="ano1")
@@ -62,16 +56,7 @@ if modo in ["Ver 1 mês", "Ver 2 meses", "Ver geral", "Simplificada (WhatsApp)"]
 
     if gerar and nome:
         with st.spinner("Gerando relatório..."):
-            if modo == "Ver 1 mês":
-                texto = gerar_dados(nome, mes, ano, df)
-                st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=350)
-
-            elif modo == "Ver 2 meses":
-                t1 = gerar_dados(nome, mes1, ano1, df)
-                t2 = gerar_dados(nome, mes2, ano2, df)
-                st.text_area("Resultado:", value=(t1 or "") + "\n\n" + (t2 or ""), height=700)
-
-            elif modo == "Ver geral":
+            if modo == "Ver geral":
                 texto = gerar_dados(nome, None, None, df[df["pessoa_entregadora"] == nome])
                 st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
 
@@ -79,6 +64,7 @@ if modo in ["Ver 1 mês", "Ver 2 meses", "Ver geral", "Simplificada (WhatsApp)"]
                 t1 = gerar_simplicado(nome, mes1, ano1, df)
                 t2 = gerar_simplicado(nome, mes2, ano2, df)
                 st.text_area("Resultado:", value="\n\n".join([t for t in [t1, t2] if t]), height=600)
+
 
 elif modo == "Alertas de Faltas":
     mensagens = gerar_alertas_de_faltas(df)
