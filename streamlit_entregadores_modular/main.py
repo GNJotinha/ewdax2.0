@@ -111,15 +111,14 @@ if modo == "Relatório Customizado":
         data_min = df["data"].min()
         data_max = df["data"].max()
         periodo = st.date_input("Selecione o intervalo de datas:", [data_min, data_max], format="DD/MM/YYYY")
-        # 'periodo' pode ser um único valor, uma lista/tupla ou nada
+        # Garante lista!
         if isinstance(periodo, (list, tuple)):
             if len(periodo) == 2:
-                dias_escolhidos = pd.date_range(start=periodo[0], end=periodo[1]).date
+                dias_escolhidos = list(pd.date_range(start=periodo[0], end=periodo[1]).date)
             elif len(periodo) == 1:
                 dias_escolhidos = [periodo[0]]
         elif isinstance(periodo, pd.Timestamp):
             dias_escolhidos = [periodo]
-        # Se nada selecionado, permanece lista vazia
     else:
         dias_opcoes = sorted(df["data"].unique())
         dias_escolhidos = st.multiselect(
