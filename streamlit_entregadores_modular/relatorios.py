@@ -35,7 +35,6 @@ def gerar_dados(nome, mes, ano, df):
     if dados.empty:
         return None
 
-    # NOVO: calcula tempo online corretamente (sem duplicar duração de turno)
     tempo_pct = calcular_tempo_online(dados)
 
     presencas = dados["data"].nunique()
@@ -80,7 +79,6 @@ def gerar_simplicado(nome, mes, ano, df):
     if dados.empty:
         return None
 
-    # NOVO: cálculo correto do tempo online
     tempo_pct = calcular_tempo_online(dados)
     turnos = len(dados)
     ofertadas = int(dados["numero_de_corridas_ofertadas"].sum())
@@ -147,4 +145,4 @@ def gerar_por_praca_data_turno(df, nome=None, praca=None, data_inicio=None, data
         df = df[df["turno"] == turno]
 
     if df.empty:
-        return "❌ Nenhum dado encontrado com os filtros
+        return "❌ Nenhum dado encontrado com os filtros aplicados."
