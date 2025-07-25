@@ -17,9 +17,10 @@ def calcular_tempo_online(df_filtrado):
     if "tempo_disponivel_escalado" not in df_filtrado.columns:
         return 0.0
     df_valid = df_filtrado[df_filtrado["tempo_disponivel_escalado"].notnull()]
+    print(f"Total registros: {len(df_valid)}")
+    print(df_valid["tempo_disponivel_escalado"].describe())
     if df_valid.empty:
         return 0.0
     media_pct = df_valid["tempo_disponivel_escalado"].mean()
-    return round(media_pct / 100, 1)  # Ex: 9816 → 98.2%
+    return round(media_pct / 100, 1)
 
-    return round(tempo_online_pct, 1)
