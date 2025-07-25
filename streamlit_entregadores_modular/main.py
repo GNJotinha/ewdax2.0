@@ -84,19 +84,9 @@ if modo == "📊 Indicadores Gerais":
     df['mes_ano'] = df['data'].dt.to_period('M')
 
     # Gráfico: total de corridas por mês
-    mensal = df.groupby('mes_ano')['corridas_ofertadas'].sum().reset_index()
+    mensal = df.groupby('mes_ano')['numero_de_corridas_ofertadas'].sum().reset_index()
     mensal['mes_ano'] = mensal['mes_ano'].astype(str)
-    fig_mensal = px.bar(mensal, x='mes_ano', y='corridas_ofertadas', title='📊 Corridas ofertadas por mês', labels={"corridas_ofertadas": "Corridas"})
-    st.plotly_chart(fig_mensal, use_container_width=True)
-
-    # Gráfico: corridas por dia no mês atual
-    mes_atual = pd.Timestamp.today().month
-    ano_atual = pd.Timestamp.today().year
-    df_mes = df[(df['data'].dt.month == mes_atual) & (df['data'].dt.year == ano_atual)]
-    por_dia = df_mes.groupby(df_mes['data'].dt.day)['corridas_ofertadas'].sum().reset_index()
-    fig_dia = px.line(por_dia, x='data', y='corridas_ofertadas', markers=True,
-                      title='📈 Corridas ofertadas por dia (mês atual)',
-                      labels={'data': 'Dia', 'corridas_ofertadas': 'Corridas'})
+    fig_mensal = px.bar(mensal, x='mes_ano', y='corridas_ofertadas', title='📊 Corridas ofertadas por mês', labels={"numero_de_corridas_ofertadas": "Corridas"})
     fig_dia.update_traces(line_shape='spline', line_color='royalblue')
     total_mes = int(por_dia['corridas_ofertadas'].sum())
     st.metric("🚗 Corridas ofertadas no mês", total_mes)
