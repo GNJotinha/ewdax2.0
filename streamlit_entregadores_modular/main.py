@@ -86,7 +86,7 @@ if modo == "📊 Indicadores Gerais":
     # Gráfico: total de corridas por mês
     mensal = df.groupby('mes_ano')['numero_de_corridas_ofertadas'].sum().reset_index()
     mensal['mes_ano'] = mensal['mes_ano'].astype(str)
-    fig_mensal = px.bar(mensal, x='mes_ano', y='corridas_ofertadas', title='📊 Corridas ofertadas por mês', labels={"numero_de_corridas_ofertadas": "Corridas"})
+    fig_mensal = px.bar(mensal, x='mes_ano', y='numero_de_corridas_ofertadas', title='📊 Corridas ofertadas por mês', labels={"numero_de_corridas_ofertadas": "Corridas"})
     fig_dia.update_traces(line_shape='spline', line_color='royalblue')
     total_mes = int(por_dia['corridas_ofertadas'].sum())
     st.metric("🚗 Corridas ofertadas no mês", total_mes)
