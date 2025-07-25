@@ -93,9 +93,8 @@ if modo == "📊 Indicadores Gerais":
     df['data'] = pd.to_datetime(df['data_do_periodo'])
     df['mes_ano'] = df['data'].dt.to_period('M')
 
-    # Gráfico: total de corridas por mês
     if mostrar_ofertadas:
-    mensal = df.groupby('mes_ano')['numero_de_corridas_ofertadas'].sum().reset_index()
+        mensal = df.groupby('mes_ano')['numero_de_corridas_ofertadas'].sum().reset_index()
         mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
         fig_mensal = px.bar(
             mensal,
@@ -106,39 +105,51 @@ if modo == "📊 Indicadores Gerais":
             labels={"numero_de_corridas_ofertadas": "Corridas"},
             text_auto=True
         )
-                st.plotly_chart(fig_mensal, use_container_width=True)
+        st.plotly_chart(fig_mensal, use_container_width=True)
 
     if mostrar_aceitas:
-    mensal = df.groupby('mes_ano')['numero_de_corridas_aceitas'].sum().reset_index()
+        mensal = df.groupby('mes_ano')['numero_de_corridas_aceitas'].sum().reset_index()
         mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
         fig_aceitas = px.bar(
-            mensal, x='mes_ano', y='numero_de_corridas_aceitas', text='numero_de_corridas_aceitas',
+            mensal,
+            x='mes_ano',
+            y='numero_de_corridas_aceitas',
+            text='numero_de_corridas_aceitas',
             title='📊 Corridas aceitas por mês',
-            labels={"numero_de_corridas_aceitas": "Corridas Aceitas"}, text_auto=True
+            labels={"numero_de_corridas_aceitas": "Corridas Aceitas"},
+            text_auto=True
         )
         st.plotly_chart(fig_aceitas, use_container_width=True)
 
     if mostrar_rejeitadas:
-    mensal = df.groupby('mes_ano')['numero_de_corridas_rejeitadas'].sum().reset_index()
+        mensal = df.groupby('mes_ano')['numero_de_corridas_rejeitadas'].sum().reset_index()
         mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
         fig_rejeitadas = px.bar(
-            mensal, x='mes_ano', y='numero_de_corridas_rejeitadas', text='numero_de_corridas_rejeitadas',
+            mensal,
+            x='mes_ano',
+            y='numero_de_corridas_rejeitadas',
+            text='numero_de_corridas_rejeitadas',
             title='📊 Corridas rejeitadas por mês',
-            labels={"numero_de_corridas_rejeitadas": "Corridas Rejeitadas"}, text_auto=True
+            labels={"numero_de_corridas_rejeitadas": "Corridas Rejeitadas"},
+            text_auto=True
         )
         st.plotly_chart(fig_rejeitadas, use_container_width=True)
 
     if mostrar_completas:
-    mensal = df.groupby('mes_ano')['numero_de_corridas_completas'].sum().reset_index()
+        mensal = df.groupby('mes_ano')['numero_de_corridas_completas'].sum().reset_index()
         mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
         fig_completas = px.bar(
-            mensal, x='mes_ano', y='numero_de_corridas_completas', text='numero_de_corridas_completas',
+            mensal,
+            x='mes_ano',
+            y='numero_de_corridas_completas',
+            text='numero_de_corridas_completas',
             title='📊 Corridas completas por mês',
-            labels={"numero_de_corridas_completas": "Corridas Completas"}, text_auto=True
+            labels={"numero_de_corridas_completas": "Corridas Completas"},
+            text_auto=True
         )
         st.plotly_chart(fig_completas, use_container_width=True)
 
-    # Gráfico: corridas por dia no mês atual
+    # Gráfico diário de ofertadas
     mes_atual = pd.Timestamp.today().month
     ano_atual = pd.Timestamp.today().year
     df_mes = df[(df['data'].dt.month == mes_atual) & (df['data'].dt.year == ano_atual)]
@@ -146,7 +157,10 @@ if modo == "📊 Indicadores Gerais":
     por_dia.rename(columns={'data': 'dia'}, inplace=True)
 
     fig_dia = px.line(
-        por_dia, x='dia', y='numero_de_corridas_ofertadas', markers=True,
+        por_dia,
+        x='dia',
+        y='numero_de_corridas_ofertadas',
+        markers=True,
         title='📈 Corridas ofertadas por dia (mês atual)',
         labels={'dia': 'Dia', 'numero_de_corridas_ofertadas': 'Corridas'}
     )
