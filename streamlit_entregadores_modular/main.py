@@ -5,7 +5,6 @@ from relatorios import (
     gerar_dados, gerar_simplicado, gerar_alertas_de_faltas, get_entregadores
 )
 import pandas as pd
-from utils import normalizar
 
 # Autenticação do usuário
 if "logado" not in st.session_state:
@@ -50,15 +49,7 @@ if nivel == "admin":
 if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
         entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
-        entregadores_dict = {normalizar(nome): nome for nome in entregadores_lista}
-        busca = st.text_input("🔎 Digite o nome do entregador (sem acento):", key="busca_nome").strip().lower()
-        sugestoes = [entregadores_dict[n] for n in entregadores_dict if busca in n] if busca else []
-
-        nome = None
-        if sugestoes:
-            nome = st.selectbox("Selecione o entregador encontrado:", sugestoes, key="select_entregador")
-        elif busca:
-            st.warning("Nenhum entregador encontrado.")
+        nome = st.selectbox("🔎 Selecione o entregador:", entregadores_lista, key="select_entregador")
 
         if modo == "Simplificada (WhatsApp)":
             col1, col2 = st.columns(2)
@@ -93,15 +84,7 @@ if modo == "Relatório Customizado":
     st.header("Relatório Customizado do Entregador")
 
     entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
-    entregadores_dict = {normalizar(nome): nome for nome in entregadores_lista}
-    busca = st.text_input("🔎 Digite o nome do entregador (sem acento):", key="busca_custom").strip().lower()
-    sugestoes = [entregadores_dict[n] for n in entregadores_dict if busca in n] if busca else []
-
-    entregador = None
-    if sugestoes:
-        entregador = st.selectbox("Selecione o entregador encontrado:", sugestoes, key="select_custom")
-    elif busca:
-        st.warning("Nenhum entregador encontrado.")
+    entregador = st.selectbox("🔎 Selecione o entregador:", entregadores_lista, key="select_custom")
 
     # Filtro por subpraça
     subpracas = sorted(df["sub_praca"].dropna().unique())
