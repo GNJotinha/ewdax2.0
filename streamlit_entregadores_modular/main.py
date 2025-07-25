@@ -49,7 +49,12 @@ if nivel == "admin":
 if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
         entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
-        nome = st.selectbox("🔎 Selecione o entregador:", entregadores_lista, key="select_entregador")
+        nome = st.selectbox(
+    "🔎 Selecione o entregador:",
+    options=[""] + entregadores_lista,
+    format_func=lambda x: "⬇️ (Nenhum selecionado)" if x == "" else x,
+    key="select_entregador"
+)
 
         if modo == "Simplificada (WhatsApp)":
             col1, col2 = st.columns(2)
@@ -84,7 +89,12 @@ if modo == "Relatório Customizado":
     st.header("Relatório Customizado do Entregador")
 
     entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
-    entregador = st.selectbox("🔎 Selecione o entregador:", entregadores_lista, key="select_custom")
+    entregador = st.selectbox(
+    "🔎 Selecione o entregador:",
+    options=[""] + entregadores_lista,
+    format_func=lambda x: "⬇️ (Nenhum selecionado)" if x == "" else x,
+    key="select_custom"
+)
 
     # Filtro por subpraça
     subpracas = sorted(df["sub_praca"].dropna().unique())
