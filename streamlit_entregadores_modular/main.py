@@ -94,18 +94,18 @@ if modo == "📊 Indicadores Gerais":
     df['mes_ano'] = df['data'].dt.to_period('M')
 
     if mostrar_ofertadas:
-    mensal = df.groupby('mes_ano')['numero_de_corridas_ofertadas'].sum().reset_index()
-    mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
-    fig_mensal = px.bar(
-        mensal,
-        x='mes_ano',
-        y='numero_de_corridas_ofertadas',
-        text='numero_de_corridas_ofertadas',
-        title='📊 Corridas ofertadas por mês',
-        labels={"numero_de_corridas_ofertadas": "Corridas"},
-        text_auto=True
-    )
-    st.plotly_chart(fig_mensal, use_container_width=True)
+        mensal = df.groupby('mes_ano')['numero_de_corridas_ofertadas'].sum().reset_index()
+        mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+        fig_mensal = px.bar(
+            mensal,
+            x='mes_ano',
+            y='numero_de_corridas_ofertadas',
+            text='numero_de_corridas_ofertadas',
+            title='📊 Corridas ofertadas por mês',
+            labels={"numero_de_corridas_ofertadas": "Corridas"},
+            text_auto=True
+        )
+        st.plotly_chart(fig_mensal, use_container_width=True)
 
     if mostrar_aceitas:
     mensal = df.groupby('mes_ano')['numero_de_corridas_aceitas'].sum().reset_index()
