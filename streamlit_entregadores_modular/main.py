@@ -70,17 +70,8 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
         with st.spinner("Gerando relatório..."):
             if modo == "Ver geral":
                 texto = gerar_dados(nome, None, None, df[df["pessoa_entregadora"] == nome])
-                st.text_area("Resultado:", value="
-
-".join([t for t in [t1, t2] if t]), height=600)
-
-    
-
-    if gerar and nome:
-        with st.spinner("Gerando relatório..."):
-            if modo == "Ver geral":
-                texto = gerar_dados(nome, None, None, df[df["pessoa_entregadora"] == nome])
                 st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
+
 
             elif modo == "Simplificada (WhatsApp)":
                 t1 = gerar_simplicado(nome, mes1, ano1, df)
