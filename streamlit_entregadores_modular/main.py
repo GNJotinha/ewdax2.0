@@ -82,10 +82,13 @@ if modo == "📊 Indicadores Gerais":
     import plotly.express as px
 
     st.subheader("🔎 Escolha os indicadores que deseja visualizar:")
-    mostrar_ofertadas = st.checkbox("Corridas ofertadas", value=True)
-    mostrar_aceitas = st.checkbox("Corridas aceitas")
-    mostrar_rejeitadas = st.checkbox("Corridas rejeitadas")
-    mostrar_completas = st.checkbox("Corridas completas")
+    col1, col2 = st.columns(2)
+    with col1:
+        mostrar_ofertadas = st.checkbox("Corridas ofertadas", value=True)
+        mostrar_rejeitadas = st.checkbox("Corridas rejeitadas")
+    with col2:
+        mostrar_aceitas = st.checkbox("Corridas aceitas")
+        mostrar_completas = st.checkbox("Corridas completas")
 
     df['data'] = pd.to_datetime(df['data_do_periodo'])
     df['mes_ano'] = df['data'].dt.to_period('M')
@@ -103,7 +106,37 @@ if modo == "📊 Indicadores Gerais":
             labels={"numero_de_corridas_ofertadas": "Corridas"},
             text_auto=True
         )
-        st.plotly_chart(fig_mensal, use_container_width=True)
+                st.plotly_chart(fig_mensal, use_container_width=True)
+
+    if mostrar_aceitas:
+        mensal = df.groupby('mes_ano')['numero_de_corridas_aceitas'].sum().reset_index()
+        mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+        fig_aceitas = px.bar(
+            mensal, x='mes_ano', y='numero_de_corridas_aceitas', text='numero_de_corridas_aceitas',
+            title='📊 Corridas aceitas por mês',
+            labels={"numero_de_corridas_aceitas": "Corridas Aceitas"}, text_auto=True
+        )
+        st.plotly_chart(fig_aceitas, use_container_width=True)
+
+    if mostrar_rejeitadas:
+        mensal = df.groupby('mes_ano')['numero_de_corridas_rejeitadas'].sum().reset_index()
+        mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+        fig_rejeitadas = px.bar(
+            mensal, x='mes_ano', y='numero_de_corridas_rejeitadas', text='numero_de_corridas_rejeitadas',
+            title='📊 Corridas rejeitadas por mês',
+            labels={"numero_de_corridas_rejeitadas": "Corridas Rejeitadas"}, text_auto=True
+        )
+        st.plotly_chart(fig_rejeitadas, use_container_width=True)
+
+    if mostrar_completas:
+        mensal = df.groupby('mes_ano')['numero_de_corridas_completas'].sum().reset_index()
+        mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+        fig_completas = px.bar(
+            mensal, x='mes_ano', y='numero_de_corridas_completas', text='numero_de_corridas_completas',
+            title='📊 Corridas completas por mês',
+            labels={"numero_de_corridas_completas": "Corridas Completas"}, text_auto=True
+        )
+        st.plotly_chart(fig_completas, use_container_width=True)
 
     # Gráfico: corridas por dia no mês atual
     mes_atual = pd.Timestamp.today().month
