@@ -50,18 +50,11 @@ if nivel == "admin":
 if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
         entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
-        entregadores_dict = {normalizar(nome): nome for nome in entregadores_lista}
-        nomes_normalizados = list(entregadores_dict.keys())
-
-        busca = st.text_input("🔎 Digite o nome (sem acento):", key="busca_nome").strip().lower()
-        sugestoes_norm = [n for n in nomes_normalizados if busca in n]
-        sugestoes = [entregadores_dict[n] for n in sugestoes_norm]
-
-        nome = None
-        if sugestoes:
-            nome = st.selectbox("Selecione o entregador encontrado:", sugestoes)
-        elif busca:
-            st.warning("Nenhum entregador encontrado.")
+        nome = st.selectbox(
+            "🔎 Selecione o entregador:",
+            options=[""] + entregadores_lista,
+            format_func=lambda x: x if x else "⬇️ Escolha um entregador"
+        )
 
         if modo == "Simplificada (WhatsApp)":
             col1, col2 = st.columns(2)
@@ -96,18 +89,11 @@ if modo == "Relatório Customizado":
     st.header("Relatório Customizado do Entregador")
 
     entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
-    entregadores_dict = {normalizar(nome): nome for nome in entregadores_lista}
-    nomes_normalizados = list(entregadores_dict.keys())
-
-    busca = st.text_input("🔎 Digite o nome (sem acento):", key="busca_custom").strip().lower()
-    sugestoes_norm = [n for n in nomes_normalizados if busca in n]
-    sugestoes = [entregadores_dict[n] for n in sugestoes_norm]
-
-    entregador = None
-    if sugestoes:
-        entregador = st.selectbox("Selecione o entregador encontrado:", sugestoes)
-    elif busca:
-        st.warning("Nenhum entregador encontrado.")
+    entregador = st.selectbox(
+        "🔎 Selecione o entregador:",
+        options=[""] + entregadores_lista,
+        format_func=lambda x: x if x else "⬇️ Escolha um entregador"
+    )
 
     # Filtro por subpraça
     subpracas = sorted(df["sub_praca"].dropna().unique())
