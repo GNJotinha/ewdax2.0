@@ -75,7 +75,7 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
             elif modo == "Simplificada (WhatsApp)":
                 t1 = gerar_simplicado(nome, mes1, ano1, df)
                 t2 = gerar_simplicado(nome, mes2, ano2, df)
-                st.text_area("Resultado:", value="
+                st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
 
 ".join([t for t in [t1, t2] if t]), height=600)
 
