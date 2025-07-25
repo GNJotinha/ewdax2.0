@@ -81,22 +81,29 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
 if modo == "📊 Indicadores Gerais":
     import plotly.express as px
 
+    st.subheader("🔎 Escolha os indicadores que deseja visualizar:")
+    mostrar_ofertadas = st.checkbox("Corridas ofertadas", value=True)
+    mostrar_aceitas = st.checkbox("Corridas aceitas")
+    mostrar_rejeitadas = st.checkbox("Corridas rejeitadas")
+    mostrar_completas = st.checkbox("Corridas completas")
+
     df['data'] = pd.to_datetime(df['data_do_periodo'])
     df['mes_ano'] = df['data'].dt.to_period('M')
 
     # Gráfico: total de corridas por mês
-    mensal = df.groupby('mes_ano')['numero_de_corridas_ofertadas'].sum().reset_index()
-    mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
-    fig_mensal = px.bar(
-    mensal,
-    x='mes_ano',
-    y='numero_de_corridas_ofertadas',
-    text='numero_de_corridas_ofertadas',
-    title='📊 Corridas ofertadas por mês',
-    labels={"numero_de_corridas_ofertadas": "Corridas"},
-    text_auto=True
-)
-    st.plotly_chart(fig_mensal, use_container_width=True)
+    if mostrar_ofertadas:
+        mensal = df.groupby('mes_ano')['numero_de_corridas_ofertadas'].sum().reset_index()
+        mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+        fig_mensal = px.bar(
+            mensal,
+            x='mes_ano',
+            y='numero_de_corridas_ofertadas',
+            text='numero_de_corridas_ofertadas',
+            title='📊 Corridas ofertadas por mês',
+            labels={"numero_de_corridas_ofertadas": "Corridas"},
+            text_auto=True
+        )
+        st.plotly_chart(fig_mensal, use_container_width=True)
 
     # Gráfico: corridas por dia no mês atual
     mes_atual = pd.Timestamp.today().month
