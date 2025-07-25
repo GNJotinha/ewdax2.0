@@ -95,7 +95,7 @@ if modo == "📊 Indicadores Gerais":
 
     # Gráfico: total de corridas por mês
     if mostrar_ofertadas:
-        mensal = df.groupby('mes_ano')['numero_de_corridas_ofertadas'].sum().reset_index()
+    mensal = df.groupby('mes_ano')['numero_de_corridas_ofertadas'].sum().reset_index()
         mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
         fig_mensal = px.bar(
             mensal,
@@ -109,7 +109,7 @@ if modo == "📊 Indicadores Gerais":
                 st.plotly_chart(fig_mensal, use_container_width=True)
 
     if mostrar_aceitas:
-        mensal = df.groupby('mes_ano')['numero_de_corridas_aceitas'].sum().reset_index()
+    mensal = df.groupby('mes_ano')['numero_de_corridas_aceitas'].sum().reset_index()
         mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
         fig_aceitas = px.bar(
             mensal, x='mes_ano', y='numero_de_corridas_aceitas', text='numero_de_corridas_aceitas',
@@ -119,7 +119,7 @@ if modo == "📊 Indicadores Gerais":
         st.plotly_chart(fig_aceitas, use_container_width=True)
 
     if mostrar_rejeitadas:
-        mensal = df.groupby('mes_ano')['numero_de_corridas_rejeitadas'].sum().reset_index()
+    mensal = df.groupby('mes_ano')['numero_de_corridas_rejeitadas'].sum().reset_index()
         mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
         fig_rejeitadas = px.bar(
             mensal, x='mes_ano', y='numero_de_corridas_rejeitadas', text='numero_de_corridas_rejeitadas',
@@ -129,7 +129,7 @@ if modo == "📊 Indicadores Gerais":
         st.plotly_chart(fig_rejeitadas, use_container_width=True)
 
     if mostrar_completas:
-        mensal = df.groupby('mes_ano')['numero_de_corridas_completas'].sum().reset_index()
+    mensal = df.groupby('mes_ano')['numero_de_corridas_completas'].sum().reset_index()
         mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
         fig_completas = px.bar(
             mensal, x='mes_ano', y='numero_de_corridas_completas', text='numero_de_corridas_completas',
