@@ -49,15 +49,19 @@ if nivel == "admin":
 # Relatórios "Ver geral" e "Simplificada (WhatsApp)"
 if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
-        entregadores_norm = {normalizar(n): n for n in entregadores if n}
-        busca = st.text_input("🔎 Digite o nome do entregador:", key="busca_nome").strip().lower()
-        possiveis = [original for norm, original in entregadores_norm.items() if busca in norm]
+        entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
+        entregadores_dict = {normalizar(nome): nome for nome in entregadores_lista}
+        nomes_normalizados = list(entregadores_dict.keys())
+
+        busca = st.text_input("🔎 Digite o nome (sem acento):", key="busca_nome").strip().lower()
+        sugestoes_norm = [n for n in nomes_normalizados if busca in n]
+        sugestoes = [entregadores_dict[n] for n in sugestoes_norm]
 
         nome = None
-        if busca and possiveis:
-            nome = st.selectbox("Entregadores encontrados:", possiveis)
+        if sugestoes:
+            nome = st.selectbox("Selecione o entregador encontrado:", sugestoes)
         elif busca:
-            st.warning("Nenhum entregador encontrado com esse nome.")
+            st.warning("Nenhum entregador encontrado.")
 
         if modo == "Simplificada (WhatsApp)":
             col1, col2 = st.columns(2)
@@ -91,16 +95,19 @@ if modo == "Alertas de Faltas":
 if modo == "Relatório Customizado":
     st.header("Relatório Customizado do Entregador")
 
-    entregadores_list = sorted(df["pessoa_entregadora"].dropna().unique())
-    entregadores_norm = {normalizar(n): n for n in entregadores_list}
-    busca = st.text_input("🔎 Digite o nome do entregador:", key="busca_custom").strip().lower()
-    possiveis = [original for norm, original in entregadores_norm.items() if busca in norm]
+    entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
+    entregadores_dict = {normalizar(nome): nome for nome in entregadores_lista}
+    nomes_normalizados = list(entregadores_dict.keys())
+
+    busca = st.text_input("🔎 Digite o nome (sem acento):", key="busca_custom").strip().lower()
+    sugestoes_norm = [n for n in nomes_normalizados if busca in n]
+    sugestoes = [entregadores_dict[n] for n in sugestoes_norm]
 
     entregador = None
-    if busca and possiveis:
-        entregador = st.selectbox("Entregadores encontrados:", possiveis)
+    if sugestoes:
+        entregador = st.selectbox("Selecione o entregador encontrado:", sugestoes)
     elif busca:
-        st.warning("Nenhum entregador encontrado com esse nome.")
+        st.warning("Nenhum entregador encontrado.")
 
     # Filtro por subpraça
     subpracas = sorted(df["sub_praca"].dropna().unique())
@@ -117,8 +124,7 @@ if modo == "Relatório Customizado":
     # Filtro de datas
     tipo_periodo = st.radio("Como deseja escolher as datas?", ("Período contínuo", "Dias específicos"))
 
-    dias_escolhidos = []  # Inicializa sempre como lista
-
+    dias_escolhidos = []
     if tipo_periodo == "Período contínuo":
         data_min = df["data"].min()
         data_max = df["data"].max()
