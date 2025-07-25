@@ -136,7 +136,7 @@ if modo == "📊 Indicadores Gerais":
         st.plotly_chart(fig_rejeitadas, use_container_width=True)
 
     if mostrar_completas:
-        mensal = df.groupby('mes_ano')['numero_de_corridas_completas'].sum().reset_index()
+        mensal = df.groupby('mes_ano')['numero_de_corridas_completadas'].sum().reset_index()
         mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
         fig_completas = px.bar(
             mensal,
