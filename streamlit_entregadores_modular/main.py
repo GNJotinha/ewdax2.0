@@ -50,11 +50,15 @@ if nivel == "admin":
 if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
         entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
-        nome = st.selectbox(
-            "🔎 Selecione o entregador:",
-            options=[""] + entregadores_lista,
-            format_func=lambda x: x if x else "⬇️ Escolha um entregador"
-        )
+        entregadores_dict = {normalizar(nome): nome for nome in entregadores_lista}
+        busca = st.text_input("🔎 Digite o nome do entregador (sem acento):", key="busca_nome").strip().lower()
+        sugestoes = [entregadores_dict[n] for n in entregadores_dict if busca in n] if busca else []
+
+        nome = None
+        if sugestoes:
+            nome = st.selectbox("Selecione o entregador encontrado:", sugestoes, key="select_entregador")
+        elif busca:
+            st.warning("Nenhum entregador encontrado.")
 
         if modo == "Simplificada (WhatsApp)":
             col1, col2 = st.columns(2)
@@ -89,11 +93,15 @@ if modo == "Relatório Customizado":
     st.header("Relatório Customizado do Entregador")
 
     entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
-    entregador = st.selectbox(
-        "🔎 Selecione o entregador:",
-        options=[""] + entregadores_lista,
-        format_func=lambda x: x if x else "⬇️ Escolha um entregador"
-    )
+    entregadores_dict = {normalizar(nome): nome for nome in entregadores_lista}
+    busca = st.text_input("🔎 Digite o nome do entregador (sem acento):", key="busca_custom").strip().lower()
+    sugestoes = [entregadores_dict[n] for n in entregadores_dict if busca in n] if busca else []
+
+    entregador = None
+    if sugestoes:
+        entregador = st.selectbox("Selecione o entregador encontrado:", sugestoes, key="select_custom")
+    elif busca:
+        st.warning("Nenhum entregador encontrado.")
 
     # Filtro por subpraça
     subpracas = sorted(df["sub_praca"].dropna().unique())
