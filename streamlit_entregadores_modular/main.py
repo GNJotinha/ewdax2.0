@@ -136,17 +136,17 @@ if modo == "📊 Indicadores Gerais":
         st.plotly_chart(fig_rejeitadas, use_container_width=True)
 
     if mostrar_completas:
-        mensal = df.groupby('mes_ano')['numero_de_corridas_completadas'].sum().reset_index()
-        mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
-        fig_completas = px.bar(
-            mensal,
-            x='mes_ano',
-            y='numero_de_corridas_completas',
-            text='numero_de_corridas_completas',
-            title='📊 Corridas completas por mês',
-            labels={"numero_de_corridas_completas": "Corridas Completas"},
-            text_auto=True
-        )
+    mensal = df.groupby('mes_ano')['numero_de_corridas_completadas'].sum().reset_index()
+    mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+    fig_completas = px.bar(
+        mensal,
+        x='mes_ano',
+        y='numero_de_corridas_completadas',
+        text='numero_de_corridas_completadas',
+        title='📊 Corridas completadas por mês',
+        labels={"numero_de_corridas_completadas": "Corridas Completadas"},
+        text_auto=True
+    )
         st.plotly_chart(fig_completas, use_container_width=True)
 
     # Gráfico diário de ofertadas
