@@ -51,8 +51,8 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
         entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
         nome = st.selectbox(
     "🔎 Selecione o entregador:",
-    options=[""] + entregadores_lista,
-    format_func=lambda x: "⬇️ (Nenhum selecionado)" if x == "" else x,
+    options=[None] + entregadores_lista,
+    format_func=lambda x: "" if x is None else x,
     key="select_entregador"
 )
 
@@ -91,8 +91,8 @@ if modo == "Relatório Customizado":
     entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
     entregador = st.selectbox(
     "🔎 Selecione o entregador:",
-    options=[""] + entregadores_lista,
-    format_func=lambda x: "⬇️ (Nenhum selecionado)" if x == "" else x,
+    options=[None] + entregadores_lista,
+    format_func=lambda x: "" if x is None else x,
     key="select_custom"
 )
 
