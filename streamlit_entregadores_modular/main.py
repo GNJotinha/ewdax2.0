@@ -5,6 +5,7 @@ from relatorios import (
     gerar_dados, gerar_simplicado, gerar_alertas_de_faltas, get_entregadores
 )
 import pandas as pd
+from utils import normalizar
 
 # Autenticação do usuário
 if "logado" not in st.session_state:
@@ -48,8 +49,16 @@ if nivel == "admin":
 # Relatórios "Ver geral" e "Simplificada (WhatsApp)"
 if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
-        nomes = [""] + entregadores
-        nome = st.selectbox("Nome do entregador:", nomes, format_func=lambda x: x if x else "Selecione um entregador")
+        entregadores_norm = {normalizar(n): n for n in entregadores if n}
+        busca = st.text_input("🔎 Digite o nome do entregador:", key="busca_nome").strip().lower()
+        possiveis = [original for norm, original in entregadores_norm.items() if busca in norm]
+
+        nome = None
+        if busca and possiveis:
+            nome = st.selectbox("Entregadores encontrados:", possiveis)
+        elif busca:
+            st.warning("Nenhum entregador encontrado com esse nome.")
+
         if modo == "Simplificada (WhatsApp)":
             col1, col2 = st.columns(2)
             mes1 = col1.selectbox("1º Mês:", list(range(1, 13)), key="mes1")
@@ -82,13 +91,16 @@ if modo == "Alertas de Faltas":
 if modo == "Relatório Customizado":
     st.header("Relatório Customizado do Entregador")
 
-    # Carrega e ordena entregadores, adicionando opção vazia
-    entregadores_custom = [""] + sorted(df["pessoa_entregadora"].dropna().unique())
-    entregador = st.selectbox(
-        "Nome do entregador:",
-        entregadores_custom,
-        format_func=lambda x: x if x else "Selecione um entregador"
-    )
+    entregadores_list = sorted(df["pessoa_entregadora"].dropna().unique())
+    entregadores_norm = {normalizar(n): n for n in entregadores_list}
+    busca = st.text_input("🔎 Digite o nome do entregador:", key="busca_custom").strip().lower()
+    possiveis = [original for norm, original in entregadores_norm.items() if busca in norm]
+
+    entregador = None
+    if busca and possiveis:
+        entregador = st.selectbox("Entregadores encontrados:", possiveis)
+    elif busca:
+        st.warning("Nenhum entregador encontrado com esse nome.")
 
     # Filtro por subpraça
     subpracas = sorted(df["sub_praca"].dropna().unique())
@@ -111,7 +123,6 @@ if modo == "Relatório Customizado":
         data_min = df["data"].min()
         data_max = df["data"].max()
         periodo = st.date_input("Selecione o intervalo de datas:", [data_min, data_max], format="DD/MM/YYYY")
-        # Garante lista!
         if isinstance(periodo, (list, tuple)):
             if len(periodo) == 2:
                 dias_escolhidos = list(pd.date_range(start=periodo[0], end=periodo[1]).date)
