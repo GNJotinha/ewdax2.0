@@ -29,6 +29,7 @@ st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
 # Menu lateral com novo modo
 modo = st.sidebar.radio("Escolha uma opção:", [
+    "📊 Indicadores Gerais",
     "Ver geral",
     "Simplificada (WhatsApp)",
     "Alertas de Faltas",
@@ -50,11 +51,11 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
         entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
         nome = st.selectbox(
-    "🔎 Selecione o entregador:",
-    options=[None] + entregadores_lista,
-    format_func=lambda x: "" if x is None else x,
-    key="select_entregador"
-)
+            "🔎 Selecione o entregador:",
+            options=[None] + entregadores_lista,
+            format_func=lambda x: "" if x is None else x,
+            key="select_entregador"
+        )
 
         if modo == "Simplificada (WhatsApp)":
             col1, col2 = st.columns(2)
@@ -74,7 +75,47 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
             elif modo == "Simplificada (WhatsApp)":
                 t1 = gerar_simplicado(nome, mes1, ano1, df)
                 t2 = gerar_simplicado(nome, mes2, ano2, df)
+                st.text_area("Resultado:", value="
+
+".join([t for t in [t1, t2] if t]), height=600)
+
+    
+
+    if gerar and nome:
+        with st.spinner("Gerando relatório..."):
+            if modo == "Ver geral":
+                texto = gerar_dados(nome, None, None, df[df["pessoa_entregadora"] == nome])
+                st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
+
+            elif modo == "Simplificada (WhatsApp)":
+                t1 = gerar_simplicado(nome, mes1, ano1, df)
+                t2 = gerar_simplicado(nome, mes2, ano2, df)
                 st.text_area("Resultado:", value="\n\n".join([t for t in [t1, t2] if t]), height=600)
+
+if modo == "📊 Indicadores Gerais":
+    import plotly.express as px
+    df['data'] = pd.to_datetime(df['data_do_periodo'])
+    df['mes_ano'] = df['data'].dt.to_period('M')
+
+    # Gráfico: total de corridas por mês
+    mensal = df.groupby('mes_ano')['corridas_ofertadas'].sum().reset_index()
+    mensal['mes_ano'] = mensal['mes_ano'].astype(str)
+    fig_mensal = px.bar(mensal, x='mes_ano', y='corridas_ofertadas', title='📊 Corridas ofertadas por mês', labels={"corridas_ofertadas": "Corridas"})
+    st.plotly_chart(fig_mensal, use_container_width=True)
+
+    # Gráfico: corridas por dia no mês atual
+    mes_atual = pd.Timestamp.today().month
+    ano_atual = pd.Timestamp.today().year
+    df_mes = df[(df['data'].dt.month == mes_atual) & (df['data'].dt.year == ano_atual)]
+    por_dia = df_mes.groupby(df_mes['data'].dt.day)['corridas_ofertadas'].sum().reset_index()
+    fig_dia = px.line(por_dia, x='data', y='corridas_ofertadas', markers=True,
+                      title='📈 Corridas ofertadas por dia (mês atual)',
+                      labels={'data': 'Dia', 'corridas_ofertadas': 'Corridas'})
+    fig_dia.update_traces(line_shape='spline', line_color='royalblue')
+    total_mes = int(por_dia['corridas_ofertadas'].sum())
+    st.metric("🚗 Corridas ofertadas no mês", total_mes)
+    st.plotly_chart(fig_dia, use_container_width=True)
+
 
 # Relatório de Alertas de Faltas
 if modo == "Alertas de Faltas":
