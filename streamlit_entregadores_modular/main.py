@@ -72,12 +72,12 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
                 texto = gerar_dados(nome, None, None, df[df["pessoa_entregadora"] == nome])
                 st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
 
-
             elif modo == "Simplificada (WhatsApp)":
                 t1 = gerar_simplicado(nome, mes1, ano1, df)
                 t2 = gerar_simplicado(nome, mes2, ano2, df)
                 st.text_area("Resultado:", value="\n\n".join([t for t in [t1, t2] if t]), height=600)
 
+# Indicadores Gerais
 if modo == "📊 Indicadores Gerais":
     import plotly.express as px
 
@@ -123,31 +123,31 @@ if modo == "📊 Indicadores Gerais":
 
     if mostrar_rejeitadas:
         mensal = df.groupby('mes_ano')['numero_de_corridas_rejeitadas'].sum().reset_index()
-    mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
-    fig_rejeitadas = px.bar(
-        mensal,
-        x='mes_ano',
-        y='numero_de_corridas_rejeitadas',
-        text='numero_de_corridas_rejeitadas',
-        title='📊 Corridas rejeitadas por mês',
-        labels={"numero_de_corridas_rejeitadas": "Corridas Rejeitadas"},
-        text_auto=True
-    )
-    st.plotly_chart(fig_rejeitadas, use_container_width=True)
+        mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+        fig_rejeitadas = px.bar(
+            mensal,
+            x='mes_ano',
+            y='numero_de_corridas_rejeitadas',
+            text='numero_de_corridas_rejeitadas',
+            title='📊 Corridas rejeitadas por mês',
+            labels={"numero_de_corridas_rejeitadas": "Corridas Rejeitadas"},
+            text_auto=True
+        )
+        st.plotly_chart(fig_rejeitadas, use_container_width=True)
 
     if mostrar_completas:
-    mensal = df.groupby('mes_ano')['numero_de_corridas_completadas'].sum().reset_index()
-    mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
-    fig_completas = px.bar(
-        mensal,
-        x='mes_ano',
-        y='numero_de_corridas_completadas',
-        text='numero_de_corridas_completadas',
-        title='📊 Corridas completadas por mês',
-        labels={"numero_de_corridas_completadas": "Corridas Completadas"},
-        text_auto=True
-    )
-    st.plotly_chart(fig_completas, use_container_width=True)
+        mensal = df.groupby('mes_ano')['numero_de_corridas_completadas'].sum().reset_index()
+        mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+        fig_completas = px.bar(
+            mensal,
+            x='mes_ano',
+            y='numero_de_corridas_completadas',
+            text='numero_de_corridas_completadas',
+            title='📊 Corridas completadas por mês',
+            labels={"numero_de_corridas_completadas": "Corridas Completadas"},
+            text_auto=True
+        )
+        st.plotly_chart(fig_completas, use_container_width=True)
 
     # Gráfico diário de ofertadas
     mes_atual = pd.Timestamp.today().month
@@ -170,7 +170,6 @@ if modo == "📊 Indicadores Gerais":
     st.metric("🚗 Corridas ofertadas no mês", total_mes)
     st.plotly_chart(fig_dia, use_container_width=True)
 
-
 # Relatório de Alertas de Faltas
 if modo == "Alertas de Faltas":
     mensagens = gerar_alertas_de_faltas(df)
@@ -179,17 +178,17 @@ if modo == "Alertas de Faltas":
     else:
         st.success("✅ Nenhum entregador ativo com faltas consecutivas.")
 
-# --- RELATÓRIO CUSTOMIZADO --- #
+# Relatório Customizado
 if modo == "Relatório Customizado":
     st.header("Relatório Customizado do Entregador")
 
     entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
     entregador = st.selectbox(
-    "🔎 Selecione o entregador:",
-    options=[None] + entregadores_lista,
-    format_func=lambda x: "" if x is None else x,
-    key="select_custom"
-)
+        "🔎 Selecione o entregador:",
+        options=[None] + entregadores_lista,
+        format_func=lambda x: "" if x is None else x,
+        key="select_custom"
+    )
 
     # Filtro por subpraça
     subpracas = sorted(df["sub_praca"].dropna().unique())
