@@ -14,26 +14,12 @@ def tempo_para_segundos(t):
         return int(t) if isinstance(t, (int, float)) else 0
 
 def calcular_tempo_online(df_filtrado):
-    def tempo_str_para_segundos(tempo_str):
-        if pd.isnull(tempo_str):
-            return 0
-        h, m, s = map(int, str(tempo_str).split(':'))
-        return h*3600 + m*60 + s
-
-    df = df_filtrado.copy()
-    df['seg_online'] = df['tempo_disponivel_absoluto'].apply(tempo_str_para_segundos)
-    df['seg_periodo'] = df['duracao_do_periodo'].apply(tempo_str_para_segundos)
-
-    df_agrupado = (
-        df.groupby(['data_do_periodo', 'periodo', 'pessoa_entregadora'], as_index=False)
-        .agg({
-            'seg_online': 'sum',
-            'seg_periodo': 'first'
-        })
-    )
-
-    soma_online = df_agrupado['seg_online'].sum()
-    soma_periodo = df_agrupado['seg_periodo'].sum()
-    tempo_online_pct = (soma_online / soma_periodo) * 100 if soma_periodo > 0 else 0
+    if "tempo_disponivel_escalado" not in df_filtrado.columns:
+        return 0.0
+    df_valid = df_filtrado[df_filtrado["tempo_disponivel_escalado"].notnull()]
+    if df_valid.empty:
+        return 0.0
+    media_pct = df_valid["tempo_disponivel_escalado"].mean()
+    return round(media_pct / 100, 1)  # Ex: 9816 → 98.2%
 
     return round(tempo_online_pct, 1)
