@@ -1,4 +1,3 @@
-
 import streamlit as st
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
@@ -52,10 +51,10 @@ if modo == "📈 Apurador de Promoções":
     st.title("📈 Apurador de Promoções")
 
     df["data"] = pd.to_datetime(df["data"], errors="coerce")
-df["data_date"] = df["data"].dt.date
+    df["data_date"] = df["data"].dt.date
 
-df_promocoes, df_fases, df_criterios, df_faixas = carregar_promocoes()
-PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas)
+    df_promocoes, df_fases, df_criterios, df_faixas = carregar_promocoes()
+    PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas)
 
     nomes_promos = [p["nome"] for p in PROMOCOES]
     selecionada = st.selectbox("Selecione uma promoção:", nomes_promos)
@@ -93,7 +92,8 @@ PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas
         resultados = []
         for nome in df_turno["pessoa_entregadora"].dropna().unique():
             dados = df_turno[df_turno["pessoa_entregadora"] == nome]
-            if dados.empty: continue
+            if dados.empty:
+                continue
             tempo_pct = calcular_tempo_online(dados)
             ofertadas = dados["numero_de_corridas_ofertadas"].sum()
             aceitas = dados["numero_de_corridas_aceitas"].sum()
