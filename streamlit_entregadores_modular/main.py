@@ -4,11 +4,9 @@ from data_loader import carregar_dados
 from relatorios import (
     gerar_dados, gerar_simplicado, gerar_alertas_de_faltas, get_entregadores
 )
-from promocoes_loader import carregar_promocoes, estruturar_promocoes
-from utils import calcular_tempo_online
 import pandas as pd
-from datetime import datetime, time
 
+# Autenticação do usuário
 if "logado" not in st.session_state:
     st.session_state.logado = False
     st.session_state.usuario = ""
@@ -29,139 +27,192 @@ if not st.session_state.logado:
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
+# Menu lateral com novo modo
 modo = st.sidebar.radio("Escolha uma opção:", [
-    "📈 Apurador de Promoções",
     "📊 Indicadores Gerais",
     "Ver geral",
     "Simplificada (WhatsApp)",
     "Alertas de Faltas",
     "Relatório Customizado"
-], key="modo_radio")
+])
 
 df = carregar_dados()
 entregadores = get_entregadores(df)
 
+# Permissão de admin para atualizar dados
 nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
 if nivel == "admin":
     if st.button("🔄 Atualizar dados"):
         st.cache_data.clear()
         st.rerun()
 
-if modo == "📈 Apurador de Promoções":
-    st.title("📈 Apurador de Promoções")
-
-    # 👊 Conversão robusta de datas e colunas críticas
-    df["data"] = pd.to_datetime(df["data"].astype(str), errors="coerce").dt.tz_localize(None)
-    df["data_date"] = df["data"].dt.date
-    df["numero_de_corridas_completadas"] = pd.to_numeric(
-        df["numero_de_corridas_completadas"], errors="coerce"
-    ).fillna(0)
-
-    df_promocoes, df_fases, df_criterios, df_faixas = carregar_promocoes()
-    PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas)
-
-    nomes_promos = [p["nome"] for p in PROMOCOES]
-    selecionada = st.selectbox("Selecione uma promoção:", nomes_promos)
-    promo = next(p for p in PROMOCOES if p["nome"] == selecionada)
-
-    st.subheader(promo["nome"])
-    tipo = promo["tipo"]
-
-    if tipo == "fases":
-        resultados = []
-        for nome in df["pessoa_entregadora"].dropna().unique():
-            entregador_ok = True
-            total_por_fase = []
-            for fase in promo["fases"]:
-                inicio = datetime.combine(fase["inicio"], time.min)
-                fim = datetime.combine(fase["fim"], time.max)
-                df_fase = df[(df["data"] >= inicio) & (df["data"] <= fim)]
-                total = df_fase[df_fase["pessoa_entregadora"] == nome]["numero_de_corridas_completadas"].sum()
-                total_por_fase.append((fase["nome"], total))
-                if total < fase["min_rotas"]:
-                    entregador_ok = False
-            if entregador_ok:
-                total_geral = sum(t for _, t in total_por_fase)
-                resultados.append((nome, total_geral))
-
-        df_result = pd.DataFrame(resultados, columns=["Entregador", "Total de Rotas"]).sort_values(
-            by="Total de Rotas", ascending=False)
-        st.dataframe(df_result, use_container_width=True)
-
-    elif tipo == "por_hora":
-        turno = promo["turno"]
-        data = promo["data_inicio"]
-        req = promo["criterios"]
-        df_turno = df[(df["data"].dt.date == data) & (df["periodo"] == turno)]
-        resultados = []
-        for nome in df_turno["pessoa_entregadora"].dropna().unique():
-            dados = df_turno[df_turno["pessoa_entregadora"] == nome]
-            if dados.empty:
-                continue
-            tempo_pct = calcular_tempo_online(dados)
-            ofertadas = dados["numero_de_corridas_ofertadas"].sum()
-            aceitas = dados["numero_de_corridas_aceitas"].sum()
-            completas = dados["numero_de_corridas_completadas"].sum()
-            tx_aceitacao = aceitas / ofertadas if ofertadas else 0
-            tx_conclusao = completas / aceitas if aceitas else 0
-            elegivel = (
-                tempo_pct >= req["min_pct_online"] and
-                tx_aceitacao >= req["min_aceitacao"] and
-                tx_conclusao >= req["min_conclusao"]
-            )
-            if elegivel:
-                resultados.append((nome, completas))
-
-        df_result = pd.DataFrame(resultados, columns=["Entregador", "Total de Rotas"]).sort_values(
-            by="Total de Rotas", ascending=False)
-        st.dataframe(df_result, use_container_width=True)
-
-    elif tipo == "ranking":
-        # Definir período com margem
-        inicio_dt = datetime.combine(promo["data_inicio"], time.min)
-        fim_dt = datetime.combine(promo["data_fim"], time.max) + pd.Timedelta(seconds=1)
-
-        # Filtro robusto com between
-        df_rk = df[df["data"].between(inicio_dt, fim_dt)]
-
-        # DEBUG: ver se pegou o dia 15
-        tem_15 = df_rk["data"].dt.date.eq(datetime(2025, 7, 15).date()).any()
-        st.write("Dia 15 incluído no ranking?", tem_15)
-        st.write("Total linhas no ranking:", len(df_rk))
-
-        # Ranking
-        qtd = int(promo["ranking_top"])
-        ranking = (
-            df_rk.groupby("pessoa_entregadora")["numero_de_corridas_completadas"]
-            .sum()
-            .sort_values(ascending=False)
-            .head(qtd)
-            .reset_index()
+# Relatórios "Ver geral" e "Simplificada (WhatsApp)"
+if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
+    with st.form("formulario"):
+        entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
+        nome = st.selectbox(
+            "🔎 Selecione o entregador:",
+            options=[None] + entregadores_lista,
+            format_func=lambda x: "" if x is None else x,
+            key="select_entregador"
         )
 
-        st.dataframe(
-            ranking.rename(columns={
-                "pessoa_entregadora": "Entregador",
-                "numero_de_corridas_completadas": "Total de Rotas"
-            }),
-            use_container_width=True
+        if modo == "Simplificada (WhatsApp)":
+            col1, col2 = st.columns(2)
+            mes1 = col1.selectbox("1º Mês:", list(range(1, 13)), key="mes1")
+            ano1 = col2.selectbox("1º Ano:", sorted(df["ano"].unique(), reverse=True), key="ano1")
+            mes2 = col1.selectbox("2º Mês:", list(range(1, 13)), key="mes2")
+            ano2 = col2.selectbox("2º Ano:", sorted(df["ano"].unique(), reverse=True), key="ano2")
+
+        gerar = st.form_submit_button("🔍 Gerar relatório")
+
+    if gerar and nome:
+        with st.spinner("Gerando relatório..."):
+            if modo == "Ver geral":
+                texto = gerar_dados(nome, None, None, df[df["pessoa_entregadora"] == nome])
+                st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
+
+
+            elif modo == "Simplificada (WhatsApp)":
+                t1 = gerar_simplicado(nome, mes1, ano1, df)
+                t2 = gerar_simplicado(nome, mes2, ano2, df)
+                st.text_area("Resultado:", value="\n\n".join([t for t in [t1, t2] if t]), height=600)
+
+# Indicadores Gerais
+if modo == "📊 Indicadores Gerais":
+    import plotly.express as px
+
+@@ -123,31 +123,31 @@
+
+    if mostrar_rejeitadas:
+        mensal = df.groupby('mes_ano')['numero_de_corridas_rejeitadas'].sum().reset_index()
+    mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+    fig_rejeitadas = px.bar(
+        mensal,
+        x='mes_ano',
+        y='numero_de_corridas_rejeitadas',
+        text='numero_de_corridas_rejeitadas',
+        title='📊 Corridas rejeitadas por mês',
+        labels={"numero_de_corridas_rejeitadas": "Corridas Rejeitadas"},
+        text_auto=True
+    )
+    st.plotly_chart(fig_rejeitadas, use_container_width=True)
+        mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+        fig_rejeitadas = px.bar(
+            mensal,
+            x='mes_ano',
+            y='numero_de_corridas_rejeitadas',
+            text='numero_de_corridas_rejeitadas',
+            title='📊 Corridas rejeitadas por mês',
+            labels={"numero_de_corridas_rejeitadas": "Corridas Rejeitadas"},
+            text_auto=True
         )
+        st.plotly_chart(fig_rejeitadas, use_container_width=True)
 
-    elif tipo == "faixa_rotas":
-        inicio_dt = datetime.combine(promo["data_inicio"], time.min)
-        fim_dt = datetime.combine(promo["data_fim"], time.max)
-        df_per = df[(df["data"] >= inicio_dt) & (df["data"] <= fim_dt)]
-        resultados = []
-        for nome in df_per["pessoa_entregadora"].dropna().unique():
-            total = df_per[df_per["pessoa_entregadora"] == nome]["numero_de_corridas_completadas"].sum()
-            premio = 0
-            for faixa in promo["faixas"]:
-                if faixa["faixa_min"] <= total <= faixa["faixa_max"]:
-                    premio = faixa["valor_premio"]
-                    break
-            if premio:
-                resultados.append((nome, total, premio))
+    if mostrar_completas:
+    mensal = df.groupby('mes_ano')['numero_de_corridas_completadas'].sum().reset_index()
+    mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+    fig_completas = px.bar(
+        mensal,
+        x='mes_ano',
+        y='numero_de_corridas_completadas',
+        text='numero_de_corridas_completadas',
+        title='📊 Corridas completadas por mês',
+        labels={"numero_de_corridas_completadas": "Corridas Completadas"},
+        text_auto=True
+    )
+    st.plotly_chart(fig_completas, use_container_width=True)
+        mensal = df.groupby('mes_ano')['numero_de_corridas_completadas'].sum().reset_index()
+        mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+        fig_completas = px.bar(
+            mensal,
+            x='mes_ano',
+            y='numero_de_corridas_completadas',
+            text='numero_de_corridas_completadas',
+            title='📊 Corridas completadas por mês',
+            labels={"numero_de_corridas_completadas": "Corridas Completadas"},
+            text_auto=True
+        )
+        st.plotly_chart(fig_completas, use_container_width=True)
 
-        df_result = pd.DataFrame(resultados, columns=["Entregador", "Total de Rotas", "Valor do Prêmio"]).sort_values(
-            by="Total de Rotas", ascending=False)
-        st.dataframe(df_result, use_container_width=True)
+    # Gráfico diário de ofertadas
+    mes_atual = pd.Timestamp.today().month
+@@ -170,7 +170,6 @@
+    st.metric("🚗 Corridas ofertadas no mês", total_mes)
+    st.plotly_chart(fig_dia, use_container_width=True)
+
+
+# Relatório de Alertas de Faltas
+if modo == "Alertas de Faltas":
+    mensagens = gerar_alertas_de_faltas(df)
+@@ -179,64 +178,64 @@
+    else:
+        st.success("✅ Nenhum entregador ativo com faltas consecutivas.")
+
+# --- RELATÓRIO CUSTOMIZADO --- #
+# Relatório Customizado
+if modo == "Relatório Customizado":
+    st.header("Relatório Customizado do Entregador")
+
+    entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
+    entregador = st.selectbox(
+    "🔎 Selecione o entregador:",
+    options=[None] + entregadores_lista,
+    format_func=lambda x: "" if x is None else x,
+    key="select_custom"
+)
+        "🔎 Selecione o entregador:",
+        options=[None] + entregadores_lista,
+        format_func=lambda x: "" if x is None else x,
+        key="select_custom"
+    )
+
+    # Filtro por subpraça
+    subpracas = sorted(df["sub_praca"].dropna().unique())
+    filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
+
+    # Filtro por turno (periodo)
+    turnos = sorted(df["periodo"].dropna().unique())
+    filtro_turno = st.multiselect("Filtrar por turno:", turnos)
+
+    # Garante datas no formato correto
+    df['data_do_periodo'] = pd.to_datetime(df['data_do_periodo'])
+    df['data'] = df['data_do_periodo'].dt.date
+
+    # Filtro de datas
+    tipo_periodo = st.radio("Como deseja escolher as datas?", ("Período contínuo", "Dias específicos"))
+
+    dias_escolhidos = []
+    if tipo_periodo == "Período contínuo":
+        data_min = df["data"].min()
+        data_max = df["data"].max()
+        periodo = st.date_input("Selecione o intervalo de datas:", [data_min, data_max], format="DD/MM/YYYY")
+        if isinstance(periodo, (list, tuple)):
+            if len(periodo) == 2:
+                dias_escolhidos = list(pd.date_range(start=periodo[0], end=periodo[1]).date)
+            elif len(periodo) == 1:
+                dias_escolhidos = [periodo[0]]
+        elif isinstance(periodo, pd.Timestamp):
+            dias_escolhidos = [periodo]
+    else:
+        dias_opcoes = sorted(df["data"].unique())
+        dias_escolhidos = st.multiselect(
+            "Selecione os dias desejados:",
+            dias_opcoes,
+            format_func=lambda x: x.strftime("%d/%m/%Y")
+        )
+        st.caption("Dica: Para escolher vários dias, segure Ctrl (ou Command no Mac) ao clicar.")
+
+    gerar_custom = st.button("Gerar relatório customizado")
+
+    if gerar_custom and entregador:
+        df_filt = df[df["pessoa_entregadora"] == entregador]
+        if filtro_subpraca:
+            df_filt = df_filt[df_filt["sub_praca"].isin(filtro_subpraca)]
+        if filtro_turno:
+            df_filt = df_filt[df_filt["periodo"].isin(filtro_turno)]
+        if dias_escolhidos:
+            df_filt = df_filt[df_filt["data"].isin(dias_escolhidos)]
+
+        texto = gerar_dados(entregador, None, None, df_filt)
+        st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
