@@ -55,7 +55,7 @@ if modo == "📈 Apurador de Promoções":
 df["data_date"] = df["data"].dt.date
 
 df_promocoes, df_fases, df_criterios, df_faixas = carregar_promocoes()
-    PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas)
+PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas)
 
     nomes_promos = [p["nome"] for p in PROMOCOES]
     selecionada = st.selectbox("Selecione uma promoção:", nomes_promos)
