@@ -8,6 +8,7 @@ from relatorios import (
 from promocoes_loader import carregar_promocoes, estruturar_promocoes
 from utils import calcular_tempo_online
 import pandas as pd
+from datetime import datetime, time
 
 # Autenticação
 if "logado" not in st.session_state:
@@ -62,27 +63,34 @@ if modo == "📈 Apurador de Promoções":
     tipo = promo["tipo"]
 
     if tipo == "fases":
-        resultados = {}
-        for fase in promo["fases"]:
-            df_fase = df[(df["data"] >= fase["inicio"]) & (df["data"] <= fase["fim"])]
-            for nome in df_fase["pessoa_entregadora"].dropna().unique():
+        resultados = []
+        for nome in df["pessoa_entregadora"].dropna().unique():
+            entregador_ok = True
+            total_por_fase = []
+            for fase in promo["fases"]:
+                df_fase = df[(df["data"] >= fase["inicio"]) & (df["data"] <= fase["fim"])]
                 total = df_fase[df_fase["pessoa_entregadora"] == nome]["numero_de_corridas_completadas"].sum()
-                if nome not in resultados:
-                    resultados[nome] = []
-                resultados[nome].append((fase["nome"], total >= fase["min_rotas"], int(total)))
+                total_por_fase.append((fase["nome"], total))
+                if total < fase["min_rotas"]:
+                    entregador_ok = False
+            if entregador_ok:
+                total_geral = sum(t for _, t in total_por_fase)
+                resultados.append((nome, total_geral, total_por_fase))
 
-        for nome, fases in resultados.items():
-            if all(ok for _, ok, _ in fases):
-                texto = f"✅ {nome}"
-                for fase, ok, total in fases:
-                    texto += f" | {fase}: {total} rotas"
-                st.text(texto)
+        # Ordenar por total de rotas
+        resultados.sort(key=lambda x: x[1], reverse=True)
+        for nome, total, fases in resultados:
+            texto = f"✅ {nome} – Total: {total} rotas"
+            for fase_nome, fase_total in fases:
+                texto += f" | {fase_nome}: {fase_total}"
+            st.text(texto)
 
     elif tipo == "por_hora":
         turno = promo["turno"]
         data = promo["data_inicio"]
         req = promo["criterios"]
         df_turno = df[(df["data"] == data) & (df["periodo"] == turno)]
+        resultados = []
         for nome in df_turno["pessoa_entregadora"].dropna().unique():
             dados = df_turno[df_turno["pessoa_entregadora"] == nome]
             if dados.empty: continue
@@ -98,12 +106,19 @@ if modo == "📈 Apurador de Promoções":
                 tx_conclusao >= req["min_conclusao"]
             )
             if elegivel:
-                st.success(f"✅ {nome} – Online: {tempo_pct*100:.1f}%, Aceites: {tx_aceitacao*100:.1f}%, Conclusão: {tx_conclusao*100:.1f}%")
+                resultados.append((nome, completas, tempo_pct, tx_aceitacao, tx_conclusao))
+
+        resultados.sort(key=lambda x: x[1], reverse=True)
+        for nome, completas, tempo_pct, tx_aceitacao, tx_conclusao in resultados:
+            st.success(f"✅ {nome} – {completas} rotas | Online: {tempo_pct*100:.1f}%, Aceites: {tx_aceitacao*100:.1f}%, Conclusão: {tx_conclusao*100:.1f}%")
 
     elif tipo == "ranking":
         inicio, fim = promo["data_inicio"], promo["data_fim"]
+        # Garantir que o último dia seja incluído corretamente
+        inicio_dt = datetime.combine(inicio, time.min)
+        fim_dt = datetime.combine(fim, time.max)
+        df_rk = df[(df["data"] >= inicio_dt) & (df["data"] <= fim_dt)]
         qtd = int(promo["ranking_top"])
-        df_rk = df[(df["data"] >= inicio) & (df["data"] <= fim)]
         ranking = (
             df_rk.groupby("pessoa_entregadora")["numero_de_corridas_completadas"]
             .sum()
@@ -115,7 +130,10 @@ if modo == "📈 Apurador de Promoções":
 
     elif tipo == "faixa_rotas":
         inicio, fim = promo["data_inicio"], promo["data_fim"]
-        df_per = df[(df["data"] >= inicio) & (df["data"] <= fim)]
+        inicio_dt = datetime.combine(inicio, time.min)
+        fim_dt = datetime.combine(fim, time.max)
+        df_per = df[(df["data"] >= inicio_dt) & (df["data"] <= fim_dt)]
+        resultados = []
         for nome in df_per["pessoa_entregadora"].dropna().unique():
             total = df_per[df_per["pessoa_entregadora"] == nome]["numero_de_corridas_completadas"].sum()
             premio = 0
@@ -124,4 +142,8 @@ if modo == "📈 Apurador de Promoções":
                     premio = faixa["valor_premio"]
                     break
             if premio:
-                st.success(f"🏅 {nome} – {int(total)} rotas → R${premio}")
+                resultados.append((nome, total, premio))
+
+        resultados.sort(key=lambda x: x[1], reverse=True)
+        for nome, total, premio in resultados:
+            st.success(f"🏅 {nome} – {int(total)} rotas → R${premio}")
