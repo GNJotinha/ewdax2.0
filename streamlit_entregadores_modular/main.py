@@ -54,72 +54,74 @@ if modo == "📈 Apurador de Promoções":
     df_promocoes, df_fases, df_criterios, df_faixas = carregar_promocoes()
     PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas)
 
-    for promo in PROMOCOES:
-        st.subheader(promo["nome"])
-        tipo = promo["tipo"]
+    nomes_promos = [p["nome"] for p in PROMOCOES]
+    selecionada = st.selectbox("Selecione uma promoção:", nomes_promos)
+    promo = next(p for p in PROMOCOES if p["nome"] == selecionada)
 
-        if tipo == "fases":
-            resultados = {}
-            for fase in promo["fases"]:
-                df_fase = df[(df["data"] >= fase["inicio"]) & (df["data"] <= fase["fim"])]
-                for nome in df_fase["pessoa_entregadora"].dropna().unique():
-                    total = df_fase[df_fase["pessoa_entregadora"] == nome]["numero_de_corridas_completadas"].sum()
-                    if nome not in resultados:
-                        resultados[nome] = []
-                    resultados[nome].append((fase["nome"], total >= fase["min_rotas"], int(total)))
-            for nome, fases in resultados.items():
-                texto = f"🔹 {nome}"
+    st.subheader(promo["nome"])
+    tipo = promo["tipo"]
+
+    if tipo == "fases":
+        resultados = {}
+        for fase in promo["fases"]:
+            df_fase = df[(df["data"] >= fase["inicio"]) & (df["data"] <= fase["fim"])]
+            for nome in df_fase["pessoa_entregadora"].dropna().unique():
+                total = df_fase[df_fase["pessoa_entregadora"] == nome]["numero_de_corridas_completadas"].sum()
+                if nome not in resultados:
+                    resultados[nome] = []
+                resultados[nome].append((fase["nome"], total >= fase["min_rotas"], int(total)))
+
+        for nome, fases in resultados.items():
+            if all(ok for _, ok, _ in fases):
+                texto = f"✅ {nome}"
                 for fase, ok, total in fases:
-                    status = "✔" if ok else "❌"
-                    texto += f" | {fase}: {total} rotas {status}"
+                    texto += f" | {fase}: {total} rotas"
                 st.text(texto)
 
-        elif tipo == "por_hora":
-            turno = promo["turno"]
-            data = promo["data_inicio"]
-            req = promo["criterios"]
-            df_turno = df[(df["data"] == data) & (df["periodo"] == turno)]
-            for nome in df_turno["pessoa_entregadora"].dropna().unique():
-                dados = df_turno[df_turno["pessoa_entregadora"] == nome]
-                if dados.empty: continue
-                tempo_pct = calcular_tempo_online(dados)
-                ofertadas = dados["numero_de_corridas_ofertadas"].sum()
-                aceitas = dados["numero_de_corridas_aceitas"].sum()
-                completas = dados["numero_de_corridas_completadas"].sum()
-                tx_aceitacao = aceitas / ofertadas if ofertadas else 0
-                tx_conclusao = completas / aceitas if aceitas else 0
-                elegivel = (
-                    tempo_pct >= req["min_pct_online"] and
-                    tx_aceitacao >= req["min_aceitacao"] and
-                    tx_conclusao >= req["min_conclusao"]
-                )
-                status = "✅" if elegivel else "❌"
-                st.text(f"{status} {nome} – Online: {tempo_pct*100:.1f}%, Aceites: {tx_aceitacao*100:.1f}%, Conclusão: {tx_conclusao*100:.1f}%")
-
-        elif tipo == "ranking":
-            inicio, fim = promo["data_inicio"], promo["data_fim"]
-            qtd = int(promo["ranking_top"])
-            df_rk = df[(df["data"] >= inicio) & (df["data"] <= fim)]
-            ranking = (
-                df_rk.groupby("pessoa_entregadora")["numero_de_corridas_completadas"]
-                .sum()
-                .sort_values(ascending=False)
-                .head(qtd)
-                .reset_index()
+    elif tipo == "por_hora":
+        turno = promo["turno"]
+        data = promo["data_inicio"]
+        req = promo["criterios"]
+        df_turno = df[(df["data"] == data) & (df["periodo"] == turno)]
+        for nome in df_turno["pessoa_entregadora"].dropna().unique():
+            dados = df_turno[df_turno["pessoa_entregadora"] == nome]
+            if dados.empty: continue
+            tempo_pct = calcular_tempo_online(dados)
+            ofertadas = dados["numero_de_corridas_ofertadas"].sum()
+            aceitas = dados["numero_de_corridas_aceitas"].sum()
+            completas = dados["numero_de_corridas_completadas"].sum()
+            tx_aceitacao = aceitas / ofertadas if ofertadas else 0
+            tx_conclusao = completas / aceitas if aceitas else 0
+            elegivel = (
+                tempo_pct >= req["min_pct_online"] and
+                tx_aceitacao >= req["min_aceitacao"] and
+                tx_conclusao >= req["min_conclusao"]
             )
-            st.dataframe(ranking, use_container_width=True)
+            if elegivel:
+                st.success(f"✅ {nome} – Online: {tempo_pct*100:.1f}%, Aceites: {tx_aceitacao*100:.1f}%, Conclusão: {tx_conclusao*100:.1f}%")
 
-        elif tipo == "faixa_rotas":
-            inicio, fim = promo["data_inicio"], promo["data_fim"]
-            df_per = df[(df["data"] >= inicio) & (df["data"] <= fim)]
-            for nome in df_per["pessoa_entregadora"].dropna().unique():
-                total = df_per[df_per["pessoa_entregadora"] == nome]["numero_de_corridas_completadas"].sum()
-                premio = 0
-                for faixa in promo["faixas"]:
-                    if faixa["faixa_min"] <= total <= faixa["faixa_max"]:
-                        premio = faixa["valor_premio"]
-                        break
-                if premio:
-                    st.success(f"🏅 {nome} – {int(total)} rotas → R${premio}")
-                else:
-                    st.warning(f"{nome} – {int(total)} rotas → Não atingiu nenhuma faixa.")
+    elif tipo == "ranking":
+        inicio, fim = promo["data_inicio"], promo["data_fim"]
+        qtd = int(promo["ranking_top"])
+        df_rk = df[(df["data"] >= inicio) & (df["data"] <= fim)]
+        ranking = (
+            df_rk.groupby("pessoa_entregadora")["numero_de_corridas_completadas"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(qtd)
+            .reset_index()
+        )
+        st.dataframe(ranking, use_container_width=True)
+
+    elif tipo == "faixa_rotas":
+        inicio, fim = promo["data_inicio"], promo["data_fim"]
+        df_per = df[(df["data"] >= inicio) & (df["data"] <= fim)]
+        for nome in df_per["pessoa_entregadora"].dropna().unique():
+            total = df_per[df_per["pessoa_entregadora"] == nome]["numero_de_corridas_completadas"].sum()
+            premio = 0
+            for faixa in promo["faixas"]:
+                if faixa["faixa_min"] <= total <= faixa["faixa_max"]:
+                    premio = faixa["valor_premio"]
+                    break
+            if premio:
+                st.success(f"🏅 {nome} – {int(total)} rotas → R${premio}")
