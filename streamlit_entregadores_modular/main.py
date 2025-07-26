@@ -27,27 +27,16 @@ if not st.session_state.logado:
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
-# Menu lateral com novo modo
+
 # Menu lateral organizado por seções
-modo = None
-st.sidebar.markdown("## Menu do Painel")
+modo = st.sidebar.radio("Escolha uma opção:", [
+    "📊 Indicadores Gerais",
+    "Ver geral",
+    "Simplificada (WhatsApp)",
+    "Alertas de Faltas",
+    "Relatório Customizado"
+])
 
-with st.sidebar:
-    with st.expander("Indicadores"):
-        if st.button("Indicadores Gerais"):
-            modo = "Indicadores Gerais"
-
-    with st.expander("Relatórios"):
-        if st.button("Ver geral"):
-            modo = "Ver geral"
-        if st.button("Simplificada (WhatsApp)"):
-            modo = "Simplificada (WhatsApp)"
-        if st.button("Relatório Customizado"):
-            modo = "Relatório Customizado"
-
-    with st.expander("Alertas"):
-        if st.button("Alertas de Faltas"):
-            modo = "Alertas de Faltas"
 
 # Para manter compatibilidade com o restante do código
 if not modo:
