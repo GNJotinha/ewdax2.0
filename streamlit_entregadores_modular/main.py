@@ -1,4 +1,3 @@
-
 import streamlit as st
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
@@ -52,6 +51,9 @@ if nivel == "admin":
 if modo == "📈 Apurador de Promoções":
     st.title("📈 Apurador de Promoções")
 
+    # 🛠️ Corrigindo tipo da coluna de data
+    df["data"] = pd.to_datetime(df["data"], errors="coerce")
+
     df_promocoes, df_fases, df_criterios, df_faixas = carregar_promocoes()
     PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas)
 
@@ -77,7 +79,6 @@ if modo == "📈 Apurador de Promoções":
                 total_geral = sum(t for _, t in total_por_fase)
                 resultados.append((nome, total_geral, total_por_fase))
 
-        # Ordenar por total de rotas
         resultados.sort(key=lambda x: x[1], reverse=True)
         for nome, total, fases in resultados:
             texto = f"✅ {nome} – Total: {total} rotas"
@@ -89,7 +90,7 @@ if modo == "📈 Apurador de Promoções":
         turno = promo["turno"]
         data = promo["data_inicio"]
         req = promo["criterios"]
-        df_turno = df[(df["data"] == data) & (df["periodo"] == turno)]
+        df_turno = df[(df["data"].dt.date == data) & (df["periodo"] == turno)]
         resultados = []
         for nome in df_turno["pessoa_entregadora"].dropna().unique():
             dados = df_turno[df_turno["pessoa_entregadora"] == nome]
@@ -114,7 +115,6 @@ if modo == "📈 Apurador de Promoções":
 
     elif tipo == "ranking":
         inicio, fim = promo["data_inicio"], promo["data_fim"]
-        # Garantir que o último dia seja incluído corretamente
         inicio_dt = datetime.combine(inicio, time.min)
         fim_dt = datetime.combine(fim, time.max)
         df_rk = df[(df["data"] >= inicio_dt) & (df["data"] <= fim_dt)]
