@@ -9,6 +9,7 @@ from utils import calcular_tempo_online
 import pandas as pd
 from datetime import datetime, time
 
+# Autenticação
 if "logado" not in st.session_state:
     st.session_state.logado = False
     st.session_state.usuario = ""
@@ -26,6 +27,7 @@ if not st.session_state.logado:
             st.error("Usuário ou senha incorretos")
     st.stop()
 
+# Página principal
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
@@ -47,6 +49,7 @@ if nivel == "admin":
         st.cache_data.clear()
         st.rerun()
 
+# Modo de Apurador de Promoções
 if modo == "📈 Apurador de Promoções":
     st.title("📈 Apurador de Promoções")
 
@@ -116,8 +119,21 @@ if modo == "📈 Apurador de Promoções":
         inicio, fim = promo["data_inicio"], promo["data_fim"]
         inicio_dt = datetime.combine(inicio, time.min)
         fim_dt = datetime.combine(fim, time.max)
+
+        # ✅ Checagem da última data carregada
+        ultima_data = df["data_date"].max()
+        st.info(f"📅 Último dia nos dados: {ultima_data}")
+
+        if ultima_data < fim:
+            st.warning(
+                f"⚠️ Os dados vão até {ultima_data}, mas a promoção termina em {fim}. "
+                "Pode haver entregadores com corridas no último dia que não foram incluídas."
+            )
+
+        # Apuração do ranking com base no período
         df_rk = df[(df["data_date"] >= inicio) & (df["data_date"] <= fim)]
         qtd = int(promo["ranking_top"])
+
         ranking = (
             df_rk.groupby("pessoa_entregadora")["numero_de_corridas_completadas"]
             .sum()
@@ -125,10 +141,14 @@ if modo == "📈 Apurador de Promoções":
             .head(qtd)
             .reset_index()
         )
-        st.dataframe(ranking.rename(columns={
-            "pessoa_entregadora": "Entregador",
-            "numero_de_corridas_completadas": "Total de Rotas"
-        }), use_container_width=True)
+
+        st.dataframe(
+            ranking.rename(columns={
+                "pessoa_entregadora": "Entregador",
+                "numero_de_corridas_completadas": "Total de Rotas"
+            }),
+            use_container_width=True
+        )
 
     elif tipo == "faixa_rotas":
         inicio, fim = promo["data_inicio"], promo["data_fim"]
