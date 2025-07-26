@@ -121,7 +121,6 @@ if modo == "📈 Apurador de Promoções":
         inicio_dt = datetime.combine(inicio, time.min)
         fim_dt = datetime.combine(fim, time.max)
 
-        # Verifica última data dos dados
         ultima_data = df["data"].max()
         st.info(f"📅 Último dia nos dados: {ultima_data.date()}")
 
@@ -131,7 +130,7 @@ if modo == "📈 Apurador de Promoções":
                 "Pode haver entregadores com corridas no último dia que não foram incluídas."
             )
 
-        # Mostrar corridas do Cesar no dia 15
+        # Verificar corridas do Cesar no dia 15
         dia_15_ini = datetime(2025, 7, 15, 0, 0)
         dia_15_fim = datetime(2025, 7, 15, 23, 59, 59)
         cesar_15 = df[(df["pessoa_entregadora"] == "Cesar Barbosa Dos Reis") &
@@ -139,8 +138,13 @@ if modo == "📈 Apurador de Promoções":
         total_cesar_15 = cesar_15["numero_de_corridas_completadas"].sum()
         st.info(f"📌 Cesar Barbosa Dos Reis fez {total_cesar_15} corridas no dia 15.")
 
-        # ✅ CORRETO: filtro com datetime completo
+        # ✅ Filtro correto com datetime
         df_rk = df[(df["data"] >= inicio_dt) & (df["data"] <= fim_dt)]
+
+        # 🔍 Debug
+        st.write("Qtd de linhas no ranking dataframe:", len(df_rk))
+        st.write("Tem dia 15 no ranking?", df_rk["data"].dt.date.eq(datetime(2025, 7, 15).date()).any())
+
         qtd = int(promo["ranking_top"])
 
         ranking = (
