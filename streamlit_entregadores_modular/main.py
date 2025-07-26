@@ -50,8 +50,11 @@ if nivel == "admin":
 if modo == "📈 Apurador de Promoções":
     st.title("📈 Apurador de Promoções")
 
-    df["data"] = pd.to_datetime(df["data"], errors="coerce")
+    df["data"] = pd.to_datetime(df["data"], errors="coerce").dt.tz_localize(None)
     df["data_date"] = df["data"].dt.date
+    df["numero_de_corridas_completadas"] = pd.to_numeric(
+        df["numero_de_corridas_completadas"], errors="coerce"
+    ).fillna(0)
 
     df_promocoes, df_fases, df_criterios, df_faixas = carregar_promocoes()
     PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas)
@@ -113,10 +116,15 @@ if modo == "📈 Apurador de Promoções":
         st.dataframe(df_result, use_container_width=True)
 
     elif tipo == "ranking":
-        inicio, fim = promo["data_inicio"], promo["data_fim"]
-        inicio_dt = datetime.combine(inicio, time.min)
-        fim_dt = datetime.combine(fim, time.max)
-        df_rk = df[(df["data_date"] >= inicio) & (df["data_date"] <= fim)]
+        inicio_dt = datetime.combine(promo["data_inicio"], time.min)
+        fim_dt = datetime.combine(promo["data_fim"], time.max)
+
+        df_rk = df[(df["data"] >= inicio_dt) & (df["data"] <= fim_dt)]
+
+        # Debug opcional
+        tem_15 = df_rk["data"].dt.date.eq(datetime(2025, 7, 15).date()).any()
+        st.write("Dia 15 incluído no ranking?", tem_15)
+
         qtd = int(promo["ranking_top"])
         ranking = (
             df_rk.groupby("pessoa_entregadora")["numero_de_corridas_completadas"]
@@ -125,15 +133,18 @@ if modo == "📈 Apurador de Promoções":
             .head(qtd)
             .reset_index()
         )
-        st.dataframe(ranking.rename(columns={
-            "pessoa_entregadora": "Entregador",
-            "numero_de_corridas_completadas": "Total de Rotas"
-        }), use_container_width=True)
+
+        st.dataframe(
+            ranking.rename(columns={
+                "pessoa_entregadora": "Entregador",
+                "numero_de_corridas_completadas": "Total de Rotas"
+            }),
+            use_container_width=True
+        )
 
     elif tipo == "faixa_rotas":
-        inicio, fim = promo["data_inicio"], promo["data_fim"]
-        inicio_dt = datetime.combine(inicio, time.min)
-        fim_dt = datetime.combine(fim, time.max)
+        inicio_dt = datetime.combine(promo["data_inicio"], time.min)
+        fim_dt = datetime.combine(promo["data_fim"], time.max)
         df_per = df[(df["data"] >= inicio_dt) & (df["data"] <= fim_dt)]
         resultados = []
         for nome in df_per["pessoa_entregadora"].dropna().unique():
