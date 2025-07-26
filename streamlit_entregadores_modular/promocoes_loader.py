@@ -1,6 +1,14 @@
 import pandas as pd
+import gdown
 
-def carregar_promocoes(path="Promocoes.xlsx"):
+def carregar_promocoes(path=None):
+    if not path:
+        # ID do seu arquivo no Google Drive (já exportado como .xlsx)
+        file_id = "1tvke4iQnVmbJO34RtGYfaI_KzliSumWH"
+        url = f"https://drive.google.com/uc?id={file_id}"
+        path = "Promocoes.xlsx"
+        gdown.download(url, path, quiet=False)
+
     promocoes = pd.read_excel(path, sheet_name="promocoes")
     fases = pd.read_excel(path, sheet_name="fases")
     criterios = pd.read_excel(path, sheet_name="criterios_por_hora")
