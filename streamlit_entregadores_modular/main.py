@@ -50,7 +50,8 @@ if nivel == "admin":
 if modo == "📈 Apurador de Promoções":
     st.title("📈 Apurador de Promoções")
 
-    df["data"] = pd.to_datetime(df["data"], errors="coerce").dt.tz_localize(None)
+    # 👊 Conversão robusta de datas e colunas críticas
+    df["data"] = pd.to_datetime(df["data"].astype(str), errors="coerce").dt.tz_localize(None)
     df["data_date"] = df["data"].dt.date
     df["numero_de_corridas_completadas"] = pd.to_numeric(
         df["numero_de_corridas_completadas"], errors="coerce"
@@ -116,15 +117,19 @@ if modo == "📈 Apurador de Promoções":
         st.dataframe(df_result, use_container_width=True)
 
     elif tipo == "ranking":
+        # Definir período com margem
         inicio_dt = datetime.combine(promo["data_inicio"], time.min)
-        fim_dt = datetime.combine(promo["data_fim"], time.max)
+        fim_dt = datetime.combine(promo["data_fim"], time.max) + pd.Timedelta(seconds=1)
 
-        df_rk = df[(df["data"] >= inicio_dt) & (df["data"] <= fim_dt)]
+        # Filtro robusto com between
+        df_rk = df[df["data"].between(inicio_dt, fim_dt)]
 
-        # Debug opcional
+        # DEBUG: ver se pegou o dia 15
         tem_15 = df_rk["data"].dt.date.eq(datetime(2025, 7, 15).date()).any()
         st.write("Dia 15 incluído no ranking?", tem_15)
+        st.write("Total linhas no ranking:", len(df_rk))
 
+        # Ranking
         qtd = int(promo["ranking_top"])
         ranking = (
             df_rk.groupby("pessoa_entregadora")["numero_de_corridas_completadas"]
