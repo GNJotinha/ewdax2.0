@@ -149,26 +149,50 @@ if modo == "📊 Indicadores Gerais":
         )
         st.plotly_chart(fig_completas, use_container_width=True)
 
-    # Gráfico diário de ofertadas
+    # Gráfico diário (linha) baseado na primeira métrica selecionada
     mes_atual = pd.Timestamp.today().month
     ano_atual = pd.Timestamp.today().year
     df_mes = df[(df['data'].dt.month == mes_atual) & (df['data'].dt.year == ano_atual)]
-    por_dia = df_mes.groupby(df_mes['data'].dt.day)['numero_de_corridas_ofertadas'].sum().reset_index()
-    por_dia.rename(columns={'data': 'dia'}, inplace=True)
 
-    fig_dia = px.line(
-        por_dia,
-        x='dia',
-        y='numero_de_corridas_ofertadas',
-        markers=True,
-        title='📈 Corridas ofertadas por dia (mês atual)',
-        labels={'dia': 'Dia', 'numero_de_corridas_ofertadas': 'Corridas'}
-    )
-    fig_dia.update_traces(line_shape='spline', line_color='royalblue')
+    coluna_dia = None
+    titulo_dia = None
+    label_dia = None
 
-    total_mes = int(por_dia['numero_de_corridas_ofertadas'].sum())
-    st.metric("🚗 Corridas ofertadas no mês", total_mes)
-    st.plotly_chart(fig_dia, use_container_width=True)
+    if mostrar_ofertadas:
+        coluna_dia = 'numero_de_corridas_ofertadas'
+        titulo_dia = '📈 Corridas ofertadas por dia (mês atual)'
+        label_dia = 'Corridas Ofertadas'
+    elif mostrar_aceitas:
+        coluna_dia = 'numero_de_corridas_aceitas'
+        titulo_dia = '📈 Corridas aceitas por dia (mês atual)'
+        label_dia = 'Corridas Aceitas'
+    elif mostrar_rejeitadas:
+        coluna_dia = 'numero_de_corridas_rejeitadas'
+        titulo_dia = '📈 Corridas rejeitadas por dia (mês atual)'
+        label_dia = 'Corridas Rejeitadas'
+    elif mostrar_completas:
+        coluna_dia = 'numero_de_corridas_completadas'
+        titulo_dia = '📈 Corridas completadas por dia (mês atual)'
+        label_dia = 'Corridas Completadas'
+
+    if coluna_dia:
+        por_dia = df_mes.groupby(df_mes['data'].dt.day)[coluna_dia].sum().reset_index()
+        por_dia.rename(columns={'data': 'dia'}, inplace=True)
+
+        fig_dia = px.line(
+            por_dia,
+            x='dia',
+            y=coluna_dia,
+            markers=True,
+            title=titulo_dia,
+            labels={'dia': 'Dia', coluna_dia: label_dia}
+        )
+        fig_dia.update_traces(line_shape='spline', line_color='royalblue')
+
+        total_mes = int(por_dia[coluna_dia].sum())
+        st.metric(f"🚗 {label_dia} no mês", total_mes)
+        st.plotly_chart(fig_dia, use_container_width=True)
+
 
 # Relatório de Alertas de Faltas
 if modo == "Alertas de Faltas":
