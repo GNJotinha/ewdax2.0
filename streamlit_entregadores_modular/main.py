@@ -53,6 +53,7 @@ if nivel == "admin":
 if modo == "📈 Apurador de Promoções":
     st.title("📈 Apurador de Promoções")
 
+    # Correção: Converter data e criar coluna data_date corretamente
     df["data"] = pd.to_datetime(df["data"], errors="coerce")
     df["data_date"] = df["data"].dt.date
 
@@ -129,6 +130,12 @@ if modo == "📈 Apurador de Promoções":
                 f"⚠️ Os dados vão até {ultima_data}, mas a promoção termina em {fim}. "
                 "Pode haver entregadores com corridas no último dia que não foram incluídas."
             )
+
+        # 🔍 Verificação específica do entregador no dia 15
+        dia_15 = datetime(2025, 7, 15).date()
+        cesar_15 = df[(df["data_date"] == dia_15) & (df["pessoa_entregadora"] == "Cesar Barbosa Dos Reis")]
+        total_cesar_15 = cesar_15["numero_de_corridas_completadas"].sum()
+        st.info(f"🧪 Cesar Barbosa Dos Reis fez {total_cesar_15} corridas no dia 15.")
 
         # Apuração do ranking com base no período
         df_rk = df[(df["data_date"] >= inicio) & (df["data_date"] <= fim)]
