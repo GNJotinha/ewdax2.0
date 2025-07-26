@@ -69,7 +69,9 @@ if modo == "📈 Apurador de Promoções":
             entregador_ok = True
             total_por_fase = []
             for fase in promo["fases"]:
-                df_fase = df[(df["data"] >= fase["inicio"]) & (df["data"] <= fase["fim"])]
+                inicio = datetime.combine(fase["inicio"], time.min)
+                fim = datetime.combine(fase["fim"], time.max)
+                df_fase = df[(df["data"] >= inicio) & (df["data"] <= fim)]
                 total = df_fase[df_fase["pessoa_entregadora"] == nome]["numero_de_corridas_completadas"].sum()
                 total_por_fase.append((fase["nome"], total))
                 if total < fase["min_rotas"]:
