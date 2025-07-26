@@ -52,6 +52,7 @@ if modo == "📈 Apurador de Promoções":
     st.title("📈 Apurador de Promoções")
 
     df["data"] = pd.to_datetime(df["data"], errors="coerce")
+df["data_date"] = df["data"].dt.date
 
     df_promocoes, df_fases, df_criterios, df_faixas = carregar_promocoes()
     PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas)
@@ -115,7 +116,7 @@ if modo == "📈 Apurador de Promoções":
         inicio, fim = promo["data_inicio"], promo["data_fim"]
         inicio_dt = datetime.combine(inicio, time.min)
         fim_dt = datetime.combine(fim, time.max)
-        df_rk = df[(df["data"] >= inicio_dt) & (df["data"] <= fim_dt)]
+        df_rk = df[(df["data_date"] >= inicio) & (df["data_date"] <= fim)]
         qtd = int(promo["ranking_top"])
         ranking = (
             df_rk.groupby("pessoa_entregadora")["numero_de_corridas_completadas"]
