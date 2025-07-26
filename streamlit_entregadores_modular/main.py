@@ -60,4 +60,121 @@ if modo == "📈 Apurador de Promoções":
     df_promocoes, df_fases, df_criterios, df_faixas = carregar_promocoes()
     PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas)
 
-    nomes_promos = [p["nome"] for p in P]()_
+    nomes_promos = [p["nome"] for p in PROMOCOES]
+    selecionada = st.selectbox("Selecione uma promoção:", nomes_promos)
+    promo = next(p for p in PROMOCOES if p["nome"] == selecionada)
+
+    st.subheader(promo["nome"])
+    tipo = promo["tipo"]
+
+    if tipo == "fases":
+        resultados = []
+        for nome in df["pessoa_entregadora"].dropna().unique():
+            entregador_ok = True
+            total_por_fase = []
+            for fase in promo["fases"]:
+                inicio = datetime.combine(fase["inicio"], time.min)
+                fim = datetime.combine(fase["fim"], time.max)
+                df_fase = df[(df["data"] >= inicio) & (df["data"] <= fim)]
+                total = df_fase[df_fase["pessoa_entregadora"] == nome]["numero_de_corridas_completadas"].sum()
+                total_por_fase.append((fase["nome"], total))
+                if total < fase["min_rotas"]:
+                    entregador_ok = False
+            if entregador_ok:
+                total_geral = sum(t for _, t in total_por_fase)
+                resultados.append((nome, total_geral))
+
+        df_result = pd.DataFrame(resultados, columns=["Entregador", "Total de Rotas"]).sort_values(
+            by="Total de Rotas", ascending=False)
+        st.dataframe(df_result, use_container_width=True)
+
+    elif tipo == "por_hora":
+        turno = promo["turno"]
+        data = promo["data_inicio"]
+        req = promo["criterios"]
+        df_turno = df[(df["data"].dt.date == data) & (df["periodo"] == turno)]
+        resultados = []
+        for nome in df_turno["pessoa_entregadora"].dropna().unique():
+            dados = df_turno[df_turno["pessoa_entregadora"] == nome]
+            if dados.empty:
+                continue
+            tempo_pct = calcular_tempo_online(dados)
+            ofertadas = dados["numero_de_corridas_ofertadas"].sum()
+            aceitas = dados["numero_de_corridas_aceitas"].sum()
+            completas = dados["numero_de_corridas_completadas"].sum()
+            tx_aceitacao = aceitas / ofertadas if ofertadas else 0
+            tx_conclusao = completas / aceitas if aceitas else 0
+            elegivel = (
+                tempo_pct >= req["min_pct_online"] and
+                tx_aceitacao >= req["min_aceitacao"] and
+                tx_conclusao >= req["min_conclusao"]
+            )
+            if elegivel:
+                resultados.append((nome, completas))
+
+        df_result = pd.DataFrame(resultados, columns=["Entregador", "Total de Rotas"]).sort_values(
+            by="Total de Rotas", ascending=False)
+        st.dataframe(df_result, use_container_width=True)
+
+    elif tipo == "ranking":
+        inicio, fim = promo["data_inicio"], promo["data_fim"]
+        inicio_dt = datetime.combine(inicio, time.min)
+        fim_dt = datetime.combine(fim, time.max)
+
+        # Verifica última data dos dados
+        ultima_data = df["data"].max()
+        st.info(f"📅 Último dia nos dados: {ultima_data.date()}")
+
+        if ultima_data.date() < fim:
+            st.warning(
+                f"⚠️ Os dados vão até {ultima_data.date()}, mas a promoção termina em {fim}. "
+                "Pode haver entregadores com corridas no último dia que não foram incluídas."
+            )
+
+        # Mostrar corridas do Cesar no dia 15
+        dia_15_ini = datetime(2025, 7, 15, 0, 0)
+        dia_15_fim = datetime(2025, 7, 15, 23, 59, 59)
+        cesar_15 = df[(df["pessoa_entregadora"] == "Cesar Barbosa Dos Reis") &
+                      (df["data"] >= dia_15_ini) & (df["data"] <= dia_15_fim)]
+        total_cesar_15 = cesar_15["numero_de_corridas_completadas"].sum()
+        st.info(f"📌 Cesar Barbosa Dos Reis fez {total_cesar_15} corridas no dia 15.")
+
+        # ✅ CORRETO: filtro com datetime completo
+        df_rk = df[(df["data"] >= inicio_dt) & (df["data"] <= fim_dt)]
+        qtd = int(promo["ranking_top"])
+
+        ranking = (
+            df_rk.groupby("pessoa_entregadora")["numero_de_corridas_completadas"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(qtd)
+            .reset_index()
+        )
+
+        st.dataframe(
+            ranking.rename(columns={
+                "pessoa_entregadora": "Entregador",
+                "numero_de_corridas_completadas": "Total de Rotas"
+            }),
+            use_container_width=True
+        )
+
+    elif tipo == "faixa_rotas":
+        inicio, fim = promo["data_inicio"], promo["data_fim"]
+        inicio_dt = datetime.combine(inicio, time.min)
+        fim_dt = datetime.combine(fim, time.max)
+        df_per = df[(df["data"] >= inicio_dt) & (df["data"] <= fim_dt)]
+        resultados = []
+        for nome in df_per["pessoa_entregadora"].dropna().unique():
+            total = df_per[df_per["pessoa_entregadora"] == nome]["numero_de_corridas_completadas"].sum()
+            premio = 0
+            for faixa in promo["faixas"]:
+                if faixa["faixa_min"] <= total <= faixa["faixa_max"]:
+                    premio = faixa["valor_premio"]
+                    break
+            if premio:
+                resultados.append((nome, total, premio))
+
+        df_result = pd.DataFrame(resultados, columns=["Entregador", "Total de Rotas", "Valor do Prêmio"]).sort_values(
+            by="Total de Rotas", ascending=False)
+        st.dataframe(df_result, use_container_width=True)
