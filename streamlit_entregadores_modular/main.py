@@ -1,3 +1,4 @@
+
 import streamlit as st
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
@@ -9,7 +10,6 @@ from utils import calcular_tempo_online
 import pandas as pd
 from datetime import datetime, time
 
-# Autenticação
 if "logado" not in st.session_state:
     st.session_state.logado = False
     st.session_state.usuario = ""
@@ -27,7 +27,6 @@ if not st.session_state.logado:
             st.error("Usuário ou senha incorretos")
     st.stop()
 
-# Página principal
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
@@ -49,16 +48,14 @@ if nivel == "admin":
         st.cache_data.clear()
         st.rerun()
 
-# Modo de Apurador de Promoções
 if modo == "📈 Apurador de Promoções":
     st.title("📈 Apurador de Promoções")
 
-    # Conversão de datas
     df["data"] = pd.to_datetime(df["data"], errors="coerce")
-    df["data_date"] = df["data"].dt.date
+df["data_date"] = df["data"].dt.date
 
-    df_promocoes, df_fases, df_criterios, df_faixas = carregar_promocoes()
-    PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas)
+df_promocoes, df_fases, df_criterios, df_faixas = carregar_promocoes()
+PROMOCOES = estruturar_promocoes(df_promocoes, df_fases, df_criterios, df_faixas)
 
     nomes_promos = [p["nome"] for p in PROMOCOES]
     selecionada = st.selectbox("Selecione uma promoção:", nomes_promos)
@@ -96,8 +93,7 @@ if modo == "📈 Apurador de Promoções":
         resultados = []
         for nome in df_turno["pessoa_entregadora"].dropna().unique():
             dados = df_turno[df_turno["pessoa_entregadora"] == nome]
-            if dados.empty:
-                continue
+            if dados.empty: continue
             tempo_pct = calcular_tempo_online(dados)
             ofertadas = dados["numero_de_corridas_ofertadas"].sum()
             aceitas = dados["numero_de_corridas_aceitas"].sum()
@@ -120,33 +116,8 @@ if modo == "📈 Apurador de Promoções":
         inicio, fim = promo["data_inicio"], promo["data_fim"]
         inicio_dt = datetime.combine(inicio, time.min)
         fim_dt = datetime.combine(fim, time.max)
-
-        ultima_data = df["data"].max()
-        st.info(f"📅 Último dia nos dados: {ultima_data.date()}")
-
-        if ultima_data.date() < fim:
-            st.warning(
-                f"⚠️ Os dados vão até {ultima_data.date()}, mas a promoção termina em {fim}. "
-                "Pode haver entregadores com corridas no último dia que não foram incluídas."
-            )
-
-        # Verificar corridas do Cesar no dia 15
-        dia_15_ini = datetime(2025, 7, 15, 0, 0)
-        dia_15_fim = datetime(2025, 7, 15, 23, 59, 59)
-        cesar_15 = df[(df["pessoa_entregadora"] == "Cesar Barbosa Dos Reis") &
-                      (df["data"] >= dia_15_ini) & (df["data"] <= dia_15_fim)]
-        total_cesar_15 = cesar_15["numero_de_corridas_completadas"].sum()
-        st.info(f"📌 Cesar Barbosa Dos Reis fez {total_cesar_15} corridas no dia 15.")
-
-        # ✅ Filtro correto com datetime
-        df_rk = df[(df["data"] >= inicio_dt) & (df["data"] <= fim_dt)]
-
-        # 🔍 Debug
-        st.write("Qtd de linhas no ranking dataframe:", len(df_rk))
-        st.write("Tem dia 15 no ranking?", df_rk["data"].dt.date.eq(datetime(2025, 7, 15).date()).any())
-
+        df_rk = df[(df["data_date"] >= inicio) & (df["data_date"] <= fim)]
         qtd = int(promo["ranking_top"])
-
         ranking = (
             df_rk.groupby("pessoa_entregadora")["numero_de_corridas_completadas"]
             .sum()
@@ -154,14 +125,10 @@ if modo == "📈 Apurador de Promoções":
             .head(qtd)
             .reset_index()
         )
-
-        st.dataframe(
-            ranking.rename(columns={
-                "pessoa_entregadora": "Entregador",
-                "numero_de_corridas_completadas": "Total de Rotas"
-            }),
-            use_container_width=True
-        )
+        st.dataframe(ranking.rename(columns={
+            "pessoa_entregadora": "Entregador",
+            "numero_de_corridas_completadas": "Total de Rotas"
+        }), use_container_width=True)
 
     elif tipo == "faixa_rotas":
         inicio, fim = promo["data_inicio"], promo["data_fim"]
