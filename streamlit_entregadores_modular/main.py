@@ -125,14 +125,19 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
 
 # Indicadores Gerais
 if modo == "📊 Indicadores Gerais":
-    st.subheader("🔎 Escolha os indicadores que deseja visualizar:")
-    col1, col2 = st.columns(2)
-    with col1:
-        mostrar_ofertadas = st.checkbox("Corridas ofertadas", value=True)
-        mostrar_rejeitadas = st.checkbox("Corridas rejeitadas")
-    with col2:
-        mostrar_aceitas = st.checkbox("Corridas aceitas")
-        mostrar_completas = st.checkbox("Corridas completas")
+    st.subheader("🔎 Escolha o indicador que deseja visualizar:")
+
+    tipo_grafico = st.radio(
+        "Tipo de gráfico:",
+        options=[
+            "Corridas ofertadas",
+            "Corridas aceitas",
+            "Corridas rejeitadas",
+            "Corridas completadas"
+        ],
+        index=0,
+        horizontal=True
+    )
 
     def grafico_barras(df, coluna, titulo, label_y):
         mensal = df.groupby('mes_ano')[coluna].sum().reset_index()
@@ -161,19 +166,38 @@ if modo == "📊 Indicadores Gerais":
 
         st.plotly_chart(fig, use_container_width=True)
 
-    if mostrar_ofertadas:
-        grafico_barras(df, 'numero_de_corridas_ofertadas', '📊 Corridas ofertadas por mês', 'Corridas')
+    coluna_map = {
+        "Corridas ofertadas": ("numero_de_corridas_ofertadas", "Corridas ofertadas por mês", "Corridas"),
+        "Corridas aceitas": ("numero_de_corridas_aceitas", "Corridas aceitas por mês", "Corridas Aceitas"),
+        "Corridas rejeitadas": ("numero_de_corridas_rejeitadas", "Corridas rejeitadas por mês", "Corridas Rejeitadas"),
+        "Corridas completadas": ("numero_de_corridas_completadas", "Corridas completadas por mês", "Corridas Completadas")
+    }
 
-    if mostrar_aceitas:
-        grafico_barras(df, 'numero_de_corridas_aceitas', '📊 Corridas aceitas por mês', 'Corridas Aceitas')
+    col, titulo, label = coluna_map[tipo_grafico]
+    grafico_barras(df, col, titulo, label)
 
-    if mostrar_rejeitadas:
-        grafico_barras(df, 'numero_de_corridas_rejeitadas', '📊 Corridas rejeitadas por mês', 'Corridas Rejeitadas')
+    mes_atual = pd.Timestamp.today().month
+    ano_atual = pd.Timestamp.today().year
+    df_mes = df[(df['data'].dt.month == mes_atual) & (df['data'].dt.year == ano_atual)]
 
-    if mostrar_completas:
-        grafico_barras(df, 'numero_de_corridas_completadas', '📊 Corridas completadas por mês', 'Corridas Completadas')
+    por_dia = df_mes.groupby(df_mes['data'].dt.day)[col].sum().reset_index()
+    por_dia.rename(columns={'data': 'dia'}, inplace=True)
 
-    # Gráfico diário
+    fig_dia = px.line(
+        por_dia,
+        x='dia',
+        y=col,
+        markers=True,
+        title=f"{tipo_grafico} por dia (mês atual)",
+        labels={'dia': 'Dia', col: label},
+        template='plotly_dark',
+        color_discrete_sequence=['#f778ba']
+    )
+    fig_dia.update_traces(line_shape='spline')
+
+    total_mes = int(por_dia[col].sum())
+    st.metric(f"🚗 {label} no mês", total_mes)
+    st.plotly_chart(fig_dia, use_container_width=True)# Gráfico diário
     mes_atual = pd.Timestamp.today().month
     ano_atual = pd.Timestamp.today().year
     df_mes = df[(df['data'].dt.month == mes_atual) & (df['data'].dt.year == ano_atual)]
