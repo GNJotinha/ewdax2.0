@@ -154,7 +154,7 @@ if modo == "📊 Indicadores Gerais":
             yaxis=dict(showgrid=True, gridcolor='gray')
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True)
 
     if mostrar_ofertadas:
         grafico_barras(df, 'numero_de_corridas_ofertadas', '📊 Corridas ofertadas por mês', 'Corridas')
