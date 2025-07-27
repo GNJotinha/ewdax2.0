@@ -9,32 +9,26 @@ import pandas as pd
 # Estilo
 st.markdown("""
 <style>
+
 body {
-    background-color: #1e1e2f
+    background-color: #0e1117;
+    color: #c9d1d9;
 }
-[data-testid="stAppViewContainer"] {
-    background-color: #1e1e2f;
-    color: #ffffff;
-}
-.stButton > button {
-    background-color: #00aaff;
+.stButton button {
+    background-color: #1f6feb;
     color: white;
-    padding: 10px 16px;
-    border-radius: 8px;
     border: none;
-    font-weight: bold;
-    transition: background 0.3s ease;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
 }
-.stButton > button:hover {
-    background-color: #0088cc;
-    color: #ffffff;
+.stButton button:hover {
+    background-color: #388bfd;
 }
-[data-testid="stSidebar"] {
-    background-color: #252535;
-    color: white;
+.stSidebar {
+    background-color: #161b22;
 }
-h1, h2, h3, h4 {
-    color: #00f7ff;
+h1, h2, h3 {
+    color: #58a6ff;
 }
 </style>
 """, unsafeallowhtml=True)
