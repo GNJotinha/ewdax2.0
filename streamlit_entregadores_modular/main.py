@@ -67,13 +67,13 @@ st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 st.sidebar.markdown("## 📊 Indicadores")
 modo_indicador = st.sidebar.selectbox(
     "Selecione um indicador:",
-    ["Indicadores Gerais"]
+    ["Nenhum", "Indicadores Gerais"]
 )
 
 st.sidebar.markdown("## 📄 Relatórios")
 modo_relatorio = st.sidebar.selectbox(
     "Selecione um relatório:",
-    ["Ver geral", "Simplificada (WhatsApp)", "Alertas de Faltas", "Relatório Customizado"]
+    ["Nenhum", "Ver geral", "Simplificada (WhatsApp)", "Alertas de Faltas", "Relatório Customizado"]
 )
 
 # Definir modo final com base na prioridade: indicadores primeiro
