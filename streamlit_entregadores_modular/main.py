@@ -1,44 +1,45 @@
 import streamlit as st
+import pandas as pd
+import plotly.express as px
+
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 from relatorios import (
     gerar_dados, gerar_simplicado, gerar_alertas_de_faltas, get_entregadores
 )
-import pandas as pd
 
 # Estilo
 st.markdown(
-
-"""
-<style>
-    body {
-        background-color: #0e1117;
-        color: #c9d1d9;
-    }
-    .stButton>button {
-        background-color: #1f6feb;
-        color: white;
-        border: none;
-        padding: 0.5rem 1rem;
-        border-radius: 0.5rem;
-        font-weight: bold;
-    }
-    .stButton>button:hover {
-        background-color: #388bfd;
-    }
-    .stSidebar {
-        background-color: #161b22;
-    }
-    h1, h2, h3 {
-        color: #58a6ff;
-    }
-    .stSelectbox, .stMultiSelect, .stTextInput {
-        background-color: #21262d;
-        color: #c9d1d9;
-    }
-</style>
-""",
-unsafe_allow_html=True
+    """
+    <style>
+        body {
+            background-color: #0e1117;
+            color: #c9d1d9;
+        }
+        .stButton>button {
+            background-color: #1f6feb;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+        }
+        .stButton>button:hover {
+            background-color: #388bfd;
+        }
+        .stSidebar {
+            background-color: #161b22;
+        }
+        h1, h2, h3 {
+            color: #58a6ff;
+        }
+        .stSelectbox, .stMultiSelect, .stTextInput {
+            background-color: #21262d;
+            color: #c9d1d9;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 # Autenticação do usuário
@@ -62,8 +63,6 @@ if not st.session_state.logado:
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
-
-# Menu lateral organizado por seções
 modo = st.sidebar.radio("Escolha uma opção:", [
     "📊 Indicadores Gerais",
     "Ver geral",
@@ -72,22 +71,20 @@ modo = st.sidebar.radio("Escolha uma opção:", [
     "Relatório Customizado"
 ])
 
-
-# Para manter compatibilidade com o restante do código
 if not modo:
     st.stop()
 
 df = carregar_dados()
 entregadores = get_entregadores(df)
 
-# Permissão de admin para atualizar dados
+# Permissão admin
 nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
 if nivel == "admin":
     if st.button("🔄 Atualizar dados"):
         st.cache_data.clear()
         st.rerun()
 
-# Relatórios "Ver geral" e "Simplificada (WhatsApp)"
+# Relatórios
 if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
         entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
@@ -154,99 +151,6 @@ if modo == "📊 Indicadores Gerais":
             yaxis=dict(showgrid=True, gridcolor='gray')
         )
 
-            st.plotly_chart(fig, use_container_width=True)
-
-    if mostrar_ofertadas:
-        grafico_barras(df, 'numero_de_corridas_ofertadas', '📊 Corridas ofertadas por mês', 'Corridas')
-
-    if mostrar_aceitas:
-        grafico_barras(df, 'numero_de_corridas_aceitas', '📊 Corridas aceitas por mês', 'Corridas Aceitas')
-
-    if mostrar_rejeitadas:
-        grafico_barras(df, 'numero_de_corridas_rejeitadas', '📊 Corridas rejeitadas por mês', 'Corridas Rejeitadas')
-
-    if mostrar_completas:
-        grafico_barras(df, 'numero_de_corridas_completadas', '📊 Corridas completadas por mês', 'Corridas Completadas')
-
-    # Gráfico diário (linha)
-    mes_atual = pd.Timestamp.today().month
-    ano_atual = pd.Timestamp.today().year
-    df_mes = df[(df['data'].dt.month == mes_atual) & (df['data'].dt.year == ano_atual)]
-
-    coluna_dia = None
-    titulo_dia = None
-    label_dia = None
-
-    if mostrar_ofertadas:
-        coluna_dia = 'numero_de_corridas_ofertadas'
-        titulo_dia = '📈 Corridas ofertadas por dia (mês atual)'
-        label_dia = 'Corridas Ofertadas'
-    elif mostrar_aceitas:
-        coluna_dia = 'numero_de_corridas_aceitas'
-        titulo_dia = '📈 Corridas aceitas por dia (mês atual)'
-        label_dia = 'Corridas Aceitas'
-    elif mostrar_rejeitadas:
-        coluna_dia = 'numero_de_corridas_rejeitadas'
-        titulo_dia = '📈 Corridas rejeitadas por dia (mês atual)'
-        label_dia = 'Corridas Rejeitadas'
-    elif mostrar_completas:
-        coluna_dia = 'numero_de_corridas_completadas'
-        titulo_dia = '📈 Corridas completadas por dia (mês atual)'
-        label_dia = 'Corridas Completadas'
-
-    if coluna_dia:
-        por_dia = df_mes.groupby(df_mes['data'].dt.day)[coluna_dia].sum().reset_index()
-        por_dia.rename(columns={'data': 'dia'}, inplace=True)
-
-        fig_dia = px.line(
-            por_dia,
-            x='dia',
-            y=coluna_dia,
-            markers=True,
-            title=titulo_dia,
-            labels={'dia': 'Dia', coluna_dia: label_dia},
-            template='plotly_dark',
-            color_discrete_sequence=['#f778ba']
-        )
-        fig_dia.update_traces(line_shape='spline')
-
-        total_mes = int(por_dia[coluna_dia].sum())
-        st.metric(f"🚗 {label_dia} no mês", total_mes)
-        st.plotly_chart(fig_dia, use_container_width=True)if modo == "📊 Indicadores Gerais":
-    st.subheader("🔎 Escolha os indicadores que deseja visualizar:")
-    col1, col2 = st.columns(2)
-    with col1:
-        mostrar_ofertadas = st.checkbox("Corridas ofertadas", value=True)
-        mostrar_rejeitadas = st.checkbox("Corridas rejeitadas")
-    with col2:
-        mostrar_aceitas = st.checkbox("Corridas aceitas")
-        mostrar_completas = st.checkbox("Corridas completas")
-
-    def grafico_barras(df, coluna, titulo, label_y):
-        mensal = df.groupby('mes_ano')[coluna].sum().reset_index()
-        mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
-
-        fig = px.bar(
-            mensal,
-            x='mes_ano',
-            y=coluna,
-            text=coluna,
-            title=titulo,
-            labels={coluna: label_y},
-            template='plotly_dark',
-            color_discrete_sequence=['#00F7FF'],
-            text_auto=True
-        )
-
-        fig.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white'),
-            title_font=dict(size=22),
-            xaxis=dict(showgrid=False),
-            yaxis=dict(showgrid=True, gridcolor='gray')
-        )
-
         st.plotly_chart(fig, use_container_width=True)
 
     if mostrar_ofertadas:
@@ -261,15 +165,12 @@ if modo == "📊 Indicadores Gerais":
     if mostrar_completas:
         grafico_barras(df, 'numero_de_corridas_completadas', '📊 Corridas completadas por mês', 'Corridas Completadas')
 
-    # Gráfico diário (linha)
+    # Gráfico diário
     mes_atual = pd.Timestamp.today().month
     ano_atual = pd.Timestamp.today().year
     df_mes = df[(df['data'].dt.month == mes_atual) & (df['data'].dt.year == ano_atual)]
 
-    coluna_dia = None
-    titulo_dia = None
-    label_dia = None
-
+    coluna_dia, titulo_dia, label_dia = None, None, None
     if mostrar_ofertadas:
         coluna_dia = 'numero_de_corridas_ofertadas'
         titulo_dia = '📈 Corridas ofertadas por dia (mês atual)'
@@ -307,7 +208,7 @@ if modo == "📊 Indicadores Gerais":
         st.metric(f"🚗 {label_dia} no mês", total_mes)
         st.plotly_chart(fig_dia, use_container_width=True)
 
-# Relatório de Alertas de Faltas
+# Alertas de faltas
 if modo == "Alertas de Faltas":
     mensagens = gerar_alertas_de_faltas(df)
     if mensagens:
@@ -327,19 +228,15 @@ if modo == "Relatório Customizado":
         key="select_custom"
     )
 
-    # Filtro por subpraça
     subpracas = sorted(df["sub_praca"].dropna().unique())
     filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
 
-    # Filtro por turno (periodo)
     turnos = sorted(df["periodo"].dropna().unique())
     filtro_turno = st.multiselect("Filtrar por turno:", turnos)
 
-    # Garante datas no formato correto
     df['data_do_periodo'] = pd.to_datetime(df['data_do_periodo'])
     df['data'] = df['data_do_periodo'].dt.date
 
-    # Filtro de datas
     tipo_periodo = st.radio("Como deseja escolher as datas?", ("Período contínuo", "Dias específicos"))
 
     dias_escolhidos = []
