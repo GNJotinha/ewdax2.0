@@ -74,7 +74,15 @@ modo = st.sidebar.radio("Escolha uma opção:", [
 if not modo:
     st.stop()
 
+# --- Carregamento e pré-processamento dos dados ---
 df = carregar_dados()
+
+# Garante que 'data' está em datetime
+df["data"] = pd.to_datetime(df["data"])
+
+# Cria 'mes_ano' para gráficos agregados
+df["mes_ano"] = df["data"].dt.to_period("M").dt.to_timestamp()
+
 entregadores = get_entregadores(df)
 
 # Permissão admin
