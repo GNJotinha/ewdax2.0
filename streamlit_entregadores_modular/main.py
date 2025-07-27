@@ -6,6 +6,39 @@ from relatorios import (
 )
 import pandas as pd
 
+# Estilo
+st.markdown("""
+<style>
+body {
+    background-color: #1e1e2f
+}
+[data-testid="stAppViewContainer"] {
+    background-color: #1e1e2f;
+    color: #ffffff;
+}
+.stButton > button {
+    background-color: #00aaff;
+    color: white;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: none;
+    font-weight: bold;
+    transition: background 0.3s ease;
+}
+.stButton > button:hover {
+    background-color: #0088cc;
+    color: #ffffff;
+}
+[data-testid="stSidebar"] {
+    background-color: #252535;
+    color: white;
+}
+h1, h2, h3, h4 {
+    color: #00f7ff;
+}
+</style>
+""", unsafeallowhtml=True)
+
 # Autenticação do usuário
 if "logado" not in st.session_state:
     st.session_state.logado = False
