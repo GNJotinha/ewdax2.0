@@ -63,21 +63,25 @@ if not st.session_state.logado:
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
-st.sidebar.markdown("## 📋 Selecione uma seção")
-modo = st.sidebar.selectbox(
-    "Escolha:",
-    options=[
-        "Indicadores Gerais",
-        "─ Relatórios ─",
-        "Ver geral",
-        "Simplificada (WhatsApp)",
-        "Alertas de Faltas",
-        "Relatório Customizado"
-    ]
+# Dois menus separados para indicadores e relatórios
+st.sidebar.markdown("## 📊 Indicadores")
+modo_indicador = st.sidebar.selectbox(
+    "Selecione um indicador:",
+    ["Nenhum", "Indicadores Gerais"]
 )
 
-# Ignorar separador visual
-if modo == "─ Relatórios ─":
+st.sidebar.markdown("## 📄 Relatórios")
+modo_relatorio = st.sidebar.selectbox(
+    "Selecione um relatório:",
+    ["Nenhum", "Ver geral", "Simplificada (WhatsApp)", "Alertas de Faltas", "Relatório Customizado"]
+)
+
+# Definir modo final com base na prioridade: indicadores primeiro
+if modo_indicador != "Nenhum":
+    modo = modo_indicador
+elif modo_relatorio != "Nenhum":
+    modo = modo_relatorio
+else:
     st.stop()
 
 if not modo:
