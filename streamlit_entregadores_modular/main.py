@@ -63,13 +63,22 @@ if not st.session_state.logado:
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
-modo = st.sidebar.radio("Escolha uma opção:", [
-    "📊 Indicadores Gerais",
-    "Ver geral",
-    "Simplificada (WhatsApp)",
-    "Alertas de Faltas",
-    "Relatório Customizado"
-])
+# Menu principal com categorias
+st.sidebar.markdown("## 📋 Menu Principal")
+selecao_geral = st.sidebar.selectbox(
+    "Escolha uma seção:",
+    ["Indicadores Gerais", "Relatórios"]
+)
+
+# Submenu dinâmico
+modo = None
+if selecao_geral == "Relatórios":
+    modo = st.sidebar.selectbox(
+        "Tipo de relatório:",
+        ["Ver geral", "Simplificada (WhatsApp)", "Alertas de Faltas", "Relatório Customizado"]
+    )
+else:
+    modo = "Indicadores Gerais"
 
 if not modo:
     st.stop()
