@@ -7,31 +7,39 @@ from relatorios import (
 import pandas as pd
 
 # Estilo
-st.markdown("""
-<style>
+st.markdown(
 
-body {
-    background-color: #0e1117;
-    color: #c9d1d9;
-}
-.stButton button {
-    background-color: #1f6feb;
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-}
-.stButton button:hover {
-    background-color: #388bfd;
-}
-.stSidebar {
-    background-color: #161b22;
-}
-h1, h2, h3 {
-    color: #58a6ff;
-}
+"""
+<style>
+    body {
+        background-color: #0e1117;
+        color: #c9d1d9;
+    }
+    .stButton>button {
+        background-color: #1f6feb;
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+        font-weight: bold;
+    }
+    .stButton>button:hover {
+        background-color: #388bfd;
+    }
+    .stSidebar {
+        background-color: #161b22;
+    }
+    h1, h2, h3 {
+        color: #58a6ff;
+    }
+    .stSelectbox, .stMultiSelect, .stTextInput {
+        background-color: #21262d;
+        color: #c9d1d9;
+    }
 </style>
-""", unsafeallowhtml=True)
+""",
+unsafe_allow_html=True
+)
 
 # Autenticação do usuário
 if "logado" not in st.session_state:
