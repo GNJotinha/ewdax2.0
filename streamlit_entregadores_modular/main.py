@@ -242,7 +242,34 @@ if modo == "📊 Indicadores Gerais":
 
 # Alertas de faltas
 if modo == "Alertas de Faltas":
-    mensagens = gerar_alertas_de_faltas(df)
+    st.subheader("⚠️ Entregadores com 3+ faltas consecutivas")
+    hoje = datetime.now().date()
+    ultimos_15_dias = hoje - timedelta(days=15)
+
+    ativos = df[df["data"] >= ultimos_15_dias]["pessoa_entregadora_normalizado"].unique()
+    mensagens = []
+
+    for nome in ativos:
+        entregador = df[df["pessoa_entregadora_normalizado"] == nome]
+        if entregador.empty:
+            continue
+
+        dias = pd.date_range(end=hoje - timedelta(days=1), periods=30).date
+        presencas = set(entregador["data"])
+
+        sequencia = 0
+        for dia in sorted(dias):
+            if dia in presencas:
+                sequencia = 0
+            else:
+                sequencia += 1
+
+        if sequencia >= 4:
+            nome_original = entregador["pessoa_entregadora"].iloc[0]
+            mensagens.append(
+                f"• {nome_original} – {sequencia} dias consecutivos ausente (última presença: {entregador['data'].max().strftime('%d/%m')})"
+            )
+
     if mensagens:
         st.text_area("Resultado:", value="\n".join(mensagens), height=400)
     else:
