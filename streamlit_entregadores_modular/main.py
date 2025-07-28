@@ -241,10 +241,18 @@ if modo == "📊 Indicadores Gerais":
         st.plotly_chart(fig_dia, use_container_width=True)
 
 # Alertas de faltas
+from datetime import datetime, timedelta
+import pandas as pd
+import streamlit as st
+
 if modo == "Alertas de Faltas":
     st.subheader("⚠️ Entregadores com 3+ faltas consecutivas")
+    
     hoje = datetime.now().date()
     ultimos_15_dias = hoje - timedelta(days=15)
+
+    # Certifique-se de que a coluna 'data' é do tipo date
+    df["data"] = pd.to_datetime(df["data"]).dt.date
 
     ativos = df[df["data"] >= ultimos_15_dias]["pessoa_entregadora_normalizado"].unique()
     mensagens = []
@@ -254,7 +262,8 @@ if modo == "Alertas de Faltas":
         if entregador.empty:
             continue
 
-        dias = pd.date_range(end=hoje - timedelta(days=1), periods=30).date
+        dias = pd.date_range(end=hoje - timedelta(days=1), periods=30).to_pydatetime()
+        dias = [d.date() for d in dias]
         presencas = set(entregador["data"])
 
         sequencia = 0
@@ -266,14 +275,16 @@ if modo == "Alertas de Faltas":
 
         if sequencia >= 4:
             nome_original = entregador["pessoa_entregadora"].iloc[0]
+            ultima_data = entregador["data"].max().strftime('%d/%m')
             mensagens.append(
-                f"• {nome_original} – {sequencia} dias consecutivos ausente (última presença: {entregador['data'].max().strftime('%d/%m')})"
+                f"• {nome_original} – {sequencia} dias consecutivos ausente (última presença: {ultima_data})"
             )
 
     if mensagens:
         st.text_area("Resultado:", value="\n".join(mensagens), height=400)
     else:
         st.success("✅ Nenhum entregador ativo com faltas consecutivas.")
+
 
 # Relatório Customizado
 if modo == "Relatório Customizado":
