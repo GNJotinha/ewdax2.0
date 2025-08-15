@@ -9,14 +9,20 @@ from relatorios import (
     gerar_alertas_de_faltas,
     get_entregadores,
     classificar_entregadores,
-    utr_por_entregador_turno,     
+    utr_por_entregador_turno,
     utr_pivot_por_entregador
 )
-
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 
+# -------------------------------------------------------------------
+# Config da página (coloque antes de qualquer renderização Streamlit)
+# -------------------------------------------------------------------
+st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
+
+# -------------------------------------------------------------------
 # Estilo
+# -------------------------------------------------------------------
 st.markdown(
     """
     <style>
@@ -41,7 +47,9 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# -------------------------------------------------------------------
 # Autenticação
+# -------------------------------------------------------------------
 if "logado" not in st.session_state:
     st.session_state.logado = False
     st.session_state.usuario = ""
@@ -59,9 +67,11 @@ if not st.session_state.logado:
             st.error("Usuário ou senha incorretos")
     st.stop()
 
-st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
+# -------------------------------------------------------------------
+# Menu
+# -------------------------------------------------------------------
 modo = st.sidebar.radio("Escolha uma opção:", [
     "📊 Indicadores Gerais",
     "Ver geral",
@@ -75,7 +85,9 @@ modo = st.sidebar.radio("Escolha uma opção:", [
 if not modo:
     st.stop()
 
-# Carregamento dos dados
+# -------------------------------------------------------------------
+# Dados
+# -------------------------------------------------------------------
 df = carregar_dados()
 df["data"] = pd.to_datetime(df["data"])
 df["mes_ano"] = df["data"].dt.to_period("M").dt.to_timestamp()
@@ -88,7 +100,9 @@ if nivel == "admin":
         st.cache_data.clear()
         st.rerun()
 
-# Ver geral ou Simplificada
+# -------------------------------------------------------------------
+# Ver geral / Simplificada
+# -------------------------------------------------------------------
 if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
         entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
@@ -113,7 +127,9 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
                 t2 = gerar_simplicado(nome, mes2, ano2, df)
                 st.text_area("Resultado:", value="\n\n".join([t for t in [t1, t2] if t]), height=600)
 
+# -------------------------------------------------------------------
 # Indicadores Gerais
+# -------------------------------------------------------------------
 if modo == "📊 Indicadores Gerais":
     st.subheader("🔎 Escolha o indicador que deseja visualizar:")
 
@@ -133,20 +149,24 @@ if modo == "📊 Indicadores Gerais":
 
     col, titulo, label = coluna_map[tipo_grafico]
 
-    def grafico_barras(df, coluna, titulo, label_y):
-        mensal = df.groupby('mes_ano')[coluna].sum().reset_index()
-        mensal['mes_ano'] = mensal['mes_ano'].dt.strftime('%b/%y')
+    def grafico_barras(df_, coluna, titulo_, label_y):
+        mensal = df_.groupby('mes_ano')[coluna].sum().reset_index()
+        mensal['mes_ao'] = mensal['mes_ano'].dt.strftime('%b/%y')
 
-        fig = px.bar(mensal, x='mes_ano', y=coluna, text=coluna, title=titulo,
-                     labels={coluna: label_y}, template='plotly_dark',
-                     color_discrete_sequence=['#00F7FF'], text_auto=True)
+        # usar a coluna correta no eixo X (mes_ao para rótulo)
+        mensal["_x"] = mensal['mes_ao']
+
+        fig = px.bar(
+            mensal, x="_x", y=coluna, text=coluna, title=titulo_,
+            labels={coluna: label_y, "_x": "Mês/Ano"}, template='plotly_dark',
+            color_discrete_sequence=['#00F7FF'], text_auto=True
+        )
 
         fig.update_layout(
             plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
             font=dict(color='white'), title_font=dict(size=22),
             xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor='gray')
         )
-
         st.plotly_chart(fig, use_container_width=True)
 
     grafico_barras(df, col, titulo, label)
@@ -178,7 +198,9 @@ if modo == "📊 Indicadores Gerais":
     st.metric(f"🚗 {label_dia} no mês", total_mes)
     st.plotly_chart(fig_dia, use_container_width=True)
 
+# -------------------------------------------------------------------
 # Alertas de Faltas
+# -------------------------------------------------------------------
 if modo == "Alertas de Faltas":
     st.subheader("⚠️ Entregadores com 3+ faltas consecutivas")
 
@@ -217,7 +239,9 @@ if modo == "Alertas de Faltas":
     else:
         st.success("✅ Nenhum entregador ativo com faltas consecutivas.")
 
+# -------------------------------------------------------------------
 # Relatório Customizado
+# -------------------------------------------------------------------
 if modo == "Relatório Customizado":
     st.header("Relatório Customizado do Entregador")
 
@@ -266,7 +290,9 @@ if modo == "Relatório Customizado":
         texto = gerar_dados(entregador, None, None, df_filt)
         st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
 
-# --- Categorias de Entregadores ---
+# -------------------------------------------------------------------
+# Categorias de Entregadores
+# -------------------------------------------------------------------
 if modo == "Categorias de Entregadores":
     st.header("📚 Categorias de Entregadores")
 
@@ -283,7 +309,6 @@ if modo == "Categorias de Entregadores":
     if df_cat.empty:
         st.info("Nenhum dado encontrado para o período selecionado.")
     else:
-        # Resumo por categoria
         contagem = df_cat["categoria"].value_counts().reindex(["Premium","Conectado","Casual","Flutuante"]).fillna(0).astype(int)
         c1,c2,c3,c4 = st.columns(4)
         c1.metric("🚀 Premium", int(contagem.get("Premium",0)))
@@ -291,19 +316,19 @@ if modo == "Categorias de Entregadores":
         c3.metric("👍 Casual", int(contagem.get("Casual",0)))
         c4.metric("↩ Flutuante", int(contagem.get("Flutuante",0)))
 
-        # Tabela
         st.subheader("Tabela de classificação")
-        cols = ["pessoa_entregadora","categoria","supply_hours","aceitacao_%","conclusao_%","ofertadas","aceitas","completas","criterios_atingidos"]
+        cols_cat = ["pessoa_entregadora","categoria","supply_hours","aceitacao_%","conclusao_%","ofertadas","aceitas","completas","criterios_atingidos"]
         st.dataframe(
-            df_cat[cols].style.format({"supply_hours":"{:.1f}","aceitacao_%":"{:.1f}","conclusao_%":"{:.1f}"}),
+            df_cat[cols_cat].style.format({"supply_hours":"{:.1f}","aceitacao_%":"{:.1f}","conclusao_%":"{:.1f}"}),
             use_container_width=True
         )
 
-        # Download CSV
-        csv = df_cat[cols].to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Baixar CSV", data=csv, file_name="categorias_entregadores.csv", mime="text/csv")
+        csv_cat = df_cat[cols_cat].to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Baixar CSV", data=csv_cat, file_name="categorias_entregadores.csv", mime="text/csv")
 
-# --- UTR por Entregador e Turno ---
+# -------------------------------------------------------------------
+# UTR por Entregador e Turno
+# -------------------------------------------------------------------
 if modo == "UTR":
     st.header("🧭 UTR – Corridas ofertadas por hora (por entregador e turno)")
 
@@ -319,28 +344,34 @@ if modo == "UTR":
     if base.empty:
         st.info("Nenhum dado encontrado para o período selecionado.")
     else:
-        # Métricas rápidas
+        # Garante coluna tempo_hms a partir de supply_hours (fallback)
+        def _hms_from_hours(h):
+            try:
+                return str(timedelta(seconds=int(round(float(h) * 3600))))
+            except Exception:
+                return "00:00:00"
+
+        if "tempo_hms" not in base.columns and "supply_hours" in base.columns:
+            base["tempo_hms"] = base["supply_hours"].apply(_hms_from_hours)
+
+        # Métricas rápidas (com UTR em 2 casas)
         st.metric("Média UTR (geral)", round(base["UTR"].mean(), 2))
         st.metric("Mediana UTR (geral)", round(base["UTR"].median(), 2))
 
         st.subheader("Tabela por entregador e turno")
-        cols = ["pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
+        cols_utr = ["pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
         st.dataframe(
-            base[cols].style.format({"UTR":"{:.2f}"}),
+            base[cols_utr].style.format({"UTR":"{:.2f}"}),
             use_container_width=True
         )
 
+        # Download CSV (inclui supply_hours bruto para referência)
+        csv_utr = base[cols_utr + ["supply_hours"]].to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Baixar CSV", data=csv_utr, file_name="utr_entregador_turno.csv", mime="text/csv")
 
-        # Download CSV
-        csv = base[cols + ["supply_hours"]].to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Baixar CSV", data=csv, file_name="utr_entregador_turno.csv", mime="text/csv")
-
-        # Pivot opcional para visão por turno
         st.subheader("Visão por turno (pivot por entregador)")
         piv = utr_pivot_por_entregador(df, mes_sel, ano_sel) if tipo == "Mês/Ano" else utr_pivot_por_entregador(df)
         if not piv.empty:
             st.dataframe(piv, use_container_width=True)
             piv_csv = piv.to_csv().encode("utf-8")
             st.download_button("⬇️ Baixar Pivot CSV", data=piv_csv, file_name="utr_pivot_por_turno.csv", mime="text/csv")
-
-
