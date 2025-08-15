@@ -15,9 +15,6 @@ from relatorios import (
 
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
-from relatorios import (
-    gerar_dados, gerar_simplicado, gerar_alertas_de_faltas, get_entregadores
-)
 
 # Estilo
 st.markdown(
@@ -71,7 +68,7 @@ modo = st.sidebar.radio("Escolha uma opção:", [
     "Simplificada (WhatsApp)",
     "Alertas de Faltas",
     "Relatório Customizado",
-    "Categorias de Entregadores"  
+    "Categorias de Entregadores",
     "UTR"
 ])
 
