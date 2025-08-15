@@ -145,7 +145,8 @@ def gerar_por_praca_data_turno(df, nome=None, praca=None, data_inicio=None, data
     if df.empty:
         return "❌ Nenhum dado encontrado com os filtros aplicados."
 
-# ===== NOVO: SH mensal e classificação por categoria =====
+# ===== SH mensal e classificação por categoria =====
+
 import pandas as pd
 from utils import tempo_para_segundos
 
@@ -242,7 +243,6 @@ def classificar_entregadores(df: pd.DataFrame, mes: int | None = None, ano: int 
             "supply_hours": m["SH"],
             "aceitacao_%": m["aceitacao_%"],
             "conclusao_%": m["conclusao_%"],
-            ],
             "ofertadas": m["ofertadas"],
             "aceitas": m["aceitas"],
             "completas": m["completas"],
@@ -259,5 +259,4 @@ def classificar_entregadores(df: pd.DataFrame, mes: int | None = None, ano: int 
     out["categoria"] = out["categoria"].astype(ordem)
     out = out.sort_values(by=["categoria", "supply_hours"], ascending=[True, False]).reset_index(drop=True)
     return out
-
 
