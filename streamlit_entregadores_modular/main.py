@@ -366,7 +366,7 @@ if modo == "UTR":
         )
 
         # Download CSV (inclui supply_hours bruto para referência)
-        csv_utr = base[cols_utr + ["supply_hours"]].to_csv(index=False).encode("utf-8")
+        csv = base[cols + ["supply_hours"]].to_csv(index=False, decimal=",").encode("utf-8")
         st.download_button("⬇️ Baixar CSV", data=csv_utr, file_name="utr_entregador_turno.csv", mime="text/csv")
 
         st.subheader("Visão por turno (pivot por entregador)")
