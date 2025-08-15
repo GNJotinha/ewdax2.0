@@ -324,14 +324,15 @@ if modo == "UTR":
         st.metric("Mediana UTR (geral)", round(base["UTR"].median(), 2))
 
         st.subheader("Tabela por entregador e turno")
-        cols = ["pessoa_entregadora","periodo","supply_hours","corridas_ofertadas","UTR"]
+        cols = ["pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
         st.dataframe(
-            base[cols].style.format({"supply_hours":"{:.1f}","UTR":"{:.2f}"}),
+            base[cols].style.format({"UTR":"{:.2f}"}),
             use_container_width=True
         )
 
+
         # Download CSV
-        csv = base[cols].to_csv(index=False).encode("utf-8")
+        csv = base[cols + ["supply_hours"]].to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Baixar CSV", data=csv, file_name="utr_entregador_turno.csv", mime="text/csv")
 
         # Pivot opcional para visão por turno
