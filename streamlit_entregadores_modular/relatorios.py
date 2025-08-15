@@ -241,7 +241,7 @@ def classificar_entregadores(df: pd.DataFrame, mes: int | None = None, ano: int 
             "pessoa_entregadora": nome,
             "supply_hours": m["SH"],
             "aceitacao_%": m["aceitacao_%"],
-            "conclusao_%": m["conclusao_%",
+            "conclusao_%": m["conclusao_%"],
             ],
             "ofertadas": m["ofertadas"],
             "aceitas": m["aceitas"],
