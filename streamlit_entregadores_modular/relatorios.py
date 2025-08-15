@@ -273,6 +273,22 @@ def _horas_from_abs(df_chunk):
     return seg / 3600.0
 
 
+# ---------- UTR (corridas ofertadas por hora) ----------
+
+def _horas_from_abs(df_chunk):
+    """Converte 'tempo_disponivel_absoluto' (HH:MM:SS) para horas somadas."""
+    if "tempo_disponivel_absoluto" not in df_chunk.columns:
+        return 0.0
+    seg = df_chunk["tempo_disponivel_absoluto"].apply(tempo_para_segundos).sum()
+    return seg / 3600.0
+
+def _horas_para_hms(horas_float):
+    """Converte horas (float) para string HH:MM:SS."""
+    try:
+        return str(timedelta(seconds=int(round(horas_float * 3600))))
+    except Exception:
+        return "00:00:00"
+
 def utr_por_entregador_turno(df, mes=None, ano=None):
     """
     UTR por entregador e por turno (coluna 'periodo').
@@ -280,17 +296,17 @@ def utr_por_entregador_turno(df, mes=None, ano=None):
     """
     dados = df.copy()
 
-    # recorte opcional por mês/ano
+    # Recorte opcional por mês/ano
     if mes is not None and ano is not None:
         dados = dados[(dados["mes"] == mes) & (dados["ano"] == ano)]
 
     if dados.empty:
         return pd.DataFrame(columns=[
-            "pessoa_entregadora", "periodo", "supply_hours",
-            "corridas_ofertadas", "UTR"
+            "pessoa_entregadora","periodo","tempo_hms","supply_hours",
+            "corridas_ofertadas","UTR"
         ])
 
-    # garante a existência/valores do turno
+    # Garante a existência/valores do turno
     if "periodo" not in dados.columns:
         dados["periodo"] = "(sem turno)"
     dados["periodo"] = dados["periodo"].fillna("(sem turno)")
@@ -298,18 +314,14 @@ def utr_por_entregador_turno(df, mes=None, ano=None):
     registros = []
     for (nome, turno), g in dados.groupby(["pessoa_entregadora", "periodo"], dropna=False):
         sh = _horas_from_abs(g)
-
-        if "numero_de_corridas_ofertadas" in g.columns:
-            ofertadas = float(g["numero_de_corridas_ofertadas"].sum())
-        else:
-            ofertadas = 0.0
-
+        ofertadas = float(g.get("numero_de_corridas_ofertadas", 0).sum())
         utr = (ofertadas / sh) if sh > 0 else 0.0
 
         registros.append({
             "pessoa_entregadora": nome,
             "periodo": turno,
-            "supply_hours": round(sh, 1),
+            "tempo_hms": _horas_para_hms(sh),     # exibição HH:MM:SS
+            "supply_hours": round(sh, 1),         # mantemos em horas p/ cálculo/CSV
             "corridas_ofertadas": int(ofertadas),
             "UTR": round(utr, 2),
         })
