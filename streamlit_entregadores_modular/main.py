@@ -3,6 +3,11 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 
+from relatorios import (
+    gerar_dados, gerar_simplicado, gerar_alertas_de_faltas, get_entregadores,
+    classificar_entregadores 
+)
+
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 from relatorios import (
