@@ -329,6 +329,7 @@ if modo == "Categorias de Entregadores":
 # -------------------------------------------------------------------
 # UTR por Entregador e Turno
 # -------------------------------------------------------------------
+
 if modo == "UTR":
     st.header("🧭 UTR – Corridas ofertadas por hora (por entregador e turno)")
 
@@ -339,39 +340,42 @@ if modo == "UTR":
         mes_sel = col1.selectbox("Mês", list(range(1, 13)))
         ano_sel = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
 
+    # sempre cria 'base'
     base = utr_por_entregador_turno(df, mes_sel, ano_sel) if tipo == "Mês/Ano" else utr_por_entregador_turno(df)
 
     if base.empty:
         st.info("Nenhum dado encontrado para o período selecionado.")
     else:
-        # Garante coluna tempo_hms a partir de supply_hours (fallback)
+        # Fallback p/ tempo_hms, caso a função ainda não retorne essa coluna
+        from datetime import timedelta
         def _hms_from_hours(h):
             try:
                 return str(timedelta(seconds=int(round(float(h) * 3600))))
             except Exception:
                 return "00:00:00"
-
         if "tempo_hms" not in base.columns and "supply_hours" in base.columns:
             base["tempo_hms"] = base["supply_hours"].apply(_hms_from_hours)
 
-        # Métricas rápidas (com UTR em 2 casas)
+        # Métricas rápidas
         st.metric("Média UTR (geral)", round(base["UTR"].mean(), 2))
         st.metric("Mediana UTR (geral)", round(base["UTR"].median(), 2))
 
+        # Tabela
+        cols = ["pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
         st.subheader("Tabela por entregador e turno")
-        cols_utr = ["pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
         st.dataframe(
-            base[cols_utr].style.format({"UTR":"{:.2f}"}),
+            base[cols].style.format({"UTR":"{:.2f}"}),
             use_container_width=True
         )
 
-        # Download CSV (inclui supply_hours bruto para referência)
+        # Download CSV (agora DENTRO do else, com separador decimal = vírgula)
         csv = base[cols + ["supply_hours"]].to_csv(index=False, decimal=",").encode("utf-8")
-        st.download_button("⬇️ Baixar CSV", data=csv_utr, file_name="utr_entregador_turno.csv", mime="text/csv")
+        st.download_button("⬇️ Baixar CSV", data=csv, file_name="utr_entregador_turno.csv", mime="text/csv")
 
+        # Pivot opcional
         st.subheader("Visão por turno (pivot por entregador)")
         piv = utr_pivot_por_entregador(df, mes_sel, ano_sel) if tipo == "Mês/Ano" else utr_pivot_por_entregador(df)
         if not piv.empty:
             st.dataframe(piv, use_container_width=True)
-            piv_csv = piv.to_csv().encode("utf-8")
+            piv_csv = piv.to_csv(decimal=",").encode("utf-8")
             st.download_button("⬇️ Baixar Pivot CSV", data=piv_csv, file_name="utr_pivot_por_turno.csv", mime="text/csv")
