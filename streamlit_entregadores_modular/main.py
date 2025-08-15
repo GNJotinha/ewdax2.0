@@ -286,10 +286,10 @@ if modo == "Categorias de Entregadores":
         # Resumo por categoria
         contagem = df_cat["categoria"].value_counts().reindex(["Premium","Conectado","Casual","Flutuante"]).fillna(0).astype(int)
         c1,c2,c3,c4 = st.columns(4)
-        c1.metric("⭐ Premium", int(contagem.get("Premium",0)))
-        c2.metric("🔗 Conectado", int(contagem.get("Conectado",0)))
-        c3.metric("🎯 Casual", int(contagem.get("Casual",0)))
-        c4.metric("🌊 Flutuante", int(contagem.get("Flutuante",0)))
+        c1.metric("🚀 Premium", int(contagem.get("Premium",0)))
+        c2.metric("🎯 Conectado", int(contagem.get("Conectado",0)))
+        c3.metric("👍 Casual", int(contagem.get("Casual",0)))
+        c4.metric("↩ Flutuante", int(contagem.get("Flutuante",0)))
 
         # Tabela
         st.subheader("Tabela de classificação")
