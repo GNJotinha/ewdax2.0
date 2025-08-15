@@ -4,8 +4,11 @@ import plotly.express as px
 from datetime import datetime, timedelta
 
 from relatorios import (
-    gerar_dados, gerar_simplicado, gerar_alertas_de_faltas, get_entregadores,
-    classificar_entregadores 
+    gerar_dados,
+    gerar_simplicado,
+    gerar_alertas_de_faltas,
+    get_entregadores,
+    classificar_entregadores  
 )
 
 from auth import autenticar, USUARIOS
