@@ -8,7 +8,9 @@ from relatorios import (
     gerar_simplicado,
     gerar_alertas_de_faltas,
     get_entregadores,
-    classificar_entregadores  
+    classificar_entregadores,
+    utr_por_entregador_turno,     
+    utr_pivot_por_entregador      
 )
 
 from auth import autenticar, USUARIOS
@@ -70,6 +72,7 @@ modo = st.sidebar.radio("Escolha uma opção:", [
     "Alertas de Faltas",
     "Relatório Customizado",
     "Categorias de Entregadores"  
+    "UTR"
 ])
 
 if not modo:
@@ -302,4 +305,44 @@ if modo == "Categorias de Entregadores":
         # Download CSV
         csv = df_cat[cols].to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Baixar CSV", data=csv, file_name="categorias_entregadores.csv", mime="text/csv")
+
+# --- UTR por Entregador e Turno ---
+if modo == "UTR":
+    st.header("🧭 UTR – Corridas ofertadas por hora (por entregador e turno)")
+
+    tipo = st.radio("Período:", ["Mês/Ano", "Todo o histórico"], horizontal=True, index=0)
+    mes_sel = ano_sel = None
+    if tipo == "Mês/Ano":
+        col1, col2 = st.columns(2)
+        mes_sel = col1.selectbox("Mês", list(range(1, 13)))
+        ano_sel = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
+
+    base = utr_por_entregador_turno(df, mes_sel, ano_sel) if tipo == "Mês/Ano" else utr_por_entregador_turno(df)
+
+    if base.empty:
+        st.info("Nenhum dado encontrado para o período selecionado.")
+    else:
+        # Métricas rápidas
+        st.metric("Média UTR (geral)", round(base["UTR"].mean(), 2))
+        st.metric("Mediana UTR (geral)", round(base["UTR"].median(), 2))
+
+        st.subheader("Tabela por entregador e turno")
+        cols = ["pessoa_entregadora","periodo","supply_hours","corridas_ofertadas","UTR"]
+        st.dataframe(
+            base[cols].style.format({"supply_hours":"{:.1f}","UTR":"{:.2f}"}),
+            use_container_width=True
+        )
+
+        # Download CSV
+        csv = base[cols].to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Baixar CSV", data=csv, file_name="utr_entregador_turno.csv", mime="text/csv")
+
+        # Pivot opcional para visão por turno
+        st.subheader("Visão por turno (pivot por entregador)")
+        piv = utr_pivot_por_entregador(df, mes_sel, ano_sel) if tipo == "Mês/Ano" else utr_pivot_por_entregador(df)
+        if not piv.empty:
+            st.dataframe(piv, use_container_width=True)
+            piv_csv = piv.to_csv().encode("utf-8")
+            st.download_button("⬇️ Baixar Pivot CSV", data=piv_csv, file_name="utr_pivot_por_turno.csv", mime="text/csv")
+
 
