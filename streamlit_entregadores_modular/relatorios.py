@@ -260,3 +260,86 @@ def classificar_entregadores(df: pd.DataFrame, mes: int | None = None, ano: int 
     out = out.sort_values(by=["categoria", "supply_hours"], ascending=[True, False]).reset_index(drop=True)
     return out
 
+# ===== UTR =====
+
+def _horas_from_abs(df_chunk):
+    """
+    Converte 'tempo_disponivel_absoluto' (HH:MM:SS) para horas somadas.
+    Usa utils.tempo_para_segundos que já está importado no topo do arquivo.
+    """
+    if "tempo_disponivel_absoluto" not in df_chunk.columns:
+        return 0.0
+    seg = df_chunk["tempo_disponivel_absoluto"].apply(tempo_para_segundos).sum()
+    return seg / 3600.0
+
+
+def utr_por_entregador_turno(df, mes=None, ano=None):
+    """
+    UTR por entregador e por turno (coluna 'periodo').
+    UTR = corridas_ofertadas / SH_horas, no período selecionado.
+    """
+    dados = df.copy()
+
+    # recorte opcional por mês/ano
+    if mes is not None and ano is not None:
+        dados = dados[(dados["mes"] == mes) & (dados["ano"] == ano)]
+
+    if dados.empty:
+        return pd.DataFrame(columns=[
+            "pessoa_entregadora", "periodo", "supply_hours",
+            "corridas_ofertadas", "UTR"
+        ])
+
+    # garante a existência/valores do turno
+    if "periodo" not in dados.columns:
+        dados["periodo"] = "(sem turno)"
+    dados["periodo"] = dados["periodo"].fillna("(sem turno)")
+
+    registros = []
+    for (nome, turno), g in dados.groupby(["pessoa_entregadora", "periodo"], dropna=False):
+        sh = _horas_from_abs(g)
+
+        if "numero_de_corridas_ofertadas" in g.columns:
+            ofertadas = float(g["numero_de_corridas_ofertadas"].sum())
+        else:
+            ofertadas = 0.0
+
+        utr = (ofertadas / sh) if sh > 0 else 0.0
+
+        registros.append({
+            "pessoa_entregadora": nome,
+            "periodo": turno,
+            "supply_hours": round(sh, 1),
+            "corridas_ofertadas": int(ofertadas),
+            "UTR": round(utr, 2),
+        })
+
+    out = pd.DataFrame(registros)
+    if out.empty:
+        return out
+
+    out = out.sort_values(by=["UTR", "corridas_ofertadas"], ascending=[False, False]).reset_index(drop=True)
+    return out
+
+
+def utr_pivot_por_entregador(df, mes=None, ano=None):
+    """
+    Tabela dinâmica: linhas = entregadores, colunas = turnos, valores = UTR (média).
+    """
+    base = utr_por_entregador_turno(df, mes, ano)
+    if base.empty:
+        return base
+
+    piv = base.pivot_table(
+        index="pessoa_entregadora",
+        columns="periodo",
+        values="UTR",
+        aggfunc="mean"
+    ).fillna(0.0)
+
+    # ordenar por média geral desc
+    piv["__media__"] = piv.mean(axis=1)
+    piv = piv.sort_values("__media__", ascending=False).drop(columns="__media__")
+
+    return piv.round(2)
+
