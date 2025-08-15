@@ -65,7 +65,8 @@ modo = st.sidebar.radio("Escolha uma opção:", [
     "Ver geral",
     "Simplificada (WhatsApp)",
     "Alertas de Faltas",
-    "Relatório Customizado"
+    "Relatório Customizado",
+    "Categorias de Entregadores"  
 ])
 
 if not modo:
