@@ -300,72 +300,144 @@ if modo == "Relatório Customizado":
 # -------------------------------------------------------------------
 # Categorias de Entregadores
 # -------------------------------------------------------------------
-df_cat = classificar_entregadores(df, mes_sel, ano_sel) if tipo == "Mês/Ano" else classificar_entregadores(df)
+# -------------------------------------------------------------------
+# Categorias de Entregadores
+# -------------------------------------------------------------------
+if modo == "Categorias de Entregadores":
+    st.header("📚 Categorias de Entregadores")
 
-if df_cat.empty:
-    st.info("Nenhum dado encontrado para o período selecionado.")
-else:
-    # >>> NOVO: SH em HH:MM:SS
-    if "supply_hours" in df_cat.columns:
-        df_cat["tempo_hms"] = df_cat["supply_hours"].apply(_hms_from_hours)
+    # nomes exclusivos para evitar colisão com outros blocos
+    tipo_cat = st.radio("Período de análise:", ["Mês/Ano", "Todo o histórico"], horizontal=True, index=0)
 
-    # Resumo por categoria
-    contagem = df_cat["categoria"].value_counts().reindex(["Premium","Conectado","Casual","Flutuante"]).fillna(0).astype(int)
-    c1,c2,c3,c4 = st.columns(4)
-    c1.metric("🚀 Premium", int(contagem.get("Premium",0)))
-    c2.metric("🎯 Conectado", int(contagem.get("Conectado",0)))
-    c3.metric("👍 Casual", int(contagem.get("Casual",0)))
-    c4.metric("↩ Flutuante", int(contagem.get("Flutuante",0)))
+    mes_sel_cat = ano_sel_cat = None
+    if tipo_cat == "Mês/Ano":
+        col1, col2 = st.columns(2)
+        mes_sel_cat = col1.selectbox("Mês", list(range(1, 13)))
+        ano_sel_cat = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
 
-    # Tabela (usa tempo_hms no lugar de supply_hours)
-    st.subheader("Tabela de classificação")
-    cols = ["pessoa_entregadora","categoria","tempo_hms","aceitacao_%","conclusao_%","ofertadas","aceitas","completas","criterios_atingidos"]
-    st.dataframe(
-        df_cat[cols].style.format({"aceitacao_%":"{:.1f}","conclusao_%":"{:.1f}"}),
-        use_container_width=True
-    )
+    # calcula
+    df_cat = classificar_entregadores(df, mes_sel_cat, ano_sel_cat) if tipo_cat == "Mês/Ano" else classificar_entregadores(df)
 
-    # Download CSV (com decimal=","; inclui só o HH:MM:SS)
-    csv = df_cat[cols].to_csv(index=False, decimal=",").encode("utf-8")
-    st.download_button("⬇️ Baixar CSV", data=csv, file_name="categorias_entregadores.csv", mime="text/csv")
+    if df_cat.empty:
+        st.info("Nenhum dado encontrado para o período selecionado.")
+    else:
+        # SH em HH:MM:SS (apenas exibição/CSV)
+        if "supply_hours" in df_cat.columns:
+            df_cat["tempo_hms"] = df_cat["supply_hours"].apply(_hms_from_hours)
+
+        # Resumo por categoria
+        contagem = df_cat["categoria"].value_counts().reindex(["Premium","Conectado","Casual","Flutuante"]).fillna(0).astype(int)
+        c1,c2,c3,c4 = st.columns(4)
+        c1.metric("🚀 Premium", int(contagem.get("Premium",0)))
+        c2.metric("🎯 Conectado", int(contagem.get("Conectado",0)))
+        c3.metric("👍 Casual", int(contagem.get("Casual",0)))
+        c4.metric("↩ Flutuante", int(contagem.get("Flutuante",0)))
+
+        # Tabela
+        st.subheader("Tabela de classificação")
+        cols_cat = ["pessoa_entregadora","categoria","tempo_hms","aceitacao_%","conclusao_%","ofertadas","aceitas","completas","criterios_atingidos"]
+        st.dataframe(
+            df_cat[cols_cat].style.format({"aceitacao_%":"{:.1f}","conclusao_%":"{:.1f}"}),
+            use_container_width=True
+        )
+
+        # Download CSV (decimal com vírgula)
+        csv_cat = df_cat[cols_cat].to_csv(index=False, decimal=",").encode("utf-8")
+        st.download_button("⬇️ Baixar CSV", data=csv_cat, file_name="categorias_entregadores.csv", mime="text/csv")
+# -------------------------------------------------------------------
+# Categorias de Entregadores
+# -------------------------------------------------------------------
+if modo == "Categorias de Entregadores":
+    st.header("📚 Categorias de Entregadores")
+
+    # nomes exclusivos para evitar colisão com outros blocos
+    tipo_cat = st.radio("Período de análise:", ["Mês/Ano", "Todo o histórico"], horizontal=True, index=0)
+
+    mes_sel_cat = ano_sel_cat = None
+    if tipo_cat == "Mês/Ano":
+        col1, col2 = st.columns(2)
+        mes_sel_cat = col1.selectbox("Mês", list(range(1, 13)))
+        ano_sel_cat = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
+
+    # calcula
+    df_cat = classificar_entregadores(df, mes_sel_cat, ano_sel_cat) if tipo_cat == "Mês/Ano" else classificar_entregadores(df)
+
+    if df_cat.empty:
+        st.info("Nenhum dado encontrado para o período selecionado.")
+    else:
+        # SH em HH:MM:SS (apenas exibição/CSV)
+        if "supply_hours" in df_cat.columns:
+            df_cat["tempo_hms"] = df_cat["supply_hours"].apply(_hms_from_hours)
+
+        # Resumo por categoria
+        contagem = df_cat["categoria"].value_counts().reindex(["Premium","Conectado","Casual","Flutuante"]).fillna(0).astype(int)
+        c1,c2,c3,c4 = st.columns(4)
+        c1.metric("🚀 Premium", int(contagem.get("Premium",0)))
+        c2.metric("🎯 Conectado", int(contagem.get("Conectado",0)))
+        c3.metric("👍 Casual", int(contagem.get("Casual",0)))
+        c4.metric("↩ Flutuante", int(contagem.get("Flutuante",0)))
+
+        # Tabela
+        st.subheader("Tabela de classificação")
+        cols_cat = ["pessoa_entregadora","categoria","tempo_hms","aceitacao_%","conclusao_%","ofertadas","aceitas","completas","criterios_atingidos"]
+        st.dataframe(
+            df_cat[cols_cat].style.format({"aceitacao_%":"{:.1f}","conclusao_%":"{:.1f}"}),
+            use_container_width=True
+        )
+
+        # Download CSV (decimal com vírgula)
+        csv_cat = df_cat[cols_cat].to_csv(index=False, decimal=",").encode("utf-8")
+        st.download_button("⬇️ Baixar CSV", data=csv_cat, file_name="categorias_entregadores.csv", mime="text/csv")
+
 
 
 # -------------------------------------------------------------------
 # UTR por Entregador e Turno
 # -------------------------------------------------------------------
 
+# -------------------------------------------------------------------
+# UTR por Entregador e Turno
+# -------------------------------------------------------------------
 if modo == "UTR":
     st.header("🧭 UTR – Corridas ofertadas por hora (por entregador e turno)")
 
-    tipo = st.radio("Período:", ["Mês/Ano", "Todo o histórico"], horizontal=True, index=0)
-    mes_sel = ano_sel = None
-    if tipo == "Mês/Ano":
+    tipo_utr = st.radio("Período:", ["Mês/Ano", "Todo o histórico"], horizontal=True, index=0)
+    mes_sel_utr = ano_sel_utr = None
+    if tipo_utr == "Mês/Ano":
         col1, col2 = st.columns(2)
-        mes_sel = col1.selectbox("Mês", list(range(1, 13)))
-        ano_sel = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
+        mes_sel_utr = col1.selectbox("Mês", list(range(1, 13)))
+        ano_sel_utr = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
 
-    # sempre cria 'base'
-base = utr_por_entregador_turno(df, mes_sel, ano_sel) if tipo == "Mês/Ano" else utr_por_entregador_turno(df)
+    # sempre cria 'base' dentro do bloco
+    base = utr_por_entregador_turno(df, mes_sel_utr, ano_sel_utr) if tipo_utr == "Mês/Ano" else utr_por_entregador_turno(df)
 
-if base.empty:
-    st.info("Nenhum dado encontrado para o período selecionado.")
-else:
-    # >>> NOVO: SH em HH:MM:SS (gera se vier faltando)
-    if "tempo_hms" not in base.columns and "supply_hours" in base.columns:
-        base["tempo_hms"] = base["supply_hours"].apply(_hms_from_hours)
+    if base.empty:
+        st.info("Nenhum dado encontrado para o período selecionado.")
+    else:
+        # SH em HH:MM:SS (gera se vier faltando)
+        if "tempo_hms" not in base.columns and "supply_hours" in base.columns:
+            base["tempo_hms"] = base["supply_hours"].apply(_hms_from_hours)
 
-    # Métricas rápidas
-    st.metric("Média UTR (geral)", round(base["UTR"].mean(), 2))
-    st.metric("Mediana UTR (geral)", round(base["UTR"].median(), 2))
+        # Métricas rápidas
+        st.metric("Média UTR (geral)", round(base["UTR"].mean(), 2))
+        st.metric("Mediana UTR (geral)", round(base["UTR"].median(), 2))
 
-    st.subheader("Tabela por entregador e turno")
-    cols = ["pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
-    st.dataframe(
-        base[cols].style.format({"UTR":"{:.2f}"}),
-        use_container_width=True
-    )
+        # Tabela
+        st.subheader("Tabela por entregador e turno")
+        cols_utr = ["pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
+        st.dataframe(
+            base[cols_utr].style.format({"UTR":"{:.2f}"}),
+            use_container_width=True
+        )
 
-    # Download CSV (usa vírgula como decimal; exporta HH:MM:SS e não o float)
-    csv = base[cols].to_csv(index=False, decimal=",").encode("utf-8")
-    st.download_button("⬇️ Baixar CSV", data=csv, file_name="utr_entregador_turno.csv", mime="text/csv")
+        # Download CSV (usa vírgula como decimal; exporta HH:MM:SS)
+        csv_utr = base[cols_utr].to_csv(index=False, decimal=",").encode("utf-8")
+        st.download_button("⬇️ Baixar CSV", data=csv_utr, file_name="utr_entregador_turno.csv", mime="text/csv")
 
+        # Pivot opcional
+        piv = utr_pivot_por_entregador(df, mes_sel_utr, ano_sel_utr) if tipo_utr == "Mês/Ano" else utr_pivot_por_entregador(df)
+        if not piv.empty:
+            st.subheader("Visão por turno (pivot por entregador)")
+            st.dataframe(piv, use_container_width=True)
+            piv_csv = piv.to_csv(decimal=",").encode("utf-8")
+            st.download_button("⬇️ Baixar Pivot CSV", data=piv_csv, file_name="utr_pivot_por_turno.csv", mime="text/csv")
