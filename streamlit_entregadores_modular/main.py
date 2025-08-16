@@ -17,9 +17,13 @@ from data_loader import carregar_dados
 
 def _hms_from_hours(h):
     try:
-        return str(timedelta(seconds=int(round(float(h) * 3600))))
+        total_seconds = int(round(float(h) * 3600))
+        horas, resto = divmod(total_seconds, 3600)
+        minutos, segundos = divmod(resto, 60)
+        return f"{horas:02d}:{minutos:02d}:{segundos:02d}"
     except Exception:
         return "00:00:00"
+
 
 
 # -------------------------------------------------------------------
