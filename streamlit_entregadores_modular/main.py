@@ -10,7 +10,8 @@ from relatorios import (
     get_entregadores,
     classificar_entregadores,
     utr_por_entregador_turno,
-    utr_pivot_por_entregador
+    utr_pivot_por_entregador,
+    utr_por_entregador_turno_dia
 )
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
