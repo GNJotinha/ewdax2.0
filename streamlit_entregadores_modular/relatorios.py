@@ -291,8 +291,10 @@ def _horas_para_hms(horas_float):
 
 def utr_por_entregador_turno(df, mes=None, ano=None):
     """
-    UTR por entregador e por turno (coluna 'periodo').
-    UTR = corridas_ofertadas / SH_horas, no período selecionado.
+    UTR DIÁRIO por (pessoa_entregadora, periodo, data).
+    Mantém o MESMO nome da função antiga para não quebrar a interface.
+    Retorna colunas:
+      ['data','pessoa_entregadora','periodo','tempo_hms','supply_hours','corridas_ofertadas','UTR']
     """
     dados = df.copy()
 
@@ -302,7 +304,7 @@ def utr_por_entregador_turno(df, mes=None, ano=None):
 
     if dados.empty:
         return pd.DataFrame(columns=[
-            "pessoa_entregadora","periodo","tempo_hms","supply_hours",
+            "data","pessoa_entregadora","periodo","tempo_hms","supply_hours",
             "corridas_ofertadas","UTR"
         ])
 
@@ -311,17 +313,23 @@ def utr_por_entregador_turno(df, mes=None, ano=None):
         dados["periodo"] = "(sem turno)"
     dados["periodo"] = dados["periodo"].fillna("(sem turno)")
 
+    # Garantir 'data' como date (não datetime) para agrupar por dia corretamente
+    if pd.api.types.is_datetime64_any_dtype(dados.get("data")):
+        dados["data"] = dados["data"].dt.date
+
     registros = []
-    for (nome, turno), g in dados.groupby(["pessoa_entregadora", "periodo"], dropna=False):
-        sh = _horas_from_abs(g)
+    grp = dados.groupby(["pessoa_entregadora", "periodo", "data"], dropna=False)
+    for (nome, turno, dia), g in grp:
+        sh = _horas_from_abs(g)  # soma horas do dia
         ofertadas = float(g.get("numero_de_corridas_ofertadas", 0).sum())
         utr = (ofertadas / sh) if sh > 0 else 0.0
 
         registros.append({
+            "data": dia,
             "pessoa_entregadora": nome,
             "periodo": turno,
-            "tempo_hms": _horas_para_hms(sh),     # exibição HH:MM:SS
-            "supply_hours": round(sh, 1),         # mantemos em horas p/ cálculo/CSV
+            "tempo_hms": _horas_para_hms(sh),   # HH:MM:SS por dia
+            "supply_hours": round(sh, 2),
             "corridas_ofertadas": int(ofertadas),
             "UTR": round(utr, 2),
         })
@@ -330,8 +338,10 @@ def utr_por_entregador_turno(df, mes=None, ano=None):
     if out.empty:
         return out
 
-    out = out.sort_values(by=["UTR", "corridas_ofertadas"], ascending=[False, False]).reset_index(drop=True)
+    # Ordena por data crescente (e depois por UTR desc para desempate visual)
+    out = out.sort_values(by=["data", "UTR"], ascending=[True, False]).reset_index(drop=True)
     return out
+
 
 
 def utr_pivot_por_entregador(df, mes=None, ano=None):
@@ -354,80 +364,5 @@ def utr_pivot_por_entregador(df, mes=None, ano=None):
     piv = piv.sort_values("__media__", ascending=False).drop(columns="__media__")
 
     return piv.round(2)
-
-## TESTE ## 
-
-# ---------- UTR DIÁRIO (por entregador, turno e dia) ----------
-
-def utr_por_entregador_turno_dia(df, mes=None, ano=None):
-    """
-    Calcula UTR diário:
-      chave = (pessoa_entregadora, periodo, data)
-      SH_dia = soma de 'tempo_disponivel_absoluto' convertido p/ horas dentro do dia/turno/entregador
-      UTR_dia = corridas_ofertadas_no_dia / SH_dia
-    Retorna colunas:
-      ['data','pessoa_entregadora','periodo','tempo_hms','supply_hours','corridas_ofertadas','UTR']
-    """
-    dados = df.copy()
-
-    # Filtro opcional por mês/ano
-    if mes is not None and ano is not None:
-        dados = dados[(dados["mes"] == mes) & (dados["ano"] == ano)]
-    if dados.empty:
-        return pd.DataFrame(columns=[
-            "data", "pessoa_entregadora", "periodo", "tempo_hms", "supply_hours",
-            "corridas_ofertadas", "UTR"
-        ])
-
-    # Garantias de coluna
-    if "periodo" not in dados.columns:
-        dados["periodo"] = "(sem turno)"
-    dados["periodo"] = dados["periodo"].fillna("(sem turno)")
-
-    # Certificar que 'data' é date (não datetime)
-    if pd.api.types.is_datetime64_any_dtype(dados.get("data")):
-        dados["data"] = dados["data"].dt.date
-
-    regs = []
-    grp = dados.groupby(["pessoa_entregadora", "periodo", "data"], dropna=False)
-    for (nome, turno, dia), g in grp:
-        sh_horas = _horas_from_abs(g)
-        ofertadas = float(g.get("numero_de_corridas_ofertadas", 0).sum())
-        utr_dia = (ofertadas / sh_horas) if sh_horas > 0 else 0.0
-
-        regs.append({
-            "data": dia,
-            "pessoa_entregadora": nome,
-            "periodo": turno,
-            "tempo_hms": _horas_para_hms(sh_horas),
-            "supply_hours": round(sh_horas, 2),
-            "corridas_ofertadas": int(ofertadas),
-            "UTR": round(utr_dia, 2),
-        })
-
-    out = pd.DataFrame(regs)
-    if out.empty:
-        return out
-    return out.sort_values(["pessoa_entregadora", "periodo", "data"]).reset_index(drop=True)
-
-
-def utr_pivot_diaria_por_turno(df, mes=None, ano=None):
-    """
-    Pivot diário com linhas = data, colunas = (entregador/turno) OU só turno,
-    e valores = UTR do dia.
-    Aqui optei por colunas = turno para uma visão rápida por dia.
-    """
-    base = utr_por_entregador_turno_dia(df, mes, ano)
-    if base.empty:
-        return base
-
-    piv = base.pivot_table(
-        index="data",
-        columns="periodo",
-        values="UTR",
-        aggfunc="mean"  # média do UTR do dia por turno
-    ).fillna(0.0)
-
-    return piv.sort_index().round(2)
 
 
