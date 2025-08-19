@@ -304,50 +304,6 @@ if modo == "Relatório Customizado":
 # -------------------------------------------------------------------
 # Categorias de Entregadores
 # -------------------------------------------------------------------
-# -------------------------------------------------------------------
-# Categorias de Entregadores
-# -------------------------------------------------------------------
-if modo == "Categorias de Entregadores":
-    st.header("📚 Categorias de Entregadores")
-
-    tipo_cat = st.radio("Período de análise:", ["Mês/Ano", "Todo o histórico"], horizontal=True, index=0)
-    mes_sel_cat = ano_sel_cat = None
-    if tipo_cat == "Mês/Ano":
-        col1, col2 = st.columns(2)
-        mes_sel_cat = col1.selectbox("Mês", list(range(1, 13)))
-        ano_sel_cat = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
-
-    df_cat = classificar_entregadores(df, mes_sel_cat, ano_sel_cat) if tipo_cat == "Mês/Ano" else classificar_entregadores(df)
-
-    if df_cat.empty:
-        st.info("Nenhum dado encontrado para o período selecionado.")
-    else:
-        # SH -> HH:MM:SS SEMPRE para exibição/CSV
-        if "supply_hours" in df_cat.columns:
-            df_cat["tempo_hms"] = df_cat["supply_hours"].apply(_hms_from_hours)
-
-        # Resumo por categoria
-        contagem = df_cat["categoria"].value_counts().reindex(["Premium","Conectado","Casual","Flutuante"]).fillna(0).astype(int)
-        c1,c2,c3,c4 = st.columns(4)
-        c1.metric("🚀 Premium", int(contagem.get("Premium",0)))
-        c2.metric("🎯 Conectado", int(contagem.get("Conectado",0)))
-        c3.metric("👍 Casual", int(contagem.get("Casual",0)))
-        c4.metric("↩ Flutuante", int(contagem.get("Flutuante",0)))
-
-        # Tabela (usa HH:MM:SS)
-        st.subheader("Tabela de classificação")
-        cols_cat = ["pessoa_entregadora","categoria","tempo_hms","aceitacao_%","conclusao_%","ofertadas","aceitas","completas","criterios_atingidos"]
-        st.dataframe(
-            df_cat[cols_cat].style.format({"aceitacao_%":"{:.1f}","conclusao_%":"{:.1f}"}),
-            use_container_width=True
-        )
-
-        # CSV com vírgula e HH:MM:SS
-        csv_cat = df_cat[cols_cat].to_csv(index=False, decimal=",").encode("utf-8")
-        st.download_button("⬇️ Baixar CSV", data=csv_cat, file_name="categorias_entregadores.csv", mime="text/csv")
-# -------------------------------------------------------------------
-# Categorias de Entregadores
-# -------------------------------------------------------------------
 if modo == "Categorias de Entregadores":
     st.header("📚 Categorias de Entregadores")
 
@@ -387,13 +343,10 @@ if modo == "Categorias de Entregadores":
         csv_cat = df_cat[cols_cat].to_csv(index=False, decimal=",").encode("utf-8")
         st.download_button("⬇️ Baixar CSV", data=csv_cat, file_name="categorias_entregadores.csv", mime="text/csv")
 
-
-# -------------------------------------------------------------------
-# UTR por Entregador e Turno
-# -------------------------------------------------------------------
 # -------------------------------------------------------------------
 # UTR por Entregador, Turno e Dia (DIÁRIO, sem pivot)
 # -------------------------------------------------------------------
+
 if modo == "UTR":
     st.header("🧭 UTR – Corridas ofertadas por hora (diário, por entregador e turno)")
 
