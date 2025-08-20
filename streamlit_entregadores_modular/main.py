@@ -347,71 +347,109 @@ if modo == "Categorias de Entregadores":
 # UTR por Entregador, Turno e Dia (DIÁRIO, sem pivot)
 # -------------------------------------------------------------------
 
+# -------------------------------------------------------------------
+# UTR por Entregador, Turno e Dia — visão simples (linha diária + CSV)
+# -------------------------------------------------------------------
 if modo == "UTR":
-    st.header("🧭 UTR – Corridas ofertadas por hora (diário, por entregador e turno)")
+    st.header("🧭 UTR – Corridas ofertadas por hora (média diária)")
 
-    # Seleção de período
-    tipo_utr = st.radio("Período:", ["Mês/Ano", "Todo o histórico"], horizontal=True, index=0)
-    mes_sel_utr = ano_sel_utr = None
-    if tipo_utr == "Mês/Ano":
-        col1, col2 = st.columns(2)
-        mes_sel_utr = col1.selectbox("Mês", list(range(1, 13)))
-        ano_sel_utr = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
+    # -- Período (mantém Mês/Ano) --
+    col1, col2 = st.columns(2)
+    mes_sel = col1.selectbox("Mês", list(range(1, 13)))
+    ano_sel = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
 
-    base = (
-        utr_por_entregador_turno(df, mes_sel_utr, ano_sel_utr)
-        if tipo_utr == "Mês/Ano"
-        else utr_por_entregador_turno(df)
-    )
+    # Base de cálculo (usa função já existente)
+    base = utr_por_entregador_turno(df, mes_sel, ano_sel)
 
     if base.empty:
         st.info("Nenhum dado encontrado para o período selecionado.")
-    else:
-        # HH:MM:SS derivado de supply_hours
-        if "supply_hours" in base.columns:
-            base["tempo_hms"] = base["supply_hours"].apply(_hms_from_hours)
+        st.stop()
 
-        # ===== Preparar dataframe para exibição =====
-        cols_utr = ["data","pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
-        df_view = base[cols_utr].copy()
+    # HH:MM:SS derivado das horas (apenas para o CSV, não mostraremos tabela na tela)
+    if "supply_hours" in base.columns:
+        base["tempo_hms"] = base["supply_hours"].apply(_hms_from_hours)
 
-        # Ajustes de formato
-        try:
-            df_view["data"] = pd.to_datetime(df_view["data"]).dt.strftime("%d/%m/%Y")
-        except Exception:
-            df_view["data"] = df_view["data"].astype(str)
+    # -- Turnos (opcional): se nada selecionado -> todos --
+    turnos_disponiveis = sorted(base["periodo"].dropna().unique()) if "periodo" in base.columns else []
+    turnos_sel = st.multiselect("Filtrar por turno (opcional)", turnos_disponiveis, default=turnos_disponiveis)
 
-        df_view["UTR"] = pd.to_numeric(df_view["UTR"], errors="coerce").round(2)
-        df_view["corridas_ofertadas"] = (
-            pd.to_numeric(df_view["corridas_ofertadas"], errors="coerce")
-            .fillna(0)
-            .astype(int)
-        )
+    if turnos_sel:
+        base = base[base["periodo"].isin(turnos_sel)]
 
-        # ===== Métricas =====
-        st.metric("Média UTR (geral)", float(df_view["UTR"].mean().round(2)))
-        st.metric("Mediana UTR (geral)", float(df_view["UTR"].median().round(2)))
+    if base.empty:
+        st.info("Sem dados para o(s) turno(s) selecionado(s).")
+        st.stop()
 
-        # ===== Tabela =====
-        st.subheader("Tabela por dia, entregador e turno")
-        st.dataframe(
-            df_view,
-            use_container_width=True,
-            column_config={
-                "data": st.column_config.TextColumn("Data"),
-                "pessoa_entregadora": st.column_config.TextColumn("Entregador"),
-                "periodo": st.column_config.TextColumn("Turno"),
-                "tempo_hms": st.column_config.TextColumn("Tempo (HH:MM:SS)"),
-                "corridas_ofertadas": st.column_config.NumberColumn("Corridas", format="%d"),
-                "UTR": st.column_config.NumberColumn("UTR", format="%.2f"),
-            },
-        )
+    # Garantir datas como datetime para formatar e agrupar por dia
+    base["data"] = pd.to_datetime(base["data"])
 
-        # ===== Download CSV =====
-        csv_utr = df_view.to_csv(index=False, decimal=",").encode("utf-8")
-        st.download_button(
-            "⬇️ Baixar CSV",
-            data=csv_utr,
-            file_name="utr_entregador_turno_diario.csv",
-            mime="text/csv",
-        )
+    # ======= Série diária: MÉDIA de UTR por dia (após filtros) =======
+    # Obs.: média simples da coluna UTR considerando linhas (entregador x turno x dia) filtradas.
+    serie_dia = (
+        base.groupby(base["data"].dt.date)["UTR"]
+        .mean()
+        .reset_index()
+        .rename(columns={"data": "dia", "UTR": "utr_media"})
+    )
+    # Converte 'dia' para datetime só pra plot/ordenar e pega número do dia
+    serie_dia["dia"] = pd.to_datetime(serie_dia["dia"])
+    serie_dia["dia_num"] = serie_dia["dia"].dt.day
+
+    # ======= Gráfico em linha =======
+    titulo_turno = ", ".join(turnos_sel) if turnos_sel else "Todos os turnos"
+    fig = px.line(
+        serie_dia.sort_values("dia"),
+        x="dia_num",
+        y="utr_media",
+        markers=True,
+        title=f"UTR médio por dia – {mes_sel:02d}/{ano_sel} • {titulo_turno}",
+        labels={"dia_num": "Dia do mês", "utr_media": "UTR (média do dia)"},
+        template="plotly_dark",
+        color_discrete_sequence=["#58a6ff"]
+    )
+    fig.update_traces(line_shape="spline")
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white"),
+        title_font=dict(size=22),
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor="gray", rangemode="tozero")
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ======= Resuminho rápido (opcional mas útil) =======
+    colm1, colm2, colm3 = st.columns(3)
+    colm1.metric("Média UTR no mês", f"{serie_dia['utr_media'].mean():.2f}")
+    colm2.metric("Mediana UTR no mês", f"{serie_dia['utr_media'].median():.2f}")
+    pico = serie_dia.loc[serie_dia['utr_media'].idxmax()] if not serie_dia.empty else None
+    if pico is not None:
+        colm3.metric("Pico (dia)", f"{int(pico['dia_num'])} — {pico['utr_media']:.2f}")
+
+    # ======= CSV (mesmo conteúdo-base de antes) =======
+    # Mantém o mesmo schema de exportação usado na versão anterior
+    cols_csv = ["data","pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
+    # Garante colunas (caso alguma falte)
+    for c in cols_csv:
+        if c not in base.columns:
+            base[c] = None
+
+    # Formata data para dd/mm/yyyy no CSV
+    base_csv = base.copy()
+    try:
+        base_csv["data"] = pd.to_datetime(base_csv["data"]).dt.strftime("%d/%m/%Y")
+    except Exception:
+        base_csv["data"] = base_csv["data"].astype(str)
+
+    # Tipos/formatos
+    base_csv["UTR"] = pd.to_numeric(base_csv["UTR"], errors="coerce").round(2)
+    base_csv["corridas_ofertadas"] = pd.to_numeric(base_csv["corridas_ofertadas"], errors="coerce").fillna(0).astype(int)
+
+    csv_bin = base_csv[cols_csv].to_csv(index=False, decimal=",").encode("utf-8")
+    st.download_button(
+        "⬇️ Baixar CSV",
+        data=csv_bin,
+        file_name=f"utr_entregador_turno_diario_{mes_sel:02d}_{ano_sel}.csv",
+        mime="text/csv",
+        help="Exporta o mesmo CSV da versão anterior (com data, entregador, turno, HH:MM:SS, corridas, UTR)."
+    )
