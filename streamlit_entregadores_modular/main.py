@@ -348,24 +348,20 @@ if modo == "Categorias de Entregadores":
 # -------------------------------------------------------------------
 
 # -------------------------------------------------------------------
-# UTR por Entregador, Turno e Dia — visão simples (linha diária + CSV)
-# -------------------------------------------------------------------
-# -------------------------------------------------------------------
 # UTR — Barras por dia (mês selecionado), legenda com todos os dias
 # -------------------------------------------------------------------
 if modo == "UTR":
-    import plotly.graph_objects as go  # para construir um trace por dia (legenda completa)
+    import plotly.graph_objects as go  # para ter 1 trace por dia
 
     st.header("🧭 UTR – Corridas ofertadas por hora (média diária)")
-    col1, col2, col3 = st.columns([1,1,2])
 
     # --- Período (mês/ano) mantido ---
+    col1, col2 = st.columns(2)
     mes_sel = col1.selectbox("Mês", list(range(1, 13)))
     ano_sel = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
 
-    # Base completa do mês/ano (para CSV geral e para filtrar na visualização)
+    # Base completa do mês/ano (usada para CSV GERAL e para o gráfico)
     base_full = utr_por_entregador_turno(df, mes_sel, ano_sel)
-
     if base_full.empty:
         st.info("Nenhum dado encontrado para o período selecionado.")
         st.stop()
@@ -374,41 +370,35 @@ if modo == "UTR":
     if "supply_hours" in base_full.columns:
         base_full["tempo_hms"] = base_full["supply_hours"].apply(_hms_from_hours)
 
-    # --- Turno: UI mais clean (um só valor) ---
-    turnos_disponiveis = ["Todos os turnos"]
+    # --- Turno: UI limpa ---
+    turnos_opts = ["Todos os turnos"]
     if "periodo" in base_full.columns:
-        turnos_disponiveis += sorted([t for t in base_full["periodo"].dropna().unique()])
-    turno_sel = col3.selectbox("Turno", options=turnos_disponiveis, index=0)
+        turnos_opts += sorted([t for t in base_full["periodo"].dropna().unique()])
+    turno_sel = st.selectbox("Turno", options=turnos_opts, index=0)
 
-    # Filtra só para o GRÁFICO (se escolher um turno específico)
-    base_plot = base_full.copy()
-    if turno_sel != "Todos os turnos":
-        base_plot = base_plot[base_plot["periodo"] == turno_sel]
-
+    # Filtra SOMENTE para o GRÁFICO (CSV continuará geral)
+    base_plot = base_full if turno_sel == "Todos os turnos" else base_full[base_full["periodo"] == turno_sel]
     if base_plot.empty:
         st.info("Sem dados para o turno selecionado.")
         st.stop()
 
-    # Garantir datetime p/ agrupar por dia
+    # Média UTR por dia (pós-filtro de turno)
     base_plot["data"] = pd.to_datetime(base_plot["data"])
-
-    # ======= Média diária de UTR (depois do filtro de turno, se houver) =======
     serie = (
         base_plot.groupby(base_plot["data"].dt.day)["UTR"]
         .mean()
         .reset_index()
-        .rename(columns={"data": "dia", "UTR": "utr_media", "data": "dia_num"})
+        .rename(columns={"data": "dia", "UTR": "utr_media"})
     )
-    serie.columns = ["dia_num", "utr_media"]  # dia do mês (1..31), valor médio
+    serie.columns = ["dia_num", "utr_media"]
 
-    # ======= Gráfico de BARRAS com legenda contendo TODOS os dias =======
-    # (um trace por dia → a legenda lista cada dia e você pode ligar/desligar)
+    # Gráfico: 1 trace por dia (legenda com todos os dias)
     fig = go.Figure()
     for _, row in serie.sort_values("dia_num").iterrows():
         d = int(row["dia_num"])
         fig.add_bar(
             name=f"Dia {d}",
-            x=[d],          # cada trace aparece em seu próprio dia no eixo
+            x=[d],
             y=[row["utr_media"]],
             hovertemplate="Dia %{x}<br>UTR médio %{y:.2f}<extra></extra>",
         )
@@ -423,27 +413,21 @@ if modo == "UTR":
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(color="white"),
         title_font=dict(size=22),
-        barmode="group",           # mantém cada barra separada (um trace por dia)
+        barmode="group",
         xaxis=dict(showgrid=False),
         yaxis=dict(showgrid=True, gridcolor="gray", rangemode="tozero"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # ======= Resumo rápido =======
-    colm1, colm2, colm3 = st.columns(3)
-    colm1.metric("Média UTR no mês", f"{serie['utr_media'].mean():.2f}")
-    colm2.metric("Mediana UTR no mês", f"{serie['utr_media'].median():.2f}")
-    pico = serie.loc[serie['utr_media'].idxmax()] if not serie.empty else None
-    if pico is not None:
-        colm3.metric("Pico (dia)", f"{int(pico['dia_num'])} — {pico['utr_media']:.2f}")
+    # --- Só a média geral do mês (sem mediana / sem pico) ---
+    st.metric("Média UTR no mês", f"{serie['utr_media'].mean():.2f}")
 
-    # ======= CSV GERAL (ignora filtro de turno) =======
+    # --- CSV GERAL (ignora filtro de turno) ---
     st.caption("📄 O botão abaixo baixa o **CSV GERAL** (sem filtro de turno).")
     cols_csv = ["data","pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
     base_csv = base_full.copy()
 
-    # Formata data e tipos
     try:
         base_csv["data"] = pd.to_datetime(base_csv["data"]).dt.strftime("%d/%m/%Y")
     except Exception:
@@ -464,4 +448,3 @@ if modo == "UTR":
         mime="text/csv",
         help="Exporta o CSV geral do mês/ano, ignorando o filtro de turno."
     )
-
