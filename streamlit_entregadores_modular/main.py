@@ -350,106 +350,118 @@ if modo == "Categorias de Entregadores":
 # -------------------------------------------------------------------
 # UTR por Entregador, Turno e Dia — visão simples (linha diária + CSV)
 # -------------------------------------------------------------------
+# -------------------------------------------------------------------
+# UTR — Barras por dia (mês selecionado), legenda com todos os dias
+# -------------------------------------------------------------------
 if modo == "UTR":
-    st.header("🧭 UTR – Corridas ofertadas por hora (média diária)")
+    import plotly.graph_objects as go  # para construir um trace por dia (legenda completa)
 
-    # -- Período (mantém Mês/Ano) --
-    col1, col2 = st.columns(2)
+    st.header("🧭 UTR – Corridas ofertadas por hora (média diária)")
+    col1, col2, col3 = st.columns([1,1,2])
+
+    # --- Período (mês/ano) mantido ---
     mes_sel = col1.selectbox("Mês", list(range(1, 13)))
     ano_sel = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
 
-    # Base de cálculo (usa função já existente)
-    base = utr_por_entregador_turno(df, mes_sel, ano_sel)
+    # Base completa do mês/ano (para CSV geral e para filtrar na visualização)
+    base_full = utr_por_entregador_turno(df, mes_sel, ano_sel)
 
-    if base.empty:
+    if base_full.empty:
         st.info("Nenhum dado encontrado para o período selecionado.")
         st.stop()
 
-    # HH:MM:SS derivado das horas (apenas para o CSV, não mostraremos tabela na tela)
-    if "supply_hours" in base.columns:
-        base["tempo_hms"] = base["supply_hours"].apply(_hms_from_hours)
+    # HH:MM:SS (apenas para CSV)
+    if "supply_hours" in base_full.columns:
+        base_full["tempo_hms"] = base_full["supply_hours"].apply(_hms_from_hours)
 
-    # -- Turnos (opcional): se nada selecionado -> todos --
-    turnos_disponiveis = sorted(base["periodo"].dropna().unique()) if "periodo" in base.columns else []
-    turnos_sel = st.multiselect("Filtrar por turno (opcional)", turnos_disponiveis, default=turnos_disponiveis)
+    # --- Turno: UI mais clean (um só valor) ---
+    turnos_disponiveis = ["Todos os turnos"]
+    if "periodo" in base_full.columns:
+        turnos_disponiveis += sorted([t for t in base_full["periodo"].dropna().unique()])
+    turno_sel = col3.selectbox("Turno", options=turnos_disponiveis, index=0)
 
-    if turnos_sel:
-        base = base[base["periodo"].isin(turnos_sel)]
+    # Filtra só para o GRÁFICO (se escolher um turno específico)
+    base_plot = base_full.copy()
+    if turno_sel != "Todos os turnos":
+        base_plot = base_plot[base_plot["periodo"] == turno_sel]
 
-    if base.empty:
-        st.info("Sem dados para o(s) turno(s) selecionado(s).")
+    if base_plot.empty:
+        st.info("Sem dados para o turno selecionado.")
         st.stop()
 
-    # Garantir datas como datetime para formatar e agrupar por dia
-    base["data"] = pd.to_datetime(base["data"])
+    # Garantir datetime p/ agrupar por dia
+    base_plot["data"] = pd.to_datetime(base_plot["data"])
 
-    # ======= Série diária: MÉDIA de UTR por dia (após filtros) =======
-    # Obs.: média simples da coluna UTR considerando linhas (entregador x turno x dia) filtradas.
-    serie_dia = (
-        base.groupby(base["data"].dt.date)["UTR"]
+    # ======= Média diária de UTR (depois do filtro de turno, se houver) =======
+    serie = (
+        base_plot.groupby(base_plot["data"].dt.day)["UTR"]
         .mean()
         .reset_index()
-        .rename(columns={"data": "dia", "UTR": "utr_media"})
+        .rename(columns={"data": "dia", "UTR": "utr_media", "data": "dia_num"})
     )
-    # Converte 'dia' para datetime só pra plot/ordenar e pega número do dia
-    serie_dia["dia"] = pd.to_datetime(serie_dia["dia"])
-    serie_dia["dia_num"] = serie_dia["dia"].dt.day
+    serie.columns = ["dia_num", "utr_media"]  # dia do mês (1..31), valor médio
 
-    # ======= Gráfico em linha =======
-    titulo_turno = ", ".join(turnos_sel) if turnos_sel else "Todos os turnos"
-    fig = px.line(
-        serie_dia.sort_values("dia"),
-        x="dia_num",
-        y="utr_media",
-        markers=True,
-        title=f"UTR médio por dia – {mes_sel:02d}/{ano_sel} • {titulo_turno}",
-        labels={"dia_num": "Dia do mês", "utr_media": "UTR (média do dia)"},
-        template="plotly_dark",
-        color_discrete_sequence=["#58a6ff"]
-    )
-    fig.update_traces(line_shape="spline")
+    # ======= Gráfico de BARRAS com legenda contendo TODOS os dias =======
+    # (um trace por dia → a legenda lista cada dia e você pode ligar/desligar)
+    fig = go.Figure()
+    for _, row in serie.sort_values("dia_num").iterrows():
+        d = int(row["dia_num"])
+        fig.add_bar(
+            name=f"Dia {d}",
+            x=[d],          # cada trace aparece em seu próprio dia no eixo
+            y=[row["utr_media"]],
+            hovertemplate="Dia %{x}<br>UTR médio %{y:.2f}<extra></extra>",
+        )
+
+    titulo_turno = turno_sel if turno_sel != "Todos os turnos" else "Todos os turnos"
     fig.update_layout(
+        title=f"UTR médio por dia – {mes_sel:02d}/{ano_sel} • {titulo_turno}",
+        xaxis_title="Dia do mês",
+        yaxis_title="UTR (média do dia)",
+        template="plotly_dark",
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(color="white"),
         title_font=dict(size=22),
+        barmode="group",           # mantém cada barra separada (um trace por dia)
         xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor="gray", rangemode="tozero")
+        yaxis=dict(showgrid=True, gridcolor="gray", rangemode="tozero"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # ======= Resuminho rápido (opcional mas útil) =======
+    # ======= Resumo rápido =======
     colm1, colm2, colm3 = st.columns(3)
-    colm1.metric("Média UTR no mês", f"{serie_dia['utr_media'].mean():.2f}")
-    colm2.metric("Mediana UTR no mês", f"{serie_dia['utr_media'].median():.2f}")
-    pico = serie_dia.loc[serie_dia['utr_media'].idxmax()] if not serie_dia.empty else None
+    colm1.metric("Média UTR no mês", f"{serie['utr_media'].mean():.2f}")
+    colm2.metric("Mediana UTR no mês", f"{serie['utr_media'].median():.2f}")
+    pico = serie.loc[serie['utr_media'].idxmax()] if not serie.empty else None
     if pico is not None:
         colm3.metric("Pico (dia)", f"{int(pico['dia_num'])} — {pico['utr_media']:.2f}")
 
-    # ======= CSV (mesmo conteúdo-base de antes) =======
-    # Mantém o mesmo schema de exportação usado na versão anterior
+    # ======= CSV GERAL (ignora filtro de turno) =======
+    st.caption("📄 O botão abaixo baixa o **CSV GERAL** (sem filtro de turno).")
     cols_csv = ["data","pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
-    # Garante colunas (caso alguma falte)
-    for c in cols_csv:
-        if c not in base.columns:
-            base[c] = None
+    base_csv = base_full.copy()
 
-    # Formata data para dd/mm/yyyy no CSV
-    base_csv = base.copy()
+    # Formata data e tipos
     try:
         base_csv["data"] = pd.to_datetime(base_csv["data"]).dt.strftime("%d/%m/%Y")
     except Exception:
         base_csv["data"] = base_csv["data"].astype(str)
 
-    # Tipos/formatos
+    for c in cols_csv:
+        if c not in base_csv.columns:
+            base_csv[c] = None
+
     base_csv["UTR"] = pd.to_numeric(base_csv["UTR"], errors="coerce").round(2)
     base_csv["corridas_ofertadas"] = pd.to_numeric(base_csv["corridas_ofertadas"], errors="coerce").fillna(0).astype(int)
 
     csv_bin = base_csv[cols_csv].to_csv(index=False, decimal=",").encode("utf-8")
     st.download_button(
-        "⬇️ Baixar CSV",
+        "⬇️ Baixar CSV (GERAL)",
         data=csv_bin,
         file_name=f"utr_entregador_turno_diario_{mes_sel:02d}_{ano_sel}.csv",
         mime="text/csv",
-        help="Exporta o mesmo CSV da versão anterior (com data, entregador, turno, HH:MM:SS, corridas, UTR)."
+        help="Exporta o CSV geral do mês/ano, ignorando o filtro de turno."
     )
+
