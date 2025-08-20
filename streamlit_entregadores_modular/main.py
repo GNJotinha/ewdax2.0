@@ -348,7 +348,7 @@ if modo == "Categorias de Entregadores":
 # -------------------------------------------------------------------
 
 # -------------------------------------------------------------------
-# UTR — Barras limpas por dia (sem carnaval na legenda)
+# UTR — Barras limpas por dia (alternando 2 cores, números visíveis)
 # -------------------------------------------------------------------
 if modo == "UTR":
     st.header("🧭 UTR – Corridas ofertadas por hora (média diária)")
@@ -364,17 +364,15 @@ if modo == "UTR":
         st.info("Nenhum dado encontrado para o período selecionado.")
         st.stop()
 
-    # HH:MM:SS (só para CSV)
     if "supply_hours" in base_full.columns:
         base_full["tempo_hms"] = base_full["supply_hours"].apply(_hms_from_hours)
 
-    # --- Turno (limpo) ---
+    # --- Turno ---
     turnos_opts = ["Todos os turnos"]
     if "periodo" in base_full.columns:
         turnos_opts += sorted([t for t in base_full["periodo"].dropna().unique()])
     turno_sel = st.selectbox("Turno", options=turnos_opts, index=0)
 
-    # Filtra só para o gráfico
     base_plot = base_full if turno_sel == "Todos os turnos" else base_full[base_full["periodo"] == turno_sel]
     if base_plot.empty:
         st.info("Sem dados para o turno selecionado.")
@@ -390,28 +388,38 @@ if modo == "UTR":
     )
     serie.columns = ["dia_num", "utr_media"]
 
-    # ======= Gráfico de barras único =======
+    # ======= Gráfico com cores alternadas =======
     import plotly.express as px
     titulo_turno = turno_sel if turno_sel != "Todos os turnos" else "Todos os turnos"
+
+    # cria uma coluna de "paridade" para alternar cor
+    serie["paridade"] = serie["dia_num"] % 2
+
     fig = px.bar(
         serie.sort_values("dia_num"),
         x="dia_num",
         y="utr_media",
         text="utr_media",
+        color="paridade",  # alterna cor
+        color_discrete_map={0: "#00BFFF", 1: "#9370DB"},  # azul / roxo
         title=f"UTR médio por dia – {mes_sel:02d}/{ano_sel} • {titulo_turno}",
         labels={"dia_num": "Dia do mês", "utr_media": "UTR médio"},
         template="plotly_dark",
-        color_discrete_sequence=["#00F7FF"],
     )
-    fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+
+    fig.update_traces(
+        texttemplate="<b>%{text:.2f}</b>", 
+        textposition="outside",
+        textfont=dict(size=14, color="white")  # números maiores e brancos
+    )
     fig.update_layout(
+        showlegend=False,
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(color="white"),
         title_font=dict(size=22),
         xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor="gray", rangemode="tozero"),
-        showlegend=False
+        yaxis=dict(showgrid=True, gridcolor="gray", rangemode="tozero")
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -443,4 +451,3 @@ if modo == "UTR":
         mime="text/csv",
         help="Exporta o CSV geral do mês/ano, ignorando o filtro de turno."
     )
-
