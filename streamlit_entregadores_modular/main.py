@@ -234,55 +234,60 @@ if modo == "📊 Indicadores Gerais":
     agregado[text_col] = agregado[text_col].fillna(0)
 
     # ---- Gráfico (clean, dark, label fora) ----
+def grafico_barras(df_, coluna, titulo_, label_y):
+    # Agregação mensal
+    mensal = df_.groupby('mes_ano')[coluna].sum().reset_index()
+    mensal['mes_ao'] = mensal['mes_ano'].dt.strftime('%b/%y')
+    mensal["_x"] = mensal['mes_ao']
+
+    # Gráfico base
     fig = px.bar(
-        agregado,
-        x="mes_label",
-        y=y_col,
-        text=text_col,
-        title=titulo,
-        labels={y_col: y_col.capitalize(), "mes_label": "Mês/Ano"},
-        template="plotly_dark",
-        color_discrete_sequence=["#00BFFF"],
+        mensal,
+        x="_x",
+        y=coluna,
+        text=coluna,
+        title=titulo_,
+        labels={coluna: label_y, "_x": "Mês/Ano"},
+        template='plotly_dark',
+        color_discrete_sequence=['#00BFFF']
     )
-    ##aaaaa### ===== NÚMERO DENTRO DAS BARRAS (quantidade absoluta) =====
-# texto interno = valor do eixo Y (ofertadas/aceitas/rejeitadas/completas)
-agregado["_y_text"] = agregado[y_col].astype(int).astype(str)
 
-fig.add_bar(
-    x=agregado["mes_label"],
-    y=agregado[y_col],
-    text=agregado["_y_text"],
-    textposition="inside",
-    # fonte e contraste pro texto interno
-    insidetextfont=dict(size=16, color="white"),
-    marker=dict(color="rgba(0,0,0,0)"),
-    hoverinfo="skip",
-    showlegend=False,
-)
-
-# Sobrepor os dois traces (barras originais + trace de texto)
-fig.update_layout(barmode="overlay")
-#aaa#
+    # Texto fora da barra (ajustável se quiser usar %/UTR em vez do valor bruto)
     fig.update_traces(
-        texttemplate=text_fmt,
+        texttemplate="<b>%{text}</b>",
         textposition="outside",
         textfont=dict(size=16, color="white"),
         marker_line_color="rgba(255,255,255,0.25)",
         marker_line_width=0.5,
     )
+
+    # Texto dentro da barra (valor absoluto, contraste forte)
+    fig.add_bar(
+        x=mensal["_x"],
+        y=mensal[coluna],
+        text=mensal[coluna].astype(int).astype(str),
+        textposition="inside",
+        insidetextfont=dict(size=18, color="white"),
+        marker=dict(color="rgba(0,0,0,0)"),  # invisível, só serve de suporte pro texto
+        hoverinfo="skip",
+        showlegend=False,
+    )
+    fig.update_layout(barmode="overlay")
+
+    # Layout geral
     fig.update_layout(
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
         font=dict(color="white"),
         title_font=dict(size=22),
         xaxis=dict(showgrid=False, tickfont=dict(size=14)),
-        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)", tickfont=dict(size=14)),
+        yaxis=dict(showgrid=True, gridcolor="gray", tickfont=dict(size=14)),
         bargap=0.25,
         margin=dict(t=70, r=20, b=60, l=60),
-        showlegend=False,
     )
 
-    st.caption(f"💡 {subtitulo}")
     st.plotly_chart(fig, use_container_width=True)
+
 
     # ---- Série diária (mês atual) segue igual ----
     coluna_dia_map = {
