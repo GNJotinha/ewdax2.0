@@ -141,54 +141,177 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
 # -------------------------------------------------------------------
 # Indicadores Gerais
 # -------------------------------------------------------------------
+# -------------------------------------------------------------------
+# 📊 Indicadores Gerais (rápido, legível e com rótulos certos)
+# -------------------------------------------------------------------
 if modo == "📊 Indicadores Gerais":
+    from plotly import graph_objects as go
+
     st.subheader("🔎 Escolha o indicador que deseja visualizar:")
 
-    tipo_grafico = st.radio("Tipo de gráfico:", [
-        "Corridas ofertadas",
-        "Corridas aceitas",
-        "Corridas rejeitadas",
-        "Corridas completadas"
-    ], index=0, horizontal=True)
+    tipo_grafico = st.radio(
+        "Tipo de gráfico:",
+        ["Corridas ofertadas", "Corridas aceitas", "Corridas rejeitadas", "Corridas completadas"],
+        index=0, horizontal=True
+    )
 
-    coluna_map = {
-        "Corridas ofertadas": ("numero_de_corridas_ofertadas", "Corridas ofertadas por mês", "Corridas"),
-        "Corridas aceitas": ("numero_de_corridas_aceitas", "Corridas aceitas por mês", "Corridas Aceitas"),
-        "Corridas rejeitadas": ("numero_de_corridas_rejeitadas", "Corridas rejeitadas por mês", "Corridas Rejeitadas"),
-        "Corridas completadas": ("numero_de_corridas_completadas", "Corridas completadas por mês", "Corridas Completadas")
-    }
-
-    col, titulo, label = coluna_map[tipo_grafico]
-
-    def grafico_barras(df_, coluna, titulo_, label_y):
-        mensal = df_.groupby('mes_ano')[coluna].sum().reset_index()
-        mensal['mes_ao'] = mensal['mes_ano'].dt.strftime('%b/%y')
-
-        # usar a coluna correta no eixo X (mes_ao para rótulo)
-        mensal["_x"] = mensal['mes_ao']
-
-        fig = px.bar(
-            mensal, x="_x", y=coluna, text=coluna, title=titulo_,
-            labels={coluna: label_y, "_x": "Mês/Ano"}, template='plotly_dark',
-            color_discrete_sequence=['#00F7FF'], text_auto=True
+    # ---------- Helpers cacheados ---------- #
+    @st.cache_data(show_spinner=False)
+    def _agg_counts(df_):
+        g = (
+            df_.groupby("mes_ano")
+               .agg(
+                   ofertadas=("numero_de_corridas_ofertadas", "sum"),
+                   aceitas=("numero_de_corridas_aceitas", "sum"),
+                   rejeitadas=("numero_de_corridas_rejeitadas", "sum"),
+                   completas=("numero_de_corridas_completadas", "sum"),
+               )
+               .reset_index()
         )
+        g["mes_label"] = pd.to_datetime(g["mes_ano"]).dt.strftime("%b/%y")
+        return g
 
-        fig.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white'), title_font=dict(size=22),
-            xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor='gray')
+    @st.cache_data(show_spinner=False)
+    def _utr_mes_media_diaria(df_, ts_mensal):
+        """
+        UTR mensal com MESMA lógica da tela UTR:
+        - pega base diária por entregador/turno
+        - faz média por DIA
+        - depois média das médias de cada dia
+        """
+        mes = int(pd.to_datetime(ts_mensal).month)
+        ano = int(pd.to_datetime(ts_mensal).year)
+        base = utr_por_entregador_turno(df_, mes, ano)
+        if base.empty:
+            return 0.0
+        # garantir datetime e agrupar por dia
+        base = base.copy()
+        base["data"] = pd.to_datetime(base["data"], errors="coerce")
+        daily_mean = base.groupby(base["data"].dt.date)["UTR"].mean()
+        return float(daily_mean.mean()) if not daily_mean.empty else 0.0
+
+    @st.cache_data(show_spinner=False)
+    def _prepara_agregado(df_):
+        agg = _agg_counts(df_)
+        # UTR do mês (média dos UTR diários) mês a mês
+        agg["utr_mes"] = [round(_utr_mes_media_diaria(df_, ts), 2) for ts in agg["mes_ano"]]
+
+        # % com proteção a zero
+        ofertadas_safe = agg["ofertadas"].replace(0, pd.NA)
+        aceitas_safe   = agg["aceitas"].replace(0, pd.NA)
+
+        agg["acc_pct"]  = (agg["aceitas"]    / ofertadas_safe * 100).round(1)  # aceitação
+        agg["rej_pct"]  = (agg["rejeitadas"] / ofertadas_safe * 100).round(1)  # rejeição
+        agg["comp_pct"] = (agg["completas"]  / aceitas_safe   * 100).round(1)  # conclusão
+
+        # preencher NaN só pra exibição
+        for c in ["acc_pct", "rej_pct", "comp_pct", "utr_mes"]:
+            agg[c] = agg[c].fillna(0)
+        return agg
+
+    agregado = _prepara_agregado(df)
+
+    # ---------- Seleção por indicador ---------- #
+    if tipo_grafico == "Corridas ofertadas":
+        y_col    = "ofertadas"
+        top_col  = "utr_mes"
+        top_fmt  = lambda v: f"{v:.2f}"
+        titulo   = "Corridas ofertadas por mês"
+        subtitulo = "Rótulo no topo = UTR do mês (média dos UTR diários)"
+    elif tipo_grafico == "Corridas aceitas":
+        y_col    = "aceitas"
+        top_col  = "acc_pct"
+        top_fmt  = lambda v: f"{v:.1f}%"
+        titulo   = "Corridas aceitas por mês"
+        subtitulo = "Rótulo no topo = % de aceitação (aceitas ÷ ofertadas)"
+    elif tipo_grafico == "Corridas rejeitadas":
+        y_col    = "rejeitadas"
+        top_col  = "rej_pct"
+        top_fmt  = lambda v: f"{v:.1f}%"
+        titulo   = "Corridas rejeitadas por mês"
+        subtitulo = "Rótulo no topo = % de rejeição (rejeitadas ÷ ofertadas)"
+    else:  # completadas
+        y_col    = "completas"
+        top_col  = "comp_pct"
+        top_fmt  = lambda v: f"{v:.1f}%"
+        titulo   = "Corridas completadas por mês"
+        subtitulo = "Rótulo no topo = % de conclusão (completas ÷ aceitas)"
+
+    # ---------- Opções de performance ---------- #
+    col_op1, col_op2 = st.columns([1,1])
+    fast = col_op1.toggle("⚡ Modo rápido (gráfico estático)", value=True, key=f"fast_{y_col}")
+    show_inside = col_op2.toggle("Mostrar número dentro da barra (pode ficar mais lento)", value=False, key=f"in_{y_col}")
+
+    # ---------- Gráfico ---------- #
+    fig = go.Figure()
+
+    # Barras com rótulo do topo (UTR ou %)
+    fig.add_bar(
+        x=agregado["mes_label"],
+        y=agregado[y_col],
+        text=[top_fmt(v) for v in agregado[top_col]],
+        textposition="outside",
+        marker=dict(color="#00BFFF", line=dict(color="rgba(255,255,255,0.25)", width=0.5)),
+        hovertemplate="<b>%{x}</b><br>" + f"{y_col.capitalize()}: " + "%{y:.0f}<extra></extra>",
+        name=y_col.capitalize(),
+    )
+
+    # (Opcional) número ABS dentro da barra (segundo trace transparente)
+    if show_inside:
+        fig.add_bar(
+            x=agregado["mes_label"],
+            y=agregado[y_col],
+            text=[f"{int(v)}" for v in agregado[y_col]],
+            textposition="inside",
+            insidetextfont=dict(size=18, color="white"),
+            marker=dict(color="rgba(0,0,0,0)"),
+            hoverinfo="skip",
+            showlegend=False,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        fig.update_layout(barmode="overlay")
 
-    grafico_barras(df, col, titulo, label)
+    # Layout limpo
+    fig.update_layout(
+        title=titulo,
+        xaxis_title="Mês/Ano",
+        yaxis_title=y_col.capitalize(),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white"),
+        title_font=dict(size=22),
+        xaxis=dict(
+            showgrid=False,
+            tickfont=dict(size=14),
+            categoryorder="array",
+            categoryarray=list(agregado["mes_label"])
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor="rgba(255,255,255,0.15)",
+            tickfont=dict(size=14),
+            rangemode="tozero"
+        ),
+        bargap=0.25,
+        margin=dict(t=70, r=20, b=60, l=60),
+        showlegend=False,
+        uniformtext_minsize=14,
+        uniformtext_mode="show",
+    )
 
+    st.caption(f"💡 {subtitulo}")
+
+    cfg = {"displayModeBar": False}
+    if fast:
+        cfg["staticPlot"] = True
+    st.plotly_chart(fig, use_container_width=True, config=cfg)
+
+    # ---------- Série diária (mês atual) — mantém tua lógica ---------- #
     coluna_dia_map = {
         "Corridas ofertadas": ('numero_de_corridas_ofertadas', '📈 Corridas ofertadas por dia (mês atual)', 'Corridas Ofertadas'),
         "Corridas aceitas": ('numero_de_corridas_aceitas', '📈 Corridas aceitas por dia (mês atual)', 'Corridas Aceitas'),
         "Corridas rejeitadas": ('numero_de_corridas_rejeitadas', '📈 Corridas rejeitadas por dia (mês atual)', 'Corridas Rejeitadas'),
         "Corridas completadas": ('numero_de_corridas_completadas', '📈 Corridas completadas por dia (mês atual)', 'Corridas Completadas')
     }
-
     coluna_dia, titulo_dia, label_dia = coluna_dia_map[tipo_grafico]
 
     mes_atual = pd.Timestamp.today().month
@@ -208,47 +331,6 @@ if modo == "📊 Indicadores Gerais":
     total_mes = int(por_dia[coluna_dia].sum())
     st.metric(f"🚗 {label_dia} no mês", total_mes)
     st.plotly_chart(fig_dia, use_container_width=True)
-
-# -------------------------------------------------------------------
-# Alertas de Faltas
-# -------------------------------------------------------------------
-if modo == "Alertas de Faltas":
-    st.subheader("⚠️ Entregadores com 3+ faltas consecutivas")
-
-    hoje = datetime.now().date()
-    ultimos_15_dias = hoje - timedelta(days=15)
-    df["data"] = pd.to_datetime(df["data"]).dt.date
-
-    ativos = df[df["data"] >= ultimos_15_dias]["pessoa_entregadora_normalizado"].unique()
-    mensagens = []
-
-    for nome in ativos:
-        entregador = df[df["pessoa_entregadora_normalizado"] == nome]
-        if entregador.empty:
-            continue
-
-        dias = pd.date_range(end=hoje - timedelta(days=1), periods=30).to_pydatetime()
-        dias = [d.date() for d in dias]
-        presencas = set(entregador["data"])
-
-        sequencia = 0
-        for dia in sorted(dias):
-            if dia in presencas:
-                sequencia = 0
-            else:
-                sequencia += 1
-
-        if sequencia >= 4:
-            nome_original = entregador["pessoa_entregadora"].iloc[0]
-            ultima_data = entregador["data"].max().strftime('%d/%m')
-            mensagens.append(
-                f"• {nome_original} – {sequencia} dias consecutivos ausente (última presença: {ultima_data})"
-            )
-
-    if mensagens:
-        st.text_area("Resultado:", value="\n".join(mensagens), height=400)
-    else:
-        st.success("✅ Nenhum entregador ativo com faltas consecutivas.")
 
 # -------------------------------------------------------------------
 # Relatório Customizado
