@@ -153,7 +153,7 @@ if modo == "📊 Indicadores Gerais":
         index=0, horizontal=True
     )
 
-    # ----- Agregação mensal (reusando _horas_from_abs) -----
+    # ----- Agregação mensal (contagens) -----
     agg_counts = (
         df.groupby("mes_ano")
           .agg(
@@ -164,9 +164,10 @@ if modo == "📊 Indicadores Gerais":
           )
     ).reset_index()
 
+    # Horas (se quiser manter para outras análises)
     horas = (
         df.groupby("mes_ano")
-          .apply(lambda g: _horas_from_abs(g))  # <- reuso do relatorios._horas_from_abs
+          .apply(lambda g: _horas_from_abs(g))
           .rename("horas")
           .reset_index()
     )
@@ -174,23 +175,43 @@ if modo == "📊 Indicadores Gerais":
     agregado = agg_counts.merge(horas, on="mes_ano", how="left").fillna({"horas": 0.0})
     agregado["mes_label"] = agregado["mes_ano"].dt.strftime("%b/%y")
 
-    # % e UTR (com proteções contra divisão por zero)
+    # ===== UTR mensal com a MESMA lógica da tela UTR =====
+    # (média dos UTR diários, considerando todos os turnos e todos os entregadores)
+    def utr_mensal_mesma_logica(df_all, ts):
+        mes = int(ts.month)
+        ano = int(ts.year)
+        base = utr_por_entregador_turno(df_all, mes, ano)  # mesma função da tela UTR
+        if base.empty:
+            return 0.0
+        # média diária: média de UTR por dia e depois média dessas médias
+        # (equivalente ao que a tela UTR faz)
+        # base['data'] já vem como date; garantimos datetime só por segurança:
+        try:
+            d = pd.to_datetime(base["data"])
+        except Exception:
+            d = pd.to_datetime(base["data"].astype(str), errors="coerce")
+        base = base.copy()
+        base["__d__"] = d.dt.date
+        daily_mean = base.groupby("__d__")["UTR"].mean()
+        return float(daily_mean.mean()) if not daily_mean.empty else 0.0
+
+    agregado["utr_mes_v2"] = agregado["mes_ano"].apply(lambda ts: round(utr_mensal_mesma_logica(df, ts), 2))
+
+    # % com proteções contra zero
     ofertadas_safe = agregado["ofertadas"].replace(0, pd.NA)
     aceitas_safe   = agregado["aceitas"].replace(0, pd.NA)
-    horas_safe     = agregado["horas"].replace(0, pd.NA)
 
     agregado["acc_pct"]  = (agregado["aceitas"]    / ofertadas_safe * 100).round(1)
     agregado["rej_pct"]  = (agregado["rejeitadas"] / ofertadas_safe * 100).round(1)
     agregado["comp_pct"] = (agregado["completas"]  / aceitas_safe   * 100).round(1)
-    agregado["utr_mes"]  = (agregado["ofertadas"]  / horas_safe).round(2)
 
     # Seleção de métrica e rótulo do topo
     if tipo_grafico == "Corridas ofertadas":
         y_col = "ofertadas"
-        text_col = "utr_mes"        # UTR no topo
+        text_col = "utr_mes_v2"     # UTR mensal (MESMA lógica da tela UTR)
         text_fmt = "<b>%{text:.2f}</b>"
         titulo = "Corridas ofertadas por mês"
-        subtitulo = "Rótulo = UTR mensal (ofertadas ÷ horas)"
+        subtitulo = "Rótulo = UTR mensal (média dos UTR diários)"
     elif tipo_grafico == "Corridas aceitas":
         y_col = "aceitas"
         text_col = "acc_pct"
@@ -244,7 +265,7 @@ if modo == "📊 Indicadores Gerais":
     st.caption(f"💡 {subtitulo}")
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---- Série diária (mês atual) permanece como estava ----
+    # ---- Série diária (mês atual) segue igual ----
     coluna_dia_map = {
         "Corridas ofertadas": ('numero_de_corridas_ofertadas', '📈 Corridas ofertadas por dia (mês atual)', 'Corridas Ofertadas'),
         "Corridas aceitas": ('numero_de_corridas_aceitas', '📈 Corridas aceitas por dia (mês atual)', 'Corridas Aceitas'),
