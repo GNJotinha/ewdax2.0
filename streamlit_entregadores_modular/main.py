@@ -144,9 +144,10 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
 # -------------------------------------------------------------------
 # 📊 Indicadores Gerais (rápido, legível e com rótulos certos)
 # -------------------------------------------------------------------
+# -------------------------------------------------------------------
+# Indicadores Gerais
+# -------------------------------------------------------------------
 if modo == "📊 Indicadores Gerais":
-    from plotly import graph_objects as go
-
     st.subheader("🔎 Escolha o indicador que deseja visualizar:")
 
     tipo_grafico = st.radio(
@@ -155,157 +156,119 @@ if modo == "📊 Indicadores Gerais":
         index=0, horizontal=True
     )
 
-    # ---------- Helpers cacheados ---------- #
-    @st.cache_data(show_spinner=False)
-    def _agg_counts(df_):
-        g = (
-            df_.groupby("mes_ano")
-               .agg(
-                   ofertadas=("numero_de_corridas_ofertadas", "sum"),
-                   aceitas=("numero_de_corridas_aceitas", "sum"),
-                   rejeitadas=("numero_de_corridas_rejeitadas", "sum"),
-                   completas=("numero_de_corridas_completadas", "sum"),
-               )
-               .reset_index()
-        )
-        g["mes_label"] = pd.to_datetime(g["mes_ano"]).dt.strftime("%b/%y")
-        return g
+    # ----- Agregação mensal (contagens) -----
+    agg_counts = (
+        df.groupby("mes_ano")
+          .agg(
+              ofertadas=("numero_de_corridas_ofertadas", "sum"),
+              aceitas=("numero_de_corridas_aceitas", "sum"),
+              rejeitadas=("numero_de_corridas_rejeitadas", "sum"),
+              completas=("numero_de_corridas_completadas", "sum"),
+          )
+    ).reset_index()
 
-    @st.cache_data(show_spinner=False)
-    def _utr_mes_media_diaria(df_, ts_mensal):
-        """
-        UTR mensal com MESMA lógica da tela UTR:
-        - pega base diária por entregador/turno
-        - faz média por DIA
-        - depois média das médias de cada dia
-        """
-        mes = int(pd.to_datetime(ts_mensal).month)
-        ano = int(pd.to_datetime(ts_mensal).year)
-        base = utr_por_entregador_turno(df_, mes, ano)
-        if base.empty:
-            return 0.0
-        # garantir datetime e agrupar por dia
-        base = base.copy()
-        base["data"] = pd.to_datetime(base["data"], errors="coerce")
-        daily_mean = base.groupby(base["data"].dt.date)["UTR"].mean()
-        return float(daily_mean.mean()) if not daily_mean.empty else 0.0
-
-    @st.cache_data(show_spinner=False)
-    def _prepara_agregado(df_):
-        agg = _agg_counts(df_)
-        # UTR do mês (média dos UTR diários) mês a mês
-        agg["utr_mes"] = [round(_utr_mes_media_diaria(df_, ts), 2) for ts in agg["mes_ano"]]
-
-        # % com proteção a zero
-        ofertadas_safe = agg["ofertadas"].replace(0, pd.NA)
-        aceitas_safe   = agg["aceitas"].replace(0, pd.NA)
-
-        agg["acc_pct"]  = (agg["aceitas"]    / ofertadas_safe * 100).round(1)  # aceitação
-        agg["rej_pct"]  = (agg["rejeitadas"] / ofertadas_safe * 100).round(1)  # rejeição
-        agg["comp_pct"] = (agg["completas"]  / aceitas_safe   * 100).round(1)  # conclusão
-
-        # preencher NaN só pra exibição
-        for c in ["acc_pct", "rej_pct", "comp_pct", "utr_mes"]:
-            agg[c] = agg[c].fillna(0)
-        return agg
-
-    agregado = _prepara_agregado(df)
-
-    # ---------- Seleção por indicador ---------- #
-    if tipo_grafico == "Corridas ofertadas":
-        y_col    = "ofertadas"
-        top_col  = "utr_mes"
-        top_fmt  = lambda v: f"{v:.2f}"
-        titulo   = "Corridas ofertadas por mês"
-        subtitulo = "Rótulo no topo = UTR do mês (média dos UTR diários)"
-    elif tipo_grafico == "Corridas aceitas":
-        y_col    = "aceitas"
-        top_col  = "acc_pct"
-        top_fmt  = lambda v: f"{v:.1f}%"
-        titulo   = "Corridas aceitas por mês"
-        subtitulo = "Rótulo no topo = % de aceitação (aceitas ÷ ofertadas)"
-    elif tipo_grafico == "Corridas rejeitadas":
-        y_col    = "rejeitadas"
-        top_col  = "rej_pct"
-        top_fmt  = lambda v: f"{v:.1f}%"
-        titulo   = "Corridas rejeitadas por mês"
-        subtitulo = "Rótulo no topo = % de rejeição (rejeitadas ÷ ofertadas)"
-    else:  # completadas
-        y_col    = "completas"
-        top_col  = "comp_pct"
-        top_fmt  = lambda v: f"{v:.1f}%"
-        titulo   = "Corridas completadas por mês"
-        subtitulo = "Rótulo no topo = % de conclusão (completas ÷ aceitas)"
-
-    # ---------- Opções de performance ---------- #
-    col_op1, col_op2 = st.columns([1,1])
-    fast = col_op1.toggle("⚡ Modo rápido (gráfico estático)", value=True, key=f"fast_{y_col}")
-    show_inside = col_op2.toggle("Mostrar número dentro da barra (pode ficar mais lento)", value=False, key=f"in_{y_col}")
-
-    # ---------- Gráfico ---------- #
-    fig = go.Figure()
-
-    # Barras com rótulo do topo (UTR ou %)
-    fig.add_bar(
-        x=agregado["mes_label"],
-        y=agregado[y_col],
-        text=[top_fmt(v) for v in agregado[top_col]],
-        textposition="outside",
-        marker=dict(color="#00BFFF", line=dict(color="rgba(255,255,255,0.25)", width=0.5)),
-        hovertemplate="<b>%{x}</b><br>" + f"{y_col.capitalize()}: " + "%{y:.0f}<extra></extra>",
-        name=y_col.capitalize(),
+    # Horas (se quiser manter para outras análises)
+    horas = (
+        df.groupby("mes_ano")
+          .apply(lambda g: _horas_from_abs(g))
+          .rename("horas")
+          .reset_index()
     )
 
-    # (Opcional) número ABS dentro da barra (segundo trace transparente)
-    if show_inside:
-        fig.add_bar(
-            x=agregado["mes_label"],
-            y=agregado[y_col],
-            text=[f"{int(v)}" for v in agregado[y_col]],
-            textposition="inside",
-            insidetextfont=dict(size=18, color="white"),
-            marker=dict(color="rgba(0,0,0,0)"),
-            hoverinfo="skip",
-            showlegend=False,
-        )
-        fig.update_layout(barmode="overlay")
+    agregado = agg_counts.merge(horas, on="mes_ano", how="left").fillna({"horas": 0.0})
+    agregado["mes_label"] = agregado["mes_ano"].dt.strftime("%b/%y")
 
-    # Layout limpo
-    fig.update_layout(
+    # ===== UTR mensal com a MESMA lógica da tela UTR =====
+    # (média dos UTR diários, considerando todos os turnos e todos os entregadores)
+    def utr_mensal_mesma_logica(df_all, ts):
+        mes = int(ts.month)
+        ano = int(ts.year)
+        base = utr_por_entregador_turno(df_all, mes, ano)  # mesma função da tela UTR
+        if base.empty:
+            return 0.0
+        # média diária: média de UTR por dia e depois média dessas médias
+        # (equivalente ao que a tela UTR faz)
+        # base['data'] já vem como date; garantimos datetime só por segurança:
+        try:
+            d = pd.to_datetime(base["data"])
+        except Exception:
+            d = pd.to_datetime(base["data"].astype(str), errors="coerce")
+        base = base.copy()
+        base["__d__"] = d.dt.date
+        daily_mean = base.groupby("__d__")["UTR"].mean()
+        return float(daily_mean.mean()) if not daily_mean.empty else 0.0
+
+    agregado["utr_mes_v2"] = agregado["mes_ano"].apply(lambda ts: round(utr_mensal_mesma_logica(df, ts), 2))
+
+    # % com proteções contra zero
+    ofertadas_safe = agregado["ofertadas"].replace(0, pd.NA)
+    aceitas_safe   = agregado["aceitas"].replace(0, pd.NA)
+
+    agregado["acc_pct"]  = (agregado["aceitas"]    / ofertadas_safe * 100).round(1)
+    agregado["rej_pct"]  = (agregado["rejeitadas"] / ofertadas_safe * 100).round(1)
+    agregado["comp_pct"] = (agregado["completas"]  / aceitas_safe   * 100).round(1)
+
+    # Seleção de métrica e rótulo do topo
+    if tipo_grafico == "Corridas ofertadas":
+        y_col = "ofertadas"
+        text_col = "utr_mes_v2"     # UTR mensal (MESMA lógica da tela UTR)
+        text_fmt = "<b>%{text:.2f}</b>"
+        titulo = "Corridas ofertadas por mês"
+        subtitulo = "Rótulo = UTR mensal (média dos UTR diários)"
+    elif tipo_grafico == "Corridas aceitas":
+        y_col = "aceitas"
+        text_col = "acc_pct"
+        text_fmt = "<b>%{text:.1f}%</b>"
+        titulo = "Corridas aceitas por mês"
+        subtitulo = "Rótulo = % de aceitação (aceitas ÷ ofertadas)"
+    elif tipo_grafico == "Corridas rejeitadas":
+        y_col = "rejeitadas"
+        text_col = "rej_pct"
+        text_fmt = "<b>%{text:.1f}%</b>"
+        titulo = "Corridas rejeitadas por mês"
+        subtitulo = "Rótulo = % de rejeição (rejeitadas ÷ ofertadas)"
+    else:  # "Corridas completadas"
+        y_col = "completas"
+        text_col = "comp_pct"
+        text_fmt = "<b>%{text:.1f}%</b>"
+        titulo = "Corridas completadas por mês"
+        subtitulo = "Rótulo = % de conclusão (completas ÷ aceitas)"
+
+    agregado[text_col] = agregado[text_col].fillna(0)
+
+    # ---- Gráfico (clean, dark, label fora) ----
+    fig = px.bar(
+        agregado,
+        x="mes_label",
+        y=y_col,
+        text=text_col,
         title=titulo,
-        xaxis_title="Mês/Ano",
-        yaxis_title=y_col.capitalize(),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
+        labels={y_col: y_col.capitalize(), "mes_label": "Mês/Ano"},
+        template="plotly_dark",
+        color_discrete_sequence=["#00BFFF"],
+    )
+    fig.update_traces(
+        texttemplate=text_fmt,
+        textposition="outside",
+        textfont=dict(size=16, color="white"),
+        marker_line_color="rgba(255,255,255,0.25)",
+        marker_line_width=0.5,
+    )
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         font=dict(color="white"),
         title_font=dict(size=22),
-        xaxis=dict(
-            showgrid=False,
-            tickfont=dict(size=14),
-            categoryorder="array",
-            categoryarray=list(agregado["mes_label"])
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridcolor="rgba(255,255,255,0.15)",
-            tickfont=dict(size=14),
-            rangemode="tozero"
-        ),
+        xaxis=dict(showgrid=False, tickfont=dict(size=14)),
+        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)", tickfont=dict(size=14)),
         bargap=0.25,
         margin=dict(t=70, r=20, b=60, l=60),
         showlegend=False,
-        uniformtext_minsize=14,
-        uniformtext_mode="show",
     )
 
     st.caption(f"💡 {subtitulo}")
+    st.plotly_chart(fig, use_container_width=True)
 
-    cfg = {"displayModeBar": False}
-    if fast:
-        cfg["staticPlot"] = True
-    st.plotly_chart(fig, use_container_width=True, config=cfg)
-
-    # ---------- Série diária (mês atual) — mantém tua lógica ---------- #
+    # ---- Série diária (mês atual) segue igual ----
     coluna_dia_map = {
         "Corridas ofertadas": ('numero_de_corridas_ofertadas', '📈 Corridas ofertadas por dia (mês atual)', 'Corridas Ofertadas'),
         "Corridas aceitas": ('numero_de_corridas_aceitas', '📈 Corridas aceitas por dia (mês atual)', 'Corridas Aceitas'),
@@ -331,6 +294,7 @@ if modo == "📊 Indicadores Gerais":
     total_mes = int(por_dia[coluna_dia].sum())
     st.metric(f"🚗 {label_dia} no mês", total_mes)
     st.plotly_chart(fig_dia, use_container_width=True)
+
 
 # -------------------------------------------------------------------
 # Relatório Customizado
