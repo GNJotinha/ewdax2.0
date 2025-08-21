@@ -3,10 +3,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 
-from utils import tempo_para_segundos  
-
 from relatorios import (
-    _horas_from_abs,
     gerar_dados,
     gerar_simplicado,
     gerar_alertas_de_faltas,
@@ -147,131 +144,51 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
 if modo == "📊 Indicadores Gerais":
     st.subheader("🔎 Escolha o indicador que deseja visualizar:")
 
-    tipo_grafico = st.radio(
-        "Tipo de gráfico:",
-        ["Corridas ofertadas", "Corridas aceitas", "Corridas rejeitadas", "Corridas completadas"],
-        index=0, horizontal=True
-    )
+    tipo_grafico = st.radio("Tipo de gráfico:", [
+        "Corridas ofertadas",
+        "Corridas aceitas",
+        "Corridas rejeitadas",
+        "Corridas completadas"
+    ], index=0, horizontal=True)
 
-    # ----- Agregação mensal (contagens) -----
-    agg_counts = (
-        df.groupby("mes_ano")
-          .agg(
-              ofertadas=("numero_de_corridas_ofertadas", "sum"),
-              aceitas=("numero_de_corridas_aceitas", "sum"),
-              rejeitadas=("numero_de_corridas_rejeitadas", "sum"),
-              completas=("numero_de_corridas_completadas", "sum"),
-          )
-    ).reset_index()
+    coluna_map = {
+        "Corridas ofertadas": ("numero_de_corridas_ofertadas", "Corridas ofertadas por mês", "Corridas"),
+        "Corridas aceitas": ("numero_de_corridas_aceitas", "Corridas aceitas por mês", "Corridas Aceitas"),
+        "Corridas rejeitadas": ("numero_de_corridas_rejeitadas", "Corridas rejeitadas por mês", "Corridas Rejeitadas"),
+        "Corridas completadas": ("numero_de_corridas_completadas", "Corridas completadas por mês", "Corridas Completadas")
+    }
 
-    # Horas (se quiser manter para outras análises)
-    horas = (
-        df.groupby("mes_ano")
-          .apply(lambda g: _horas_from_abs(g))
-          .rename("horas")
-          .reset_index()
-    )
+    col, titulo, label = coluna_map[tipo_grafico]
 
-    agregado = agg_counts.merge(horas, on="mes_ano", how="left").fillna({"horas": 0.0})
-    agregado["mes_label"] = agregado["mes_ano"].dt.strftime("%b/%y")
+    def grafico_barras(df_, coluna, titulo_, label_y):
+        mensal = df_.groupby('mes_ano')[coluna].sum().reset_index()
+        mensal['mes_ao'] = mensal['mes_ano'].dt.strftime('%b/%y')
 
-    # ===== UTR mensal com a MESMA lógica da tela UTR =====
-    # (média dos UTR diários, considerando todos os turnos e todos os entregadores)
-    def utr_mensal_mesma_logica(df_all, ts):
-        mes = int(ts.month)
-        ano = int(ts.year)
-        base = utr_por_entregador_turno(df_all, mes, ano)  # mesma função da tela UTR
-        if base.empty:
-            return 0.0
-        # média diária: média de UTR por dia e depois média dessas médias
-        # (equivalente ao que a tela UTR faz)
-        # base['data'] já vem como date; garantimos datetime só por segurança:
-        try:
-            d = pd.to_datetime(base["data"])
-        except Exception:
-            d = pd.to_datetime(base["data"].astype(str), errors="coerce")
-        base = base.copy()
-        base["__d__"] = d.dt.date
-        daily_mean = base.groupby("__d__")["UTR"].mean()
-        return float(daily_mean.mean()) if not daily_mean.empty else 0.0
+        # usar a coluna correta no eixo X (mes_ao para rótulo)
+        mensal["_x"] = mensal['mes_ao']
 
-    agregado["utr_mes_v2"] = agregado["mes_ano"].apply(lambda ts: round(utr_mensal_mesma_logica(df, ts), 2))
+        fig = px.bar(
+            mensal, x="_x", y=coluna, text=coluna, title=titulo_,
+            labels={coluna: label_y, "_x": "Mês/Ano"}, template='plotly_dark',
+            color_discrete_sequence=['#00F7FF'], text_auto=True
+        )
 
-    # % com proteções contra zero
-    ofertadas_safe = agregado["ofertadas"].replace(0, pd.NA)
-    aceitas_safe   = agregado["aceitas"].replace(0, pd.NA)
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='white'), title_font=dict(size=22),
+            xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor='gray')
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-    agregado["acc_pct"]  = (agregado["aceitas"]    / ofertadas_safe * 100).round(1)
-    agregado["rej_pct"]  = (agregado["rejeitadas"] / ofertadas_safe * 100).round(1)
-    agregado["comp_pct"] = (agregado["completas"]  / aceitas_safe   * 100).round(1)
+    grafico_barras(df, col, titulo, label)
 
-    # Seleção de métrica e rótulo do topo
-    if tipo_grafico == "Corridas ofertadas":
-        y_col = "ofertadas"
-        text_col = "utr_mes_v2"     # UTR mensal (MESMA lógica da tela UTR)
-        text_fmt = "<b>%{text:.2f}</b>"
-        titulo = "Corridas ofertadas por mês"
-        subtitulo = "Rótulo = UTR mensal (média dos UTR diários)"
-    elif tipo_grafico == "Corridas aceitas":
-        y_col = "aceitas"
-        text_col = "acc_pct"
-        text_fmt = "<b>%{text:.1f}%</b>"
-        titulo = "Corridas aceitas por mês"
-        subtitulo = "Rótulo = % de aceitação (aceitas ÷ ofertadas)"
-    elif tipo_grafico == "Corridas rejeitadas":
-        y_col = "rejeitadas"
-        text_col = "rej_pct"
-        text_fmt = "<b>%{text:.1f}%</b>"
-        titulo = "Corridas rejeitadas por mês"
-        subtitulo = "Rótulo = % de rejeição (rejeitadas ÷ ofertadas)"
-    else:  # "Corridas completadas"
-        y_col = "completas"
-        text_col = "comp_pct"
-        text_fmt = "<b>%{text:.1f}%</b>"
-        titulo = "Corridas completadas por mês"
-        subtitulo = "Rótulo = % de conclusão (completas ÷ aceitas)"
-
-    agregado[text_col] = agregado[text_col].fillna(0)
-
-    # ---- Gráfico (clean, dark, label fora) ----
-    fig = px.bar(
-        agregado,
-        x="mes_label",
-        y=y_col,
-        text=text_col,
-        title=titulo,
-        labels={y_col: y_col.capitalize(), "mes_label": "Mês/Ano"},
-        template="plotly_dark",
-        color_discrete_sequence=["#00BFFF"],
-    )
-    fig.update_traces(
-        texttemplate=text_fmt,
-        textposition="outside",
-        textfont=dict(size=16, color="white"),
-        marker_line_color="rgba(255,255,255,0.25)",
-        marker_line_width=0.5,
-    )
-    fig.update_layout(
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="white"),
-        title_font=dict(size=22),
-        xaxis=dict(showgrid=False, tickfont=dict(size=14)),
-        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)", tickfont=dict(size=14)),
-        bargap=0.25,
-        margin=dict(t=70, r=20, b=60, l=60),
-        showlegend=False,
-    )
-
-    st.caption(f"💡 {subtitulo}")
-    st.plotly_chart(fig, use_container_width=True)
-
-    # ---- Série diária (mês atual) segue igual ----
     coluna_dia_map = {
         "Corridas ofertadas": ('numero_de_corridas_ofertadas', '📈 Corridas ofertadas por dia (mês atual)', 'Corridas Ofertadas'),
         "Corridas aceitas": ('numero_de_corridas_aceitas', '📈 Corridas aceitas por dia (mês atual)', 'Corridas Aceitas'),
         "Corridas rejeitadas": ('numero_de_corridas_rejeitadas', '📈 Corridas rejeitadas por dia (mês atual)', 'Corridas Rejeitadas'),
         "Corridas completadas": ('numero_de_corridas_completadas', '📈 Corridas completadas por dia (mês atual)', 'Corridas Completadas')
     }
+
     coluna_dia, titulo_dia, label_dia = coluna_dia_map[tipo_grafico]
 
     mes_atual = pd.Timestamp.today().month
@@ -292,6 +209,46 @@ if modo == "📊 Indicadores Gerais":
     st.metric(f"🚗 {label_dia} no mês", total_mes)
     st.plotly_chart(fig_dia, use_container_width=True)
 
+# -------------------------------------------------------------------
+# Alertas de Faltas
+# -------------------------------------------------------------------
+if modo == "Alertas de Faltas":
+    st.subheader("⚠️ Entregadores com 3+ faltas consecutivas")
+
+    hoje = datetime.now().date()
+    ultimos_15_dias = hoje - timedelta(days=15)
+    df["data"] = pd.to_datetime(df["data"]).dt.date
+
+    ativos = df[df["data"] >= ultimos_15_dias]["pessoa_entregadora_normalizado"].unique()
+    mensagens = []
+
+    for nome in ativos:
+        entregador = df[df["pessoa_entregadora_normalizado"] == nome]
+        if entregador.empty:
+            continue
+
+        dias = pd.date_range(end=hoje - timedelta(days=1), periods=30).to_pydatetime()
+        dias = [d.date() for d in dias]
+        presencas = set(entregador["data"])
+
+        sequencia = 0
+        for dia in sorted(dias):
+            if dia in presencas:
+                sequencia = 0
+            else:
+                sequencia += 1
+
+        if sequencia >= 4:
+            nome_original = entregador["pessoa_entregadora"].iloc[0]
+            ultima_data = entregador["data"].max().strftime('%d/%m')
+            mensagens.append(
+                f"• {nome_original} – {sequencia} dias consecutivos ausente (última presença: {ultima_data})"
+            )
+
+    if mensagens:
+        st.text_area("Resultado:", value="\n".join(mensagens), height=400)
+    else:
+        st.success("✅ Nenhum entregador ativo com faltas consecutivas.")
 
 # -------------------------------------------------------------------
 # Relatório Customizado
