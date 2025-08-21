@@ -244,6 +244,25 @@ if modo == "📊 Indicadores Gerais":
         template="plotly_dark",
         color_discrete_sequence=["#00BFFF"],
     )
+    ##aaaaa### ===== NÚMERO DENTRO DAS BARRAS (quantidade absoluta) =====
+# texto interno = valor do eixo Y (ofertadas/aceitas/rejeitadas/completas)
+agregado["_y_text"] = agregado[y_col].astype(int).astype(str)
+
+fig.add_bar(
+    x=agregado["mes_label"],
+    y=agregado[y_col],
+    text=agregado["_y_text"],
+    textposition="inside",
+    # fonte e contraste pro texto interno
+    insidetextfont=dict(size=16, color="white"),
+    marker=dict(color="rgba(0,0,0,0)"),
+    hoverinfo="skip",
+    showlegend=False,
+)
+
+# Sobrepor os dois traces (barras originais + trace de texto)
+fig.update_layout(barmode="overlay")
+#aaa#
     fig.update_traces(
         texttemplate=text_fmt,
         textposition="outside",
