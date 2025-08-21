@@ -11,6 +11,8 @@ from relatorios import (
     classificar_entregadores,
     utr_por_entregador_turno,
     utr_pivot_por_entregador
+    _horas_from_abs
+
 )
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
