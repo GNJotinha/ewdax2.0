@@ -253,23 +253,35 @@ if modo == "📊 Indicadores Gerais":
                 lambda r: f"{int(r[col])} ({(r[col]/r['ofertadas_total']*100 if r['ofertadas_total'] else 0):.1f}%)", axis=1
             )
 
-        # UTR médio para ofertadas
         elif tipo_grafico == "Corridas ofertadas":
-            base_utr = utr_por_entregador_turno(df, None, None)
+            base_utr = utr_por_entregador_turno(df, None, None)  # mesma função do modo UTR
             if not base_utr.empty:
-                base_utr = base_utr.assign(
-                    mes_ano=pd.to_datetime(base_utr["data"], errors="coerce").dt.to_period("M").dt.to_timestamp()
+                # garante datetime
+                base_utr["data"] = pd.to_datetime(base_utr["data"], errors="coerce")
+        
+                # 1) média por DIA (mesma lógica do modo UTR)
+                utr_por_dia = (
+                    base_utr.groupby(base_utr["data"].dt.date, as_index=False)["UTR"]
+                            .mean()
+                            .rename(columns={"data": "dia", "UTR": "UTR_dia"})
                 )
-                utr_mensal = base_utr.groupby("mes_ano", as_index=False)["UTR"].mean().rename(columns={"UTR": "UTR_medio"})
+                utr_por_dia["dia"] = pd.to_datetime(utr_por_dia["dia"])
+        
+                # 2) média MENSAL das médias diárias
+                utr_mensal = (
+                    utr_por_dia.assign(mes_ano=utr_por_dia["dia"].dt.to_period("M").dt.to_timestamp())
+                               .groupby("mes_ano", as_index=False)["UTR_dia"].mean()
+                               .rename(columns={"UTR_dia": "UTR_medio"})
+                )
+        
                 mensal = mensal.merge(utr_mensal, on="mes_ano", how="left")
                 mensal["__label_text__"] = mensal.apply(
-                    lambda r: f"{int(r[col])}\nUTR {0.00 if pd.isna(r['UTR_medio']) else r['UTR_medio']:.2f}", axis=1
+                    lambda r: f"{int(r[col])}\nUTR {0.00 if pd.isna(r['UTR_medio']) else float(r['UTR_medio']):.2f}",
+                    axis=1
                 )
             else:
                 mensal["__label_text__"] = mensal[col].fillna(0).astype(int).astype(str) + "\nUTR 0.00"
 
-        else:
-            mensal["__label_text__"] = mensal[col].fillna(0).astype(int).astype(str)
 
         # gráfico de barras
         fig = px.bar(
