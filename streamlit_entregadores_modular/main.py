@@ -297,6 +297,65 @@ if modo == "📊 Indicadores Gerais":
     st.metric(f"🚗 {label_dia} no mês", total_mes)
     st.plotly_chart(fig_dia, use_container_width=True)
 
+    # ---- Horas Realizadas (mês atual) ---------------------------------
+    # Soma diária do tempo_disponivel_absoluto (HH:MM:SS) -> segundos -> horas
+    df_mes_horas = df_mes[df_mes["tempo_disponivel_absoluto"].notna()].copy()
+    if not df_mes_horas.empty:
+        # to_timedelta é veloz e robusto para HH:MM:SS
+        df_mes_horas["segundos_abs"] = pd.to_timedelta(
+            df_mes_horas["tempo_disponivel_absoluto"]
+        ).dt.total_seconds()
+
+        horas_por_dia = (
+            df_mes_horas.groupby(df_mes_horas["data"].dt.day, as_index=False)["segundos_abs"]
+            .sum()
+            .rename(columns={"data": "dia", "segundos_abs": "segundos"})
+        )
+        horas_por_dia["horas_float"] = (horas_por_dia["segundos"] / 3600.0)
+        # rótulo bonitinho no ponto: exibe em HH:MM:SS
+        horas_por_dia["hms"] = horas_por_dia["horas_float"].apply(_hms_from_hours)
+
+        # Gráfico em linha/área (onda)
+        fig_horas = px.area(
+            horas_por_dia,
+            x="dia",
+            y="horas_float",
+            title="⏱️ Horas Realizadas por dia (mês atual)",
+            labels={"dia": "Dia", "horas_float": "Horas"},
+            template="plotly_dark",
+        )
+        fig_horas.update_traces(
+            mode="lines+markers",
+            marker=dict(size=6, line=dict(width=0)),
+            line_shape="spline",
+            # mostra o rótulo HH:MM:SS no topo de cada ponto
+            text=horas_por_dia["hms"],
+            textposition="top center",
+            textfont=dict(size=12),
+        )
+        fig_horas.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="white"),
+            title_font=dict(size=22),
+            xaxis=dict(showgrid=False, tickmode="linear", dtick=1),
+            yaxis=dict(
+                title="Horas",
+                showgrid=True,
+                gridcolor="rgba(255,255,255,0.15)",
+                rangemode="tozero",
+            ),
+            margin=dict(t=70, r=20, b=60, l=60),
+        )
+
+        total_seg_mes = int(horas_por_dia["segundos"].sum())
+        total_horas_mes = total_seg_mes / 3600.0  # float, para converter pra HH:MM:SS
+        st.metric("⏱️ Horas Realizadas no mês", _hms_from_hours(total_horas_mes))
+        st.plotly_chart(fig_horas, use_container_width=True)
+    else:
+        st.info("Sem dados de tempo disponível absoluto para o mês atual.")
+
+
 # -------------------------------------------------------------------
 # Alertas de Faltas
 # -------------------------------------------------------------------
