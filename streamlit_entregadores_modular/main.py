@@ -281,7 +281,7 @@ if modo == "📊 Indicadores Gerais":
     if tipo_grafico == "Corridas ofertadas":
         base_utr = utr_por_entregador_turno(df, None, None)  # usa a mesma função do modo UTR
         utr_mensal = (
-            base_utr.assign(mes_ano=pd.to_datetime(base_utr["data"]).to_period("M").dt.to_timestamp())
+            base_utr.assign(mes_ano=pd.to_datetime(base_utr["data"])dt.to_period("M").dt.to_timestamp())
                     .groupby("mes_ano", as_index=False)["UTR"].mean()
         )
         mensal = mensal.merge(utr_mensal, on="mes_ano", how="left")
