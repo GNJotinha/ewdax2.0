@@ -144,13 +144,7 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
                 st.text_area("Resultado:", value="\n\n".join([t for t in [t1, t2] if t]), height=600)
 
 # -------------------------------------------------------------------
-# Indicadores Gerais
-# -------------------------------------------------------------------
-# -------------------------------------------------------------------
-# Indicadores Gerais
-# -------------------------------------------------------------------
-# -------------------------------------------------------------------
-# Indicadores Gerais
+# 📊 Indicadores Gerais
 # -------------------------------------------------------------------
 if modo == "📊 Indicadores Gerais":
     st.subheader("🔎 Escolha o indicador que deseja visualizar:")
@@ -164,52 +158,76 @@ if modo == "📊 Indicadores Gerais":
             "Corridas completadas",
             "Horas realizadas",
         ],
-        index=0,
-        horizontal=True,
+        index=0, horizontal=True
     )
 
-    # ----- Preparos comuns -----
-    # rótulo Mês/Ano
+    # ========== PREPAROS ==========
     df["mes_ano"] = pd.to_datetime(df["data"]).dt.to_period("M").dt.to_timestamp()
-    # mês/ano atuais
     mes_atual = pd.Timestamp.today().month
     ano_atual = pd.Timestamp.today().year
-    df_mes_atual = df[(df["data"].dt.month == mes_atual) & (df["data"].dt.year == ano_atual)]
+    df_mes_atual = df[(df["data"].dt.month == mes_atual) & (df["data"].dt.year == ano_atual)].copy()
 
-    # ====== RAMO 1: Horas realizadas ======
-    if tipo_grafico == "Horas realizadas":
-        if "tempo_disponivel_absoluto" not in df.columns:
-            st.warning("Coluna 'tempo_disponivel_absoluto' não encontrada.")
-            st.stop()
-
-        # --- Converter HH:MM:SS -> segundos (vetorizado e robusto)
-        if "segundos_abs" not in df.columns:
-            df = df.copy()
-            df["segundos_abs"] = df["tempo_disponivel_absoluto"].map(tempo_para_segundos).fillna(0).astype(int)
-
-        # --- Barras: total de horas por mês (mês a mês)
-        mensal_horas = (
-            df.groupby("mes_ano", as_index=False)["segundos_abs"].sum()
-              .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
+    # ----- Helpers rápidos/cache -----
+    @st.cache_data(show_spinner=False)
+    def _agg_mensal(df_):
+        # contagens
+        cont = (
+            df_.groupby("mes_ano")
+               .agg(
+                   ofertadas=("numero_de_corridas_ofertadas", "sum"),
+                   aceitas=("numero_de_corridas_aceitas", "sum"),
+                   rejeitadas=("numero_de_corridas_rejeitadas", "sum"),
+                   completas=("numero_de_corridas_completadas", "sum"),
+               )
+               .reset_index()
         )
-        mensal_horas["mes_rotulo"] = mensal_horas["mes_ano"].dt.strftime("%b/%y")
+        # SH (Supply Hours): somatório do tempo_disponivel_absoluto do mês
+        sh = (
+            df_.groupby("mes_ano")["tempo_disponivel_absoluto"]
+               .apply(lambda s: s.map(tempo_para_segundos).sum() / 3600.0)
+               .reset_index(name="sh_horas")
+        )
+        out = cont.merge(sh, on="mes_ano", how="left").fillna({"sh_horas": 0.0})
+        out["mes_label"] = out["mes_ano"].dt.strftime("%b/%y")
+        return out
 
+    def _fmt_pct(x): 
+        try: return f"{float(x):.1f}%"
+        except: return "0.0%"
+
+    def _hms_from_hours(h):
+        try:
+            total_seconds = int(round(float(h) * 3600))
+            hh, r = divmod(total_seconds, 3600)
+            mm, ss = divmod(r, 60)
+            return f"{hh:02d}:{mm:02d}:{ss:02d}"
+        except:
+            return "00:00:00"
+
+    agregado = _agg_mensal(df)
+
+    # % com proteções
+    ofertadas_safe = agregado["ofertadas"].replace(0, pd.NA)
+    aceitas_safe   = agregado["aceitas"].replace(0, pd.NA)
+    agregado["acc_pct"]  = (agregado["aceitas"]    / ofertadas_safe * 100).round(1)  # aceitação
+    agregado["rej_pct"]  = (agregado["rejeitadas"] / ofertadas_safe * 100).round(1)  # rejeição
+    agregado["comp_pct"] = (agregado["completas"]  / aceitas_safe   * 100).round(1)  # conclusão
+    agregado[["acc_pct","rej_pct","comp_pct"]] = agregado[["acc_pct","rej_pct","comp_pct"]].fillna(0)
+
+    # ========== RAMO: HORAS REALIZADAS ==========
+    if tipo_grafico == "Horas realizadas":
+        # Barras mês a mês (em horas) com rótulo em horas
         fig_mensal = px.bar(
-            mensal_horas,
-            x="mes_rotulo",
-            y="horas",
-            text="horas",
+            agregado, x="mes_label", y="sh_horas", text="sh_horas",
             title="Horas realizadas por mês",
-            labels={"mes_rotulo": "Mês/Ano", "horas": "Horas"},
-            template="plotly_dark",
-            color_discrete_sequence=["#00BFFF"],
+            labels={"mes_label": "Mês/Ano", "sh_horas": "Horas"},
+            template="plotly_dark", color_discrete_sequence=["#00BFFF"]
         )
         fig_mensal.update_traces(
             texttemplate="<b>%{text:.1f}h</b>",
             textposition="outside",
             textfont=dict(size=16, color="white"),
-            marker_line_color="rgba(255,255,255,0.25)",
-            marker_line_width=0.5,
+            marker_line_color="rgba(255,255,255,0.25)", marker_line_width=0.5,
         )
         fig_mensal.update_layout(
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -220,23 +238,21 @@ if modo == "📊 Indicadores Gerais":
         )
         st.plotly_chart(fig_mensal, use_container_width=True)
 
-        # --- Linha: horas por dia no mês atual (linha pura, sem marcadores)
+        # Linha diária pura no mês atual (sem marcadores)
         if not df_mes_atual.empty:
             por_dia_h = (
                 df_mes_atual.assign(segundos_abs=lambda d: d["tempo_disponivel_absoluto"].map(tempo_para_segundos).fillna(0).astype(int))
                            .assign(dia=lambda d: d["data"].dt.day)
                            .groupby("dia", as_index=False)["segundos_abs"].sum()
-                           .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
+                           .assign(horas=lambda d: d["segundos_abs"]/3600.0)
                            .sort_values("dia")
             )
-
             fig_linha = px.line(
                 por_dia_h, x="dia", y="horas",
                 title="📈 Horas realizadas por dia (mês atual)",
                 labels={"dia": "Dia", "horas": "Horas"},
-                template="plotly_dark",
+                template="plotly_dark"
             )
-            # só linha, nada de markers/área
             fig_linha.update_traces(mode="lines", line_shape="spline", hovertemplate="Dia %{x}<br>%{y:.2f}h<extra></extra>")
             fig_linha.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -245,58 +261,89 @@ if modo == "📊 Indicadores Gerais":
                 yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
                 margin=dict(t=60, r=20, b=60, l=60),
             )
-
-            total_horas_mes = por_dia_h["horas"].sum()
-            st.metric("⏱️ Horas realizadas no mês", _hms_from_hours(total_horas_mes))
+            st.metric("⏱️ Horas realizadas no mês", _hms_from_hours(por_dia_h["horas"].sum()))
             st.plotly_chart(fig_linha, use_container_width=True)
         else:
             st.info("Sem dados no mês atual para plotar as horas diárias.")
+        st.stop()
 
-        st.stop()  # já renderizamos tudo para 'Horas realizadas'
+    # ========== RAMO: CORRIDAS ==========
+    # Seleção de métrica, texto de topo e títulos
+    if tipo_grafico == "Corridas ofertadas":
+        y_col = "ofertadas"
+        # Topo = SH do mês (em HH:MM:SS)
+        topo_vals = agregado["sh_horas"].apply(_hms_from_hours)
+        topo_template = "<b>%{text}</b>"
+        titulo = "Corridas ofertadas por mês"
+        y_label = "Corridas"
+        subtitulo = "Rótulo no topo = SH do mês (Supply Hours)"
+    elif tipo_grafico == "Corridas aceitas":
+        y_col = "aceitas"
+        topo_vals = agregado["acc_pct"].apply(_fmt_pct)
+        topo_template = "<b>%{text}</b>"
+        titulo = "Corridas aceitas por mês"
+        y_label = "Corridas Aceitas"
+        subtitulo = "Rótulo no topo = % de aceitação (aceitas ÷ ofertadas)"
+    elif tipo_grafico == "Corridas rejeitadas":
+        y_col = "rejeitadas"
+        topo_vals = agregado["rej_pct"].apply(_fmt_pct)
+        topo_template = "<b>%{text}</b>"
+        titulo = "Corridas rejeitadas por mês"
+        y_label = "Corridas Rejeitadas"
+        subtitulo = "Rótulo no topo = % de rejeição (rejeitadas ÷ ofertadas)"
+    else:  # Completadas
+        y_col = "completas"
+        topo_vals = agregado["comp_pct"].apply(_fmt_pct)
+        topo_template = "<b>%{text}</b>"
+        titulo = "Corridas completadas por mês"
+        y_label = "Corridas Completadas"
+        subtitulo = "Rótulo no topo = % de conclusão (completas ÷ aceitas)"
 
-    # ====== RAMO 2: Corridas (ofertadas/aceitas/rejeitadas/completadas) ======
-    coluna_map = {
-        "Corridas ofertadas": ("numero_de_corridas_ofertadas", "Corridas ofertadas por mês", "Corridas"),
-        "Corridas aceitas": ("numero_de_corridas_aceitas", "Corridas aceitas por mês", "Corridas Aceitas"),
-        "Corridas rejeitadas": ("numero_de_corridas_rejeitadas", "Corridas rejeitadas por mês", "Corridas Rejeitadas"),
-        "Corridas completadas": ("numero_de_corridas_completadas", "Corridas completadas por mês", "Corridas Completadas"),
-    }
-    col, titulo, label = coluna_map[tipo_grafico]
-
-    # ---- Barras mensais
-    mensal = df.groupby("mes_ano", as_index=False)[col].sum()
-    mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
-
-    fig = px.bar(
-        mensal, x="mes_rotulo", y=col, text=col, title=titulo,
-        labels={col: label, "mes_rotulo": "Mês/Ano"},
-        template="plotly_dark", color_discrete_sequence=["#00BFFF"], text_auto=True
+    # Barras mensais com rótulo no topo (SH ou %)
+    fig_m = px.bar(
+        agregado, x="mes_label", y=y_col, text=topo_vals,
+        title=titulo, labels={"mes_label": "Mês/Ano", y_col: y_label},
+        template="plotly_dark", color_discrete_sequence=["#00BFFF"]
     )
-    fig.update_layout(
+    fig_m.update_traces(
+        texttemplate=topo_template,
+        textposition="outside",
+        textfont=dict(size=16, color="white"),
+        marker_line_color="rgba(255,255,255,0.25)", marker_line_width=0.5,
+    )
+    fig_m.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         font=dict(color="white"), title_font=dict(size=22),
-        xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
+        xaxis=dict(showgrid=False, tickfont=dict(size=14)),
+        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)", tickfont=dict(size=14)),
         bargap=0.25, margin=dict(t=70, r=20, b=60, l=60), showlegend=False,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.caption(f"💡 {subtitulo}")
+    st.plotly_chart(fig_m, use_container_width=True)
 
-    # ---- Série diária (mês atual)
+    # Linha diária por tipo de corrida (mês atual) – mantém sua lógica
+    coluna_dia_map = {
+        "Corridas ofertadas": ('numero_de_corridas_ofertadas', '📈 Corridas ofertadas por dia (mês atual)', 'Corridas Ofertadas'),
+        "Corridas aceitas": ('numero_de_corridas_aceitas', '📈 Corridas aceitas por dia (mês atual)', 'Corridas Aceitas'),
+        "Corridas rejeitadas": ('numero_de_corridas_rejeitadas', '📈 Corridas rejeitadas por dia (mês atual)', 'Corridas Rejeitadas'),
+        "Corridas completadas": ('numero_de_corridas_completadas', '📈 Corridas completadas por dia (mês atual)', 'Corridas Completadas')
+    }
+    coluna_dia, titulo_dia, label_dia = coluna_dia_map[tipo_grafico]
+
     por_dia = (
         df_mes_atual.assign(dia=lambda d: d["data"].dt.day)
-                    .groupby("dia", as_index=False)[col].sum()
+                    .groupby("dia", as_index=False)[coluna_dia].sum()
                     .sort_values("dia")
     )
     fig_dia = px.line(
-        por_dia, x="dia", y=col,
-        title=f"📈 {label} por dia (mês atual)",
-        labels={"dia": "Dia", col: label},
-        template="plotly_dark"
+        por_dia, x='dia', y=coluna_dia,
+        title=titulo_dia, labels={'dia': 'Dia', coluna_dia: label_dia},
+        template='plotly_dark', color_discrete_sequence=['#f778ba']
     )
-    fig_dia.update_traces(line_shape="spline", mode="lines+markers")
-    total_mes = int(por_dia[col].sum())
-    st.metric(f"🚗 {label} no mês", total_mes)
+    fig_dia.update_traces(line_shape='spline', mode="lines+markers")
+    total_mes = int(por_dia[coluna_dia].sum())
+    st.metric(f"🚗 {label_dia} no mês", total_mes)
     st.plotly_chart(fig_dia, use_container_width=True)
-
 
 # -------------------------------------------------------------------
 # Alertas de Faltas
