@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 
-from ui import inject_css, topbar, section, kpi_row  # UI nova
+from ui import topbar, section, kpi_row  # UI nova
 
 from utils import tempo_para_segundos
 from relatorios import (
