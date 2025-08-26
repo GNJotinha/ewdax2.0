@@ -35,7 +35,6 @@ def _hms_from_hours(h):
 # Config da página
 # -------------------------------------------------------------------
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋", layout="wide")
-inject_css()  # aplica nosso CSS global
 
 # -------------------------------------------------------------------
 # Autenticação
