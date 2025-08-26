@@ -1,0 +1,84 @@
+:root{
+  --bg: #0e1117;
+  --bg-2: #161b22;
+  --txt: #c9d1d9;
+  --muted: #8b949e;
+  --brand: #00bfff;
+  --brand-2: #58a6ff;
+  --success:#2ea043;
+  --warn:#d29922;
+  --danger:#f85149;
+  --card:#0f172a80; /* vidro */
+  --border: rgba(255,255,255,0.08);
+  --shadow: 0 6px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.02);
+}
+
+html, body { letter-spacing: .2px; }
+
+.block-container{
+  padding-top: 1.5rem;
+  padding-bottom: 2rem;
+  max-width: 1300px;
+}
+
+h1, h2, h3{
+  color: var(--brand-2) !important;
+  letter-spacing: .3px;
+}
+
+.section-title{
+  margin: 8px 0 12px 0;
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--txt);
+  opacity: .9;
+}
+
+.topbar{
+  background: linear-gradient(180deg, rgba(21,27,34,.85), rgba(21,27,34,.45));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+  display:flex; align-items:center; gap:10px;
+}
+.topbar .title{ font-size:1.05rem; color: var(--muted); }
+.topbar .chip{
+  background: #0b1220;
+  border:1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px; font-size:.9rem; color: var(--txt);
+}
+
+.kpi-row{
+  display:grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+}
+@media (max-width: 1100px){ .kpi-row{ grid-template-columns: repeat(2,1fr);} }
+@media (max-width: 640px){ .kpi-row{ grid-template-columns: 1fr;} }
+
+.kpi{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+}
+.kpi .kpi-label{ color: var(--muted); font-size:.86rem; }
+.kpi .kpi-value{ font-size: 1.8rem; font-weight: 800; margin-top: 6px; }
+.kpi .kpi-sub{ color: var(--muted); font-size:.85rem; margin-top: 4px; }
+
+.card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+}
+
+.stButton>button{
+  background: linear-gradient(180deg, #1f6feb, #1060e1);
+  color:#fff; border:0; border-radius:12px; padding:.55rem 1rem; font-weight:700;
+}
+.stButton>button:hover{ filter:brightness(1.05); transform: translateY(-1px); }
+
+footer, .viewerBadge_container__1QSob { display:none !important; }
