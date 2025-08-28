@@ -3,3 +3,4 @@ pandas
 gdown
 openpyxl
 plotly
+streamlit-option-menu
