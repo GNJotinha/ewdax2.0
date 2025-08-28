@@ -3,7 +3,8 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 
-from utils import tempo_para_segundos
+from utils import tempo_para_segundos  
+
 from relatorios import (
     gerar_dados,
     gerar_simplicado,
@@ -13,9 +14,20 @@ from relatorios import (
     utr_por_entregador_turno,
     utr_pivot_por_entregador,
     _horas_from_abs,
+    utr_por_entregador_turno
 )
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
+
+def _hms_from_hours(h):
+    try:
+        total_seconds = int(round(float(h) * 3600))
+        horas, resto = divmod(total_seconds, 3600)
+        minutos, segundos = divmod(resto, 60)
+        return f"{horas:02d}:{minutos:02d}:{segundos:02d}"
+    except Exception:
+        return "00:00:00"
+
 
 # -------------------------------------------------------------------
 # Config da página
@@ -23,7 +35,7 @@ from data_loader import carregar_dados
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 
 # -------------------------------------------------------------------
-# Estilo base
+# Estilo
 # -------------------------------------------------------------------
 st.markdown(
     """
@@ -38,29 +50,16 @@ st.markdown(
             font-weight: bold;
         }
         .stButton>button:hover { background-color: #388bfd; }
+        .stSidebar { background-color: #161b22; }
         h1, h2, h3 { color: #58a6ff; }
         .stSelectbox, .stMultiSelect, .stTextInput {
             background-color: #21262d;
             color: #c9d1d9;
         }
-        /* Polimento extra */
-        div[data-testid="stMetricValue"] { font-size: 26px !important; }
-        .block-container { padding-top: 1.2rem; }
-        section[data-testid="stSidebar"] { background: #0b1220 !important; }
-        table { border-radius: 8px !important; overflow: hidden; }
     </style>
     """,
     unsafe_allow_html=True
 )
-
-def _hms_from_hours(h):
-    try:
-        total_seconds = int(round(float(h) * 3600))
-        horas, resto = divmod(total_seconds, 3600)
-        minutos, segundos = divmod(resto, 60)
-        return f"{horas:02d}:{minutos:02d}:{segundos:02d}"
-    except Exception:
-        return "00:00:00"
 
 # -------------------------------------------------------------------
 # Autenticação
@@ -85,98 +84,20 @@ if not st.session_state.logado:
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
 # -------------------------------------------------------------------
-# Navegação avançada (Opção B)
+# Menu
 # -------------------------------------------------------------------
-from streamlit_option_menu import option_menu
+modo = st.sidebar.radio("Escolha uma opção:", [
+    "📊 Indicadores Gerais",
+    "Ver geral",
+    "Simplificada (WhatsApp)",
+    "Alertas de Faltas",
+    "Relatório Customizado",
+    "Categorias de Entregadores",
+    "UTR"
+])
 
-NAV = {
-    "📊 Indicadores": [
-        "📊 Indicadores Gerais",
-        "UTR",
-        "Categorias de Entregadores",
-    ],
-    "📑 Relatórios": [
-        "Ver geral",
-        "Simplificada (WhatsApp)",
-        "Relatório Customizado",
-    ],
-    "⚠️ Alertas": [
-        "Alertas de Faltas",
-    ],
-}
-ADMIN_ITEM = "🔄 Atualizar dados"
-
-# estado inicial
-if "nav_cat" not in st.session_state:
-    st.session_state.nav_cat = list(NAV.keys())[0]
-if "nav_page" not in st.session_state:
-    st.session_state.nav_page = NAV[st.session_state.nav_cat][0]
-
-# deep-link por querystring
-_q = st.experimental_get_query_params()
-qp_cat = _q.get("cat", [st.session_state.nav_cat])[0]
-qp_page = _q.get("page", [st.session_state.nav_page])[0]
-if qp_cat in NAV:
-    st.session_state.nav_cat = qp_cat
-    if qp_page in NAV[qp_cat]:
-        st.session_state.nav_page = qp_page
-
-with st.sidebar:
-    st.markdown("### Sistema")
-    selected_cat = option_menu(
-        menu_title=None,
-        options=list(NAV.keys()),
-        icons=["bar-chart", "file-earmark-text", "exclamation-triangle"],
-        default_index=list(NAV.keys()).index(st.session_state.nav_cat),
-        orientation="vertical",
-        styles={
-            "container": {"background": "#0f172a", "padding": "0.5rem", "border-radius": "8px"},
-            "icon": {"color": "#60a5fa"},
-            "nav-link": {"color": "#cbd5e1", "font-size": "15px", "border-radius": "8px"},
-            "nav-link-selected": {"background-color": "#1e293b"},
-        },
-    )
-
-    if selected_cat != st.session_state.nav_cat:
-        st.session_state.nav_cat = selected_cat
-        st.session_state.nav_page = NAV[selected_cat][0]
-
-    selected_page = option_menu(
-        menu_title=None,
-        options=NAV[st.session_state.nav_cat],
-        icons=["dot"] * len(NAV[st.session_state.nav_cat]),
-        default_index=NAV[st.session_state.nav_cat].index(st.session_state.nav_page),
-        orientation="vertical",
-        styles={
-            "container": {"background": "#0b1220", "padding": "0.25rem 0.5rem", "border-radius": "8px"},
-            "icon": {"color": "#93c5fd"},
-            "nav-link": {"color": "#cbd5e1", "font-size": "14px", "padding-left": "18px", "border-radius": "6px"},
-            "nav-link-selected": {"background-color": "#0f172a"},
-        },
-    )
-    st.session_state.nav_page = selected_page
-
-    nivel_side = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
-    if nivel_side == "admin":
-        st.divider()
-        if st.button(ADMIN_ITEM, use_container_width=True, type="secondary"):
-            st.cache_data.clear()
-            st.rerun()
-
-# sincroniza URL p/ compartilhar
-st.experimental_set_query_params(cat=st.session_state.nav_cat, page=st.session_state.nav_page)
-
-# breadcrumb
-st.markdown(
-    f"<div style='margin: 4px 0 12px 0; opacity:.9'>"
-    f"<b>Sistema</b> › {st.session_state.nav_cat} › "
-    f"<span style='color:#93c5fd'>{st.session_state.nav_page}</span>"
-    f"</div>",
-    unsafe_allow_html=True,
-)
-
-# modo unificado (compatível com o restante do arquivo)
-modo = st.session_state.nav_page
+if not modo:
+    st.stop()
 
 # -------------------------------------------------------------------
 # Dados
@@ -185,6 +106,19 @@ df = carregar_dados()
 df["data"] = pd.to_datetime(df["data"])
 df["mes_ano"] = df["data"].dt.to_period("M").dt.to_timestamp()
 entregadores = get_entregadores(df)
+
+nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
+if nivel == "admin":
+    if st.button("🔄 Atualizar dados"):
+        st.cache_data.clear()
+        st.rerun()
+
+# -------------------------------------------------------------------
+# (Aqui seguem todas as páginas: Ver geral, Simplificada, Indicadores Gerais,
+# Alertas de Faltas, Relatório Customizado, Categorias de Entregadores e UTR)
+# -------------------------------------------------------------------
+
+# ... [restante do arquivo igual ao que você já rodava — com os gráficos, relatórios e métricas]
 
 # -------------------------------------------------------------------
 # Ver geral / Simplificada
