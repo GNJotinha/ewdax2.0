@@ -3,8 +3,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 
-from utils import tempo_para_segundos  
-
+from utils import tempo_para_segundos
 from relatorios import (
     gerar_dados,
     gerar_simplicado,
@@ -14,30 +13,17 @@ from relatorios import (
     utr_por_entregador_turno,
     utr_pivot_por_entregador,
     _horas_from_abs,
-    utr_por_entregador_turno
-
 )
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 
-def _hms_from_hours(h):
-    try:
-        total_seconds = int(round(float(h) * 3600))
-        horas, resto = divmod(total_seconds, 3600)
-        minutos, segundos = divmod(resto, 60)
-        return f"{horas:02d}:{minutos:02d}:{segundos:02d}"
-    except Exception:
-        return "00:00:00"
-
-
-
 # -------------------------------------------------------------------
-# Config da página (coloque antes de qualquer renderização Streamlit)
+# Config da página
 # -------------------------------------------------------------------
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 
 # -------------------------------------------------------------------
-# Estilo
+# Estilo base
 # -------------------------------------------------------------------
 st.markdown(
     """
@@ -52,16 +38,29 @@ st.markdown(
             font-weight: bold;
         }
         .stButton>button:hover { background-color: #388bfd; }
-        .stSidebar { background-color: #161b22; }
         h1, h2, h3 { color: #58a6ff; }
         .stSelectbox, .stMultiSelect, .stTextInput {
             background-color: #21262d;
             color: #c9d1d9;
         }
+        /* Polimento extra */
+        div[data-testid="stMetricValue"] { font-size: 26px !important; }
+        .block-container { padding-top: 1.2rem; }
+        section[data-testid="stSidebar"] { background: #0b1220 !important; }
+        table { border-radius: 8px !important; overflow: hidden; }
     </style>
     """,
     unsafe_allow_html=True
 )
+
+def _hms_from_hours(h):
+    try:
+        total_seconds = int(round(float(h) * 3600))
+        horas, resto = divmod(total_seconds, 3600)
+        minutos, segundos = divmod(resto, 60)
+        return f"{horas:02d}:{minutos:02d}:{segundos:02d}"
+    except Exception:
+        return "00:00:00"
 
 # -------------------------------------------------------------------
 # Autenticação
@@ -86,20 +85,98 @@ if not st.session_state.logado:
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
 # -------------------------------------------------------------------
-# Menu
+# Navegação avançada (Opção B)
 # -------------------------------------------------------------------
-modo = st.sidebar.radio("Escolha uma opção:", [
-    "📊 Indicadores Gerais",
-    "Ver geral",
-    "Simplificada (WhatsApp)",
-    "Alertas de Faltas",
-    "Relatório Customizado",
-    "Categorias de Entregadores",
-    "UTR"
-])
+from streamlit_option_menu import option_menu
 
-if not modo:
-    st.stop()
+NAV = {
+    "📊 Indicadores": [
+        "📊 Indicadores Gerais",
+        "UTR",
+        "Categorias de Entregadores",
+    ],
+    "📑 Relatórios": [
+        "Ver geral",
+        "Simplificada (WhatsApp)",
+        "Relatório Customizado",
+    ],
+    "⚠️ Alertas": [
+        "Alertas de Faltas",
+    ],
+}
+ADMIN_ITEM = "🔄 Atualizar dados"
+
+# estado inicial
+if "nav_cat" not in st.session_state:
+    st.session_state.nav_cat = list(NAV.keys())[0]
+if "nav_page" not in st.session_state:
+    st.session_state.nav_page = NAV[st.session_state.nav_cat][0]
+
+# deep-link por querystring
+_q = st.experimental_get_query_params()
+qp_cat = _q.get("cat", [st.session_state.nav_cat])[0]
+qp_page = _q.get("page", [st.session_state.nav_page])[0]
+if qp_cat in NAV:
+    st.session_state.nav_cat = qp_cat
+    if qp_page in NAV[qp_cat]:
+        st.session_state.nav_page = qp_page
+
+with st.sidebar:
+    st.markdown("### Sistema")
+    selected_cat = option_menu(
+        menu_title=None,
+        options=list(NAV.keys()),
+        icons=["bar-chart", "file-earmark-text", "exclamation-triangle"],
+        default_index=list(NAV.keys()).index(st.session_state.nav_cat),
+        orientation="vertical",
+        styles={
+            "container": {"background": "#0f172a", "padding": "0.5rem", "border-radius": "8px"},
+            "icon": {"color": "#60a5fa"},
+            "nav-link": {"color": "#cbd5e1", "font-size": "15px", "border-radius": "8px"},
+            "nav-link-selected": {"background-color": "#1e293b"},
+        },
+    )
+
+    if selected_cat != st.session_state.nav_cat:
+        st.session_state.nav_cat = selected_cat
+        st.session_state.nav_page = NAV[selected_cat][0]
+
+    selected_page = option_menu(
+        menu_title=None,
+        options=NAV[st.session_state.nav_cat],
+        icons=["dot"] * len(NAV[st.session_state.nav_cat]),
+        default_index=NAV[st.session_state.nav_cat].index(st.session_state.nav_page),
+        orientation="vertical",
+        styles={
+            "container": {"background": "#0b1220", "padding": "0.25rem 0.5rem", "border-radius": "8px"},
+            "icon": {"color": "#93c5fd"},
+            "nav-link": {"color": "#cbd5e1", "font-size": "14px", "padding-left": "18px", "border-radius": "6px"},
+            "nav-link-selected": {"background-color": "#0f172a"},
+        },
+    )
+    st.session_state.nav_page = selected_page
+
+    nivel_side = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
+    if nivel_side == "admin":
+        st.divider()
+        if st.button(ADMIN_ITEM, use_container_width=True, type="secondary"):
+            st.cache_data.clear()
+            st.rerun()
+
+# sincroniza URL p/ compartilhar
+st.experimental_set_query_params(cat=st.session_state.nav_cat, page=st.session_state.nav_page)
+
+# breadcrumb
+st.markdown(
+    f"<div style='margin: 4px 0 12px 0; opacity:.9'>"
+    f"<b>Sistema</b> › {st.session_state.nav_cat} › "
+    f"<span style='color:#93c5fd'>{st.session_state.nav_page}</span>"
+    f"</div>",
+    unsafe_allow_html=True,
+)
+
+# modo unificado (compatível com o restante do arquivo)
+modo = st.session_state.nav_page
 
 # -------------------------------------------------------------------
 # Dados
@@ -107,14 +184,7 @@ if not modo:
 df = carregar_dados()
 df["data"] = pd.to_datetime(df["data"])
 df["mes_ano"] = df["data"].dt.to_period("M").dt.to_timestamp()
-
 entregadores = get_entregadores(df)
-
-nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
-if nivel == "admin":
-    if st.button("🔄 Atualizar dados"):
-        st.cache_data.clear()
-        st.rerun()
 
 # -------------------------------------------------------------------
 # Ver geral / Simplificada
@@ -122,7 +192,11 @@ if nivel == "admin":
 if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
         entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
-        nome = st.selectbox("🔎 Selecione o entregador:", [None] + entregadores_lista, format_func=lambda x: "" if x is None else x)
+        nome = st.selectbox(
+            "🔎 Selecione o entregador:",
+            [None] + entregadores_lista,
+            format_func=lambda x: "" if x is None else x
+        )
 
         if modo == "Simplificada (WhatsApp)":
             col1, col2 = st.columns(2)
@@ -142,7 +216,7 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
                 t1 = gerar_simplicado(nome, mes1, ano1, df)
                 t2 = gerar_simplicado(nome, mes2, ano2, df)
                 st.text_area("Resultado:", value="\n\n".join([t for t in [t1, t2] if t]), height=600)
-                
+
 # -------------------------------------------------------------------
 # 📊 Indicadores Gerais (com % e UTR alinhado ao modo UTR)
 # -------------------------------------------------------------------
@@ -162,28 +236,24 @@ if modo == "📊 Indicadores Gerais":
         horizontal=True,
     )
 
-    # ----- Preparos comuns -----
-    # garante datetime e coluna mês/ano
+    # Preparos comuns
     df["data"] = pd.to_datetime(df["data"], errors="coerce")
     df["mes_ano"] = df["data"].dt.to_period("M").dt.to_timestamp()
 
-    # mês/ano atuais (pra série diária)
     mes_atual = pd.Timestamp.today().month
     ano_atual = pd.Timestamp.today().year
     df_mes_atual = df[(df["data"].dt.month == mes_atual) & (df["data"].dt.year == ano_atual)]
 
-    # ====== RAMO 1: Horas realizadas ======
+    # ===== Horas realizadas =====
     if tipo_grafico == "Horas realizadas":
         if "tempo_disponivel_absoluto" not in df.columns:
             st.warning("Coluna 'tempo_disponivel_absoluto' não encontrada.")
             st.stop()
 
-        # HH:MM:SS -> segundos (vetorizado e robusto)
         if "segundos_abs" not in df.columns:
             df = df.copy()
             df["segundos_abs"] = df["tempo_disponivel_absoluto"].map(tempo_para_segundos).fillna(0).astype(int)
 
-        # --- Barras: total de horas por mês (mês a mês)
         mensal_horas = (
             df.groupby("mes_ano", as_index=False)["segundos_abs"].sum()
               .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
@@ -216,7 +286,6 @@ if modo == "📊 Indicadores Gerais":
         )
         st.plotly_chart(fig_mensal, use_container_width=True)
 
-        # --- Linha: horas por dia no mês atual
         if not df_mes_atual.empty:
             por_dia_h = (
                 df_mes_atual.assign(segundos_abs=lambda d: d["tempo_disponivel_absoluto"].map(tempo_para_segundos).fillna(0).astype(int))
@@ -231,7 +300,8 @@ if modo == "📊 Indicadores Gerais":
                 labels={"dia": "Dia", "horas": "Horas"},
                 template="plotly_dark",
             )
-            fig_linha.update_traces(mode="lines", line_shape="spline", hovertemplate="Dia %{x}<br>%{y:.2f}h<extra></extra>")
+            fig_linha.update_traces(mode="lines", line_shape="spline",
+                                    hovertemplate="Dia %{x}<br>%{y:.2f}h<extra></extra>")
             fig_linha.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
                 font=dict(color="white"), title_font=dict(size=22),
@@ -240,25 +310,13 @@ if modo == "📊 Indicadores Gerais":
                 margin=dict(t=60, r=20, b=60, l=60),
             )
             total_horas_mes = por_dia_h["horas"].sum()
-
-            # helper: float horas -> HH:MM:SS
-            def _hms_from_hours(h):
-                try:
-                    total_seconds = int(round(float(h) * 3600))
-                    horas, resto = divmod(total_seconds, 3600)
-                    minutos, segundos = divmod(resto, 60)
-                    return f"{horas:02d}:{minutos:02d}:{segundos:02d}"
-                except Exception:
-                    return "00:00:00"
-
             st.metric("⏱️ Horas realizadas no mês", _hms_from_hours(total_horas_mes))
             st.plotly_chart(fig_linha, use_container_width=True)
         else:
             st.info("Sem dados no mês atual para plotar as horas diárias.")
+        st.stop()
 
-        st.stop()  # encerra o fluxo aqui pra 'Horas realizadas'
-
-    # ====== RAMO 2: Corridas (ofertadas/aceitas/rejeitadas/completadas) ======
+    # ===== Corridas (ofertadas/aceitas/rejeitadas/completadas) =====
     coluna_map = {
         "Corridas ofertadas": ("numero_de_corridas_ofertadas", "Corridas ofertadas por mês", "Corridas"),
         "Corridas aceitas": ("numero_de_corridas_aceitas", "Corridas aceitas por mês", "Corridas Aceitas"),
@@ -271,11 +329,9 @@ if modo == "📊 Indicadores Gerais":
 
     col, titulo, label = coluna_map[tipo_grafico]
 
-    # ---- Totais mensais (base do gráfico)
     mensal = df.groupby("mes_ano", as_index=False)[col].sum()
     mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
 
-    # ---- % em relação às ofertadas (para aceitas/rejeitadas/completadas)
     if tipo_grafico in ["Corridas aceitas", "Corridas rejeitadas", "Corridas completadas"]:
         mensal_ofert = (
             df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
@@ -295,46 +351,34 @@ if modo == "📊 Indicadores Gerais":
             axis=1
         )
 
-    # ---- UTR médio do mês (média das UTR diárias → igual ao modo UTR) para OFERTADAS
     elif tipo_grafico == "Corridas ofertadas":
-        base_utr = utr_por_entregador_turno(df, None, None)  # mesma função usada no modo UTR
+        base_utr = utr_por_entregador_turno(df, None, None)
         if not base_utr.empty:
             base_utr = base_utr.copy()
-            # garante datetime e filtra válidos
             base_utr["data"] = pd.to_datetime(base_utr["data"], errors="coerce")
             base_utr = base_utr.dropna(subset=["data"])
-
-            # 1) cria 'dia' explícito e tira média de UTR POR DIA
             base_utr["dia"] = base_utr["data"].dt.date
             utr_por_dia = (
                 base_utr.groupby("dia", as_index=False)["UTR"]
                         .mean()
                         .rename(columns={"UTR": "UTR_dia"})
             )
-
-            # 2) média MENSAL das médias diárias
             utr_por_dia["mes_ano"] = pd.to_datetime(utr_por_dia["dia"]).dt.to_period("M").dt.to_timestamp()
             utr_mensal = (
                 utr_por_dia.groupby("mes_ano", as_index=False)["UTR_dia"]
                            .mean()
                            .rename(columns={"UTR_dia": "UTR_medio"})
             )
-
-            # 3) junta na base mensal das barras
             mensal = mensal.merge(utr_mensal, on="mes_ano", how="left")
-
-            # 4) label: valor absoluto + UTR médio com 2 casas
             mensal["__label_text__"] = mensal.apply(
                 lambda r: f"{int(r[col])}\nUTR {0.00 if pd.isna(r['UTR_medio']) else float(r['UTR_medio']):.2f}",
                 axis=1
             )
         else:
             mensal["__label_text__"] = mensal[col].fillna(0).astype(int).astype(str) + "\nUTR 0.00"
-
     else:
         mensal["__label_text__"] = mensal[col].fillna(0).astype(int).astype(str)
 
-    # ---- Gráfico de barras
     fig = px.bar(
         mensal, x="mes_rotulo", y=col, text="__label_text__", title=titulo,
         labels={col: label, "mes_rotulo": "Mês/Ano"},
@@ -355,7 +399,6 @@ if modo == "📊 Indicadores Gerais":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---- Série diária (mês atual) — mantém igual para o indicador escolhido
     por_dia = (
         df_mes_atual.assign(dia=lambda d: d["data"].dt.day)
                     .groupby("dia", as_index=False)[col].sum()
@@ -371,9 +414,6 @@ if modo == "📊 Indicadores Gerais":
     total_mes = int(por_dia[col].sum())
     st.metric(f"🚗 {label} no mês", total_mes)
     st.plotly_chart(fig_dia, use_container_width=True)
-
-
-
 
 # -------------------------------------------------------------------
 # Alertas de Faltas
@@ -423,7 +463,8 @@ if modo == "Relatório Customizado":
     st.header("Relatório Customizado do Entregador")
 
     entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
-    entregador = st.selectbox("🔎 Selecione o entregador:", [None] + entregadores_lista, format_func=lambda x: "" if x is None else x)
+    entregador = st.selectbox("🔎 Selecione o entregador:", [None] + entregadores_lista,
+                              format_func=lambda x: "" if x is None else x)
 
     subpracas = sorted(df["sub_praca"].dropna().unique())
     filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
@@ -485,11 +526,9 @@ if modo == "Categorias de Entregadores":
     if df_cat.empty:
         st.info("Nenhum dado encontrado para o período selecionado.")
     else:
-        # SH -> HH:MM:SS SEMPRE para exibição/CSV
         if "supply_hours" in df_cat.columns:
             df_cat["tempo_hms"] = df_cat["supply_hours"].apply(_hms_from_hours)
 
-        # Resumo por categoria
         contagem = df_cat["categoria"].value_counts().reindex(["Premium","Conectado","Casual","Flutuante"]).fillna(0).astype(int)
         c1,c2,c3,c4 = st.columns(4)
         c1.metric("🚀 Premium", int(contagem.get("Premium",0)))
@@ -497,7 +536,6 @@ if modo == "Categorias de Entregadores":
         c3.metric("👍 Casual", int(contagem.get("Casual",0)))
         c4.metric("↩ Flutuante", int(contagem.get("Flutuante",0)))
 
-        # Tabela (usa HH:MM:SS)
         st.subheader("Tabela de classificação")
         cols_cat = ["pessoa_entregadora","categoria","tempo_hms","aceitacao_%","conclusao_%","ofertadas","aceitas","completas","criterios_atingidos"]
         st.dataframe(
@@ -505,7 +543,6 @@ if modo == "Categorias de Entregadores":
             use_container_width=True
         )
 
-        # CSV com vírgula e HH:MM:SS
         csv_cat = df_cat[cols_cat].to_csv(index=False, decimal=",").encode("utf-8")
         st.download_button("⬇️ Baixar CSV", data=csv_cat, file_name="categorias_entregadores.csv", mime="text/csv")
 
@@ -515,12 +552,10 @@ if modo == "Categorias de Entregadores":
 if modo == "UTR":
     st.header("🧭 UTR – Corridas ofertadas por hora (média diária)")
 
-    # --- Período (mês/ano) ---
     col1, col2 = st.columns(2)
     mes_sel = col1.selectbox("Mês", list(range(1, 13)))
     ano_sel = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
 
-    # Base completa (para gráfico e CSV geral)
     base_full = utr_por_entregador_turno(df, mes_sel, ano_sel)
     if base_full.empty:
         st.info("Nenhum dado encontrado para o período selecionado.")
@@ -529,19 +564,16 @@ if modo == "UTR":
     if "supply_hours" in base_full.columns:
         base_full["tempo_hms"] = base_full["supply_hours"].apply(_hms_from_hours)
 
-    # --- Turno (limpo) ---
     turnos_opts = ["Todos os turnos"]
     if "periodo" in base_full.columns:
         turnos_opts += sorted([t for t in base_full["periodo"].dropna().unique()])
     turno_sel = st.selectbox("Turno", options=turnos_opts, index=0)
 
-    # Filtra só para o gráfico
     base_plot = base_full if turno_sel == "Todos os turnos" else base_full[base_full["periodo"] == turno_sel]
     if base_plot.empty:
         st.info("Sem dados para o turno selecionado.")
         st.stop()
 
-    # Série: média UTR por dia
     base_plot["data"] = pd.to_datetime(base_plot["data"])
     serie = (
         base_plot.groupby(base_plot["data"].dt.day)["UTR"]
@@ -551,23 +583,18 @@ if modo == "UTR":
     )
     serie.columns = ["dia_num", "utr_media"]
     serie = serie.sort_values("dia_num")
-    y_max = (serie["utr_media"].max() or 0) * 1.25  # espaço para labels fora da barra
+    y_max = (serie["utr_media"].max() or 0) * 1.25
 
-    # ======= Gráfico de barras (1 cor) =======
-    import plotly.express as px
-    titulo_turno = turno_sel if turno_sel != "Todos os turnos" else "Todos os turnos"
     fig = px.bar(
         serie,
         x="dia_num",
         y="utr_media",
         text="utr_media",
-        title=f"UTR médio por dia – {mes_sel:02d}/{ano_sel} • {titulo_turno}",
+        title=f"UTR médio por dia – {mes_sel:02d}/{ano_sel} • {('Todos os turnos' if turno_sel=='Todos os turnos' else turno_sel)}",
         labels={"dia_num": "Dia do mês", "utr_media": "UTR médio"},
         template="plotly_dark",
-        color_discrete_sequence=["#00BFFF"],  # 1 cor só
+        color_discrete_sequence=["#00BFFF"],
     )
-
-    # Números grandes/visíveis
     fig.update_traces(
         texttemplate="<b>%{text:.2f}</b>",
         textposition="outside",
@@ -575,21 +602,16 @@ if modo == "UTR":
         marker_line_color="rgba(255,255,255,0.25)",
         marker_line_width=0.5,
     )
-
-    # Eixo X com todos os dias visíveis (1,2,3,...)
     fig.update_xaxes(
         tickmode="linear", dtick=1, tick0=1,
         tickfont=dict(size=14),
         showgrid=False, showline=True, linewidth=1, linecolor="rgba(255,255,255,0.2)"
     )
-
-    # Y com espaço pra label e sem cortar topo
     fig.update_yaxes(
-        range=[0, max(y_max, 1)],  # evita range muito baixo
+        range=[0, max(y_max, 1)],
         showgrid=True, gridcolor="gray", rangemode="tozero",
         tickfont=dict(size=14)
     )
-
     fig.update_layout(
         bargap=0.25,
         uniformtext_minsize=14, uniformtext_mode="show",
@@ -602,11 +624,8 @@ if modo == "UTR":
     )
 
     st.plotly_chart(fig, use_container_width=True)
-
-    # ======= Métrica única =======
     st.metric("Média UTR no mês", f"{serie['utr_media'].mean():.2f}")
 
-    # ======= CSV GERAL (ignora filtro de turno) =======
     st.caption("📄 O botão abaixo baixa o **CSV GERAL** (sem filtro de turno).")
     cols_csv = ["data","pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
     base_csv = base_full.copy()
