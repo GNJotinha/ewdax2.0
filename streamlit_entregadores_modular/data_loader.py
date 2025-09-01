@@ -51,4 +51,17 @@ def _ler(path: Path) -> pd.DataFrame:
     df["mes"] = df["data_do_periodo"].dt.month
     df["ano"] = df["data_do_periodo"].dt.year
     df["pessoa_entregadora_normalizado"] = df["pessoa_entregadora"].apply(normalizar)
+
+    # 🔽 novo: garantir numéricos
+    num_cols = [
+        "numero_de_corridas_ofertadas",
+        "numero_de_corridas_aceitas",
+        "numero_de_corridas_rejeitadas",
+        "numero_de_corridas_completadas",
+        "tempo_disponivel_escalado",
+    ]
+    for c in num_cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+
     return df
