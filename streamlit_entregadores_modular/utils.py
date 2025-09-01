@@ -13,14 +13,22 @@ def tempo_para_segundos(t):
     except Exception:
         return int(t) if isinstance(t, (int, float)) else 0
 
+import pandas as pd
+
 def calcular_tempo_online(df_filtrado):
-    if "tempo_disponivel_escalado" not in df_filtrado.columns:
+    col = "tempo_disponivel_escalado"
+    if col not in df_filtrado.columns:
         return 0.0
-    df_valid = df_filtrado[df_filtrado["tempo_disponivel_escalado"].notnull()]
-    print(f"Total registros: {len(df_valid)}")
-    print(df_valid["tempo_disponivel_escalado"].describe())
-    if df_valid.empty:
+
+    s = pd.to_numeric(df_filtrado[col], errors="coerce").dropna()
+    if s.empty:
         return 0.0
-    media_pct = df_valid["tempo_disponivel_escalado"].mean()
-    return round(media_pct / 100, 1)
+
+    m = float(s.mean())
+    # Autodetecta escala:
+    # - média <= 1.0  → assume [0,1]  → converte pra %
+    # - média >  1.0  → assume [0,100]→ já está em %
+    pct = m * 100 if m <= 1.0 else m
+    return round(pct, 1)  # retorna pronto para exibir com "%"
+
 
