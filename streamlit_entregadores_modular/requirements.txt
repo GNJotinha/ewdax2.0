@@ -3,4 +3,4 @@ pandas>=2.2
 gdown>=5.2
 openpyxl>=3.1
 plotly>=5.22
-hydralit-components>=1.0.10
+
