@@ -331,7 +331,7 @@ def utr_por_entregador_turno(df, mes=None, ano=None):
             "tempo_hms": _horas_para_hms(sh),   # HH:MM:SS por dia
             "supply_hours": round(sh, 2),
             "corridas_ofertadas": int(ofertadas),
-            "UTR": round(utr, 2),
+            "UTR": utr,
         })
 
     out = pd.DataFrame(registros)
