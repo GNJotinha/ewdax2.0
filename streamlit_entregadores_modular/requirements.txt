@@ -1,6 +1,6 @@
-streamlit
-pandas
-gdown
-openpyxl
-plotly
-streamlit-option-menu
+streamlit>=1.36
+pandas>=2.2
+gdown>=5.2
+openpyxl>=3.1
+plotly>=5.22
+bcrypt>=4.1
