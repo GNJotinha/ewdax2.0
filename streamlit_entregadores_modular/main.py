@@ -684,11 +684,4 @@ if modo == "Relação de Entregadores":
         st.subheader("📝 Texto (todos os entregadores nos filtros)")
         st.text_area("Resultado:", value=texto_final or "Sem blocos gerados.", height=500)
 
-        # Download do texto
-        st.download_button(
-            "⬇️ Baixar TXT (todos)",
-            data=texto_final.encode("utf-8"),
-            file_name="relatorio_por_filtros_todos.txt",
-            mime="text/plain"
-        )
 
