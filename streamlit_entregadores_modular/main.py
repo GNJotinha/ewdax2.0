@@ -86,12 +86,7 @@ st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 # -------------------------------------------------------------------
 # Menu
 # -------------------------------------------------------------------
-# -------------------------------------------------------------------
-# Menu lateral (cascata: Categoria -> Subopção)
-# -------------------------------------------------------------------
-# -------------------------------------------------------------------
-# Menu lateral (categorias como "accordions" que expandem os modos)
-# -------------------------------------------------------------------
+
 MENU = {
     "Desempenho do Entregador": [
         "Ver geral",
@@ -132,7 +127,7 @@ with st.sidebar:
     # desenha cada categoria como um expander
     for cat, opts in MENU.items():
         expanded = (st.session_state.open_cat == cat)
-        with st.expander(f"▶ {cat}" if not expanded else f"▼ {cat}", expanded=expanded):
+        with st.expander(f"{cat}" if not expanded else f"▼ {cat}", expanded=expanded):
             # você pode usar radio OU botões; deixo radio pq preserva seleção
             escolha = st.radio(
                 " ",
