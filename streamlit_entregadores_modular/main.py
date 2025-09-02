@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
-from pathlib import Path
-from utils import tempo_para_segundos  
+
+from utils import tempo_para_segundos  # fallback se precisar
+
 from relatorios import (
     gerar_dados,
     gerar_simplicado,
@@ -18,6 +19,7 @@ from relatorios import (
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 
+
 def _hms_from_hours(h):
     try:
         total_seconds = int(round(float(h) * 3600))
@@ -26,6 +28,32 @@ def _hms_from_hours(h):
         return f"{horas:02d}:{minutos:02d}:{segundos:02d}"
     except Exception:
         return "00:00:00"
+
+
+# =========================
+# Helpers de performance
+# =========================
+@st.cache_data
+def _utr_mensal_cached(df_key, mes: int, ano: int, turno: str | None):
+    """
+    UTR mensal = ofertadas_totais / horas_totais (ponderado), opcionalmente por turno.
+    Cacheia por (df_key, mes, ano, turno).
+    """
+    # usa 'df' global em runtime; cache invalida quando df_key muda
+    dados = df[(df["mes"] == mes) & (df["ano"] == ano)]
+    if turno and turno != "Todos os turnos" and "periodo" in dados.columns:
+        dados = dados[dados["periodo"] == turno]
+
+    if dados.empty:
+        return 0.0
+
+    ofertadas = float(dados["numero_de_corridas_ofertadas"].sum())
+    if "segundos_abs" in dados.columns:
+        horas = dados["segundos_abs"].sum() / 3600.0
+    else:
+        horas = _horas_from_abs(dados)
+
+    return (ofertadas / horas) if horas > 0 else 0.0
 
 
 # -------------------------------------------------------------------
@@ -123,20 +151,10 @@ with st.sidebar:
         expanded = (st.session_state.open_cat == cat)
         with st.expander(cat, expanded=expanded):
             for opt in opts:
-                ativo = (st.session_state.modo == opt)
-                estilo = (
-                    "background-color:#1f6feb;color:white;font-weight:bold;"
-                    if ativo else
-                    "background-color:#21262d;color:#c9d1d9;"
-                )
                 if st.button(opt, key=f"btn_{cat}_{opt}", use_container_width=True):
                     st.session_state.modo = opt
                     st.session_state.open_cat = cat
                     st.rerun()
-                st.markdown(
-                    f"<style>div[data-testid='stSidebar'] button[kind='secondary']#{st.session_state.modo}{{{estilo}}}</style>",
-                    unsafe_allow_html=True
-                )
 
 # compat
 modo = st.session_state.modo
@@ -146,8 +164,31 @@ modo = st.session_state.modo
 # Dados
 # -------------------------------------------------------------------
 df = carregar_dados()
-df["data"] = pd.to_datetime(df["data"])
-df["mes_ano"] = df["data"].dt.to_period("M").dt.to_timestamp()
+
+# Garantias/fallbacks (caso o loader ainda não tenha criado)
+if "mes_ano" not in df.columns:
+    # cria a partir de data_do_periodo se existir; senão, tenta "data"
+    base_dt = pd.to_datetime(df.get("data_do_periodo", df.get("data")), errors="coerce")
+    df["mes_ano"] = base_dt.dt.to_period("M").dt.to_timestamp()
+
+if "segundos_abs" not in df.columns:
+    if "tempo_disponivel_absoluto" in df.columns:
+        td = pd.to_timedelta(df["tempo_disponivel_absoluto"], errors="coerce")
+        df["segundos_abs"] = td.dt.total_seconds().fillna(0).astype(int)
+    else:
+        df["segundos_abs"] = 0
+
+# df_key para cache; muda quando entram linhas novas ou última data muda
+df_key = (df.shape, pd.to_datetime(df["data"]).max())
+
+# horas por mês pré-agregadas (reuso nos gráficos)
+horas_mensais = (
+    df.groupby("mes_ano", as_index=False)["segundos_abs"]
+      .sum()
+      .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
+      .drop(columns="segundos_abs")
+)
+
 entregadores = get_entregadores(df)
 
 # -------------------------------------------------------------------
@@ -201,22 +242,15 @@ if modo == "Indicadores Gerais":
     )
 
     # Preparos comuns
-    df["data"] = pd.to_datetime(df["data"], errors="coerce")
-    df["mes_ano"] = df["data"].dt.to_period("M").dt.to_timestamp()
-
     mes_atual = pd.Timestamp.today().month
     ano_atual = pd.Timestamp.today().year
-    df_mes_atual = df[(df["data"].dt.month == mes_atual) & (df["data"].dt.year == ano_atual)]
+    df_mes_atual = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)]
 
     # ===== Horas realizadas =====
     if tipo_grafico == "Horas realizadas":
-        if "tempo_disponivel_absoluto" not in df.columns:
-            st.warning("Coluna 'tempo_disponivel_absoluto' não encontrada.")
-            st.stop()
-
         if "segundos_abs" not in df.columns:
-            df = df.copy()
-            df["segundos_abs"] = df["tempo_disponivel_absoluto"].map(tempo_para_segundos).fillna(0).astype(int)
+            st.warning("Coluna 'segundos_abs' não encontrada.")
+            st.stop()
 
         mensal_horas = (
             df.groupby("mes_ano", as_index=False)["segundos_abs"].sum()
@@ -252,8 +286,7 @@ if modo == "Indicadores Gerais":
 
         if not df_mes_atual.empty:
             por_dia_h = (
-                df_mes_atual.assign(segundos_abs=lambda d: d["tempo_disponivel_absoluto"].map(tempo_para_segundos).fillna(0).astype(int))
-                           .assign(dia=lambda d: d["data"].dt.day)
+                df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
                            .groupby("dia", as_index=False)["segundos_abs"].sum()
                            .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
                            .sort_values("dia")
@@ -316,30 +349,16 @@ if modo == "Indicadores Gerais":
         )
 
     elif tipo_grafico == "Corridas ofertadas":
-        base_utr = utr_por_entregador_turno(df, None, None)
-        if not base_utr.empty:
-            base_utr = base_utr.copy()
-            base_utr["data"] = pd.to_datetime(base_utr["data"], errors="coerce")
-            base_utr = base_utr.dropna(subset=["data"])
-            base_utr["dia"] = base_utr["data"].dt.date
-            utr_por_dia = (
-                base_utr.groupby("dia", as_index=False)["UTR"]
-                        .mean()
-                        .rename(columns={"UTR": "UTR_dia"})
-            )
-            utr_por_dia["mes_ano"] = pd.to_datetime(utr_por_dia["dia"]).dt.to_period("M").dt.to_timestamp()
-            utr_mensal = (
-                utr_por_dia.groupby("mes_ano", as_index=False)["UTR_dia"]
-                           .mean()
-                           .rename(columns={"UTR_dia": "UTR_medio"})
-            )
-            mensal = mensal.merge(utr_mensal, on="mes_ano", how="left")
-            mensal["__label_text__"] = mensal.apply(
-                lambda r: f"{int(r[col])}\nUTR {0.00 if pd.isna(r['UTR_medio']) else float(r['UTR_medio']):.2f}",
-                axis=1
-            )
-        else:
-            mensal["__label_text__"] = mensal[col].fillna(0).astype(int).astype(str) + "\nUTR 0.00"
+        # Reaproveita horas_mensais pré-calculado (sem recomputar segundos)
+        mensal = mensal.merge(horas_mensais, on="mes_ano", how="left")
+        mensal["UTR_medio"] = mensal.apply(
+            lambda r: (float(r[col]) / float(r["horas"])) if (pd.notna(r["horas"]) and r["horas"] > 0) else 0.0,
+            axis=1
+        )
+        mensal["__label_text__"] = mensal.apply(
+            lambda r: f"{int(r[col])}\nUTR {float(r['UTR_medio']):.2f}",
+            axis=1
+        )
     else:
         mensal["__label_text__"] = mensal[col].fillna(0).astype(int).astype(str)
 
@@ -364,7 +383,7 @@ if modo == "Indicadores Gerais":
     st.plotly_chart(fig, use_container_width=True)
 
     por_dia = (
-        df_mes_atual.assign(dia=lambda d: d["data"].dt.day)
+        df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
                     .groupby("dia", as_index=False)[col].sum()
                     .sort_values("dia")
     )
@@ -588,7 +607,15 @@ if modo == "UTR":
     )
 
     st.plotly_chart(fig, use_container_width=True)
-    st.metric("Média UTR no mês", f"{serie['utr_media'].mean():.2f}")
+
+    # ✅ Métrica do mês usando a definição ponderada e cacheada (alinhada com a tela inicial)
+    utr_mes_metric = _utr_mensal_cached(
+        df_key,
+        mes_sel,
+        ano_sel,
+        None if turno_sel == "Todos os turnos" else turno_sel
+    )
+    st.metric("Média UTR no mês", f"{utr_mes_metric:.2f}")
 
     st.caption("📄 O botão abaixo baixa o **CSV GERAL** (sem filtro de turno).")
     cols_csv = ["data","pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
@@ -741,23 +768,8 @@ if modo == "Início":
             st.subheader("🔄 Atualização de base")
             st.caption("Este botão só aparece na tela inicial.")
             if st.button("Atualizar dados agora", use_container_width=True):
-                try:
-                    # 1) Remove cópias locais pra forçar o data_loader a ir no Drive
-                    Path("Calendarios.xlsx").unlink(missing_ok=True)
-                    Path("/mnt/data/Calendarios.xlsx").unlink(missing_ok=True)
-            
-                    # 2) Limpa cache de dados do Streamlit
-                    st.cache_data.clear()
-            
-                    # 3) Feedback rápido pro usuário
-                    st.toast("Recarregando dados do Google Drive…", icon="🔁")
-            
-                except Exception as e:
-                    st.warning(f"Não consegui apagar o arquivo local: {e}")
-            
-                # 4) Reexecuta o app (vai chamar carregar_dados() de novo → baixa do Drive)
+                st.cache_data.clear()
                 st.rerun()
-
 
     st.divider()
 
@@ -775,16 +787,8 @@ if modo == "Início":
     acc_pct  = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
     rej_pct  = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
 
-    # UTR do mês (corridas ofertadas por hora) — usando suas funções
-    try:
-        # opção A (mais fiel): soma horas e divide pelo total de ofertadas
-        horas_totais = _horas_from_abs(df_mes) if not df_mes.empty else 0.0
-        utr_mes = (ofertadas / horas_totais) if horas_totais > 0 else 0.0
-    except Exception:
-        # fallback B (média diária a partir da base UTR)
-        base_utr = utr_por_entregador_turno(df, mes_atual, ano_atual)
-        utr_mes = float(base_utr["UTR"].mean()) if not base_utr.empty else 0.0
-    utr_mes = round(utr_mes, 2)
+    # ✅ UTR do mês (ofertadas por hora) — definição única + cache
+    utr_mes = round(_utr_mensal_cached(df_key, mes_atual, ano_atual, None), 2)
 
     st.subheader(f"📦 Resumo do mês atual ({mes_atual:02d}/{ano_atual})")
     m1, m2, m3, m4 = st.columns(4)
@@ -799,5 +803,3 @@ if modo == "Início":
         st.metric("Entregadores ativos", f"{entreg_uniq}", help="Quantidade de pessoas diferentes que atuaram no mês")
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-
