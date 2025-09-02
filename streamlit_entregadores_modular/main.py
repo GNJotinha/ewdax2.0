@@ -87,13 +87,14 @@ st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 # Menu
 # -------------------------------------------------------------------
 modo = st.sidebar.radio("Escolha uma opção:", [
-    "📊 Indicadores Gerais",
+    "Indicadores Gerais",
     "Ver geral",
     "Simplificada (WhatsApp)",
     "Alertas de Faltas",
     "Relatório Customizado",
     "Categorias de Entregadores",
-    "UTR"
+    "UTR",
+    "Relação de Entregadores" 
 ])
 
 if not modo:
@@ -154,7 +155,7 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
 # -------------------------------------------------------------------
 # 📊 Indicadores Gerais (com % e UTR alinhado ao modo UTR)
 # -------------------------------------------------------------------
-if modo == "📊 Indicadores Gerais":
+if modo == "Indicadores Gerais":
     st.subheader("🔎 Escolha o indicador que deseja visualizar:")
 
     tipo_grafico = st.radio(
@@ -581,3 +582,115 @@ if modo == "UTR":
         mime="text/csv",
         help="Exporta o CSV geral do mês/ano, ignorando o filtro de turno."
     )
+
+# -------------------------------------------------------------------
+# Relatório por Filtros (Todos)
+# -------------------------------------------------------------------
+if modo == "Relação de Entregadores":
+    st.header("Relatório por Filtros – Todos os Entregadores")
+
+    # Base para filtros
+    df_filtros = df.copy()
+    df_filtros["data_do_periodo"] = pd.to_datetime(df_filtros["data_do_periodo"])
+    df_filtros["data"] = df_filtros["data_do_periodo"].dt.date
+
+    # ---- Filtros iguais ao Customizado (sem escolher entregador)
+    subpracas = sorted([x for x in df_filtros["sub_praca"].dropna().unique()])
+    filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
+
+    turnos = sorted([x for x in df_filtros["periodo"].dropna().unique()])
+    filtro_turno = st.multiselect("Filtrar por turno:", turnos)
+
+    tipo_periodo = st.radio("Como deseja escolher as datas?", ("Período contínuo", "Dias específicos"))
+    dias_escolhidos = []
+
+    if tipo_periodo == "Período contínuo":
+        data_min = df_filtros["data"].min()
+        data_max = df_filtros["data"].max()
+        periodo = st.date_input("Selecione o intervalo de datas:", [data_min, data_max], format="DD/MM/YYYY")
+        if len(periodo) == 2:
+            dias_escolhidos = list(pd.date_range(start=periodo[0], end=periodo[1]).date)
+        elif len(periodo) == 1:
+            dias_escolhidos = [periodo[0]]
+    else:
+        dias_opcoes = sorted(df_filtros["data"].unique())
+        dias_escolhidos = st.multiselect(
+            "Selecione os dias desejados:",
+            dias_opcoes,
+            format_func=lambda x: x.strftime("%d/%m/%Y")
+        )
+
+    gerar_lote = st.button("Gerar relatório (todos)")
+
+    if gerar_lote:
+        df_sel = df_filtros.copy()
+
+        if filtro_subpraca:
+            df_sel = df_sel[df_sel["sub_praca"].isin(filtro_subpraca)]
+        if filtro_turno:
+            df_sel = df_sel[df_sel["periodo"].isin(filtro_turno)]
+        if dias_escolhidos:
+            df_sel = df_sel[df_sel["data"].isin(dias_escolhidos)]
+
+        if df_sel.empty:
+            st.info("❌ Nenhum dado encontrado para os filtros aplicados.")
+            st.stop()
+
+        # ---------- Resumo tabular por entregador ----------
+        # métricas brutas
+        ag = df_sel.groupby("pessoa_entregadora", dropna=True).agg(
+            ofertadas=("numero_de_corridas_ofertadas", "sum"),
+            aceitas=("numero_de_corridas_aceitas", "sum"),
+            rejeitadas=("numero_de_corridas_rejeitadas", "sum"),
+            completas=("numero_de_corridas_completadas", "sum"),
+            tempo_online_pct=("tempo_disponivel_escalado", "mean"),
+            dias=("data", "nunique"),
+        ).reset_index()
+
+        # taxas
+        ag["aceitacao_%"] = (ag["aceitas"] / ag["ofertadas"] * 100).where(ag["ofertadas"] > 0, 0).round(1)
+        ag["conclusao_%"] = (ag["completas"] / ag["aceitas"] * 100).where(ag["aceitas"] > 0, 0).round(1)
+        ag["tempo_online_%"] = (ag["tempo_online_pct"]).round(1)  # já está 0–100 na base
+
+        cols_show = [
+            "pessoa_entregadora", "dias",
+            "ofertadas", "aceitas", "rejeitadas", "completas",
+            "aceitacao_%", "conclusao_%", "tempo_online_%"
+        ]
+
+        st.subheader("📊 Tabela – Entregadores dentro dos filtros")
+        st.dataframe(
+            ag[cols_show].sort_values(["dias", "completas", "aceitacao_%"], ascending=[False, False, False]),
+            use_container_width=True
+        )
+
+        # ---------- Download CSV ----------
+        csv_bin = ag[cols_show].to_csv(index=False, decimal=",").encode("utf-8")
+        st.download_button(
+            "⬇️ Baixar CSV (resumo por entregador)",
+            data=csv_bin,
+            file_name="relatorio_por_filtros_todos.csv",
+            mime="text/csv"
+        )
+
+        # ---------- Texto por entregador (reuso do seu gerador) ----------
+        from relatorios import gerar_dados  # usa sua função existente
+
+        blocos = []
+        for nome in sorted(df_sel["pessoa_entregadora"].dropna().unique()):
+            bloco = gerar_dados(nome, None, None, df_sel[df_sel["pessoa_entregadora"] == nome])
+            if bloco:
+                blocos.append(bloco.strip())
+
+        texto_final = "\n" + ("\n" + "—" * 40 + "\n").join(blocos)
+        st.subheader("📝 Texto (todos os entregadores nos filtros)")
+        st.text_area("Resultado:", value=texto_final or "Sem blocos gerados.", height=500)
+
+        # Download do texto
+        st.download_button(
+            "⬇️ Baixar TXT (todos)",
+            data=texto_final.encode("utf-8"),
+            file_name="relatorio_por_filtros_todos.txt",
+            mime="text/plain"
+        )
+
