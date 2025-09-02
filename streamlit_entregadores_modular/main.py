@@ -87,6 +87,9 @@ st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 # Menu
 # -------------------------------------------------------------------
 
+# -------------------------------------------------------------------
+# Menu lateral (categorias como "accordions" que expandem os modos)
+# -------------------------------------------------------------------
 MENU = {
     "Desempenho do Entregador": [
         "Ver geral",
@@ -108,39 +111,28 @@ MENU = {
 if "modo" not in st.session_state:
     st.session_state.modo = "Indicadores Gerais"
 if "open_cat" not in st.session_state:
-    # abre a categoria do modo atual
-    for c, opts in MENU.items():
-        if st.session_state.modo in opts:
-            st.session_state.open_cat = c
-            break
-    else:
-        st.session_state.open_cat = "Dashboards"
+    st.session_state.open_cat = "Dashboards"
 
 with st.sidebar:
-    st.markdown("Movee")
+    st.markdown("### 🧭 Navegação")
 
-    # função pra setar modo e manter só um accordion aberto
-    def _select(opt, cat):
-        st.session_state.modo = opt
-        st.session_state.open_cat = cat
-
-    # desenha cada categoria como um expander
     for cat, opts in MENU.items():
         expanded = (st.session_state.open_cat == cat)
-        with st.expander(f"{cat}" if not expanded else f"▼ {cat}", expanded=expanded):
-            # você pode usar radio OU botões; deixo radio pq preserva seleção
+        with st.expander(cat, expanded=expanded):
             escolha = st.radio(
-                " ",
+                f"Opções de {cat}",
                 opts,
-                index=opts.index(st.session_state.modo) if st.session_state.modo in opts else 0,
                 key=f"radio_{cat}",
                 label_visibility="collapsed",
             )
-            if escolha != st.session_state.modo:
-                _select(escolha, cat)
+            if escolha:
+                st.session_state.modo = escolha
+                st.session_state.open_cat = cat
+                st.rerun()   # 🔑 força recarregar já com o novo modo
 
-# compat: mantém a variável 'modo' usada nos blocos abaixo
+# compat: mantém a variável 'modo'
 modo = st.session_state.modo
+
 
 
 # -------------------------------------------------------------------
