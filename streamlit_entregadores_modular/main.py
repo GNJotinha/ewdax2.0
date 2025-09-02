@@ -587,11 +587,11 @@ if modo == "UTR":
 # Relatório por Filtros (Todos)
 # -------------------------------------------------------------------
 if modo == "Relatório por Filtros (Todos)":
-    st.header("Relatório por Filtros – Lista de Entregadores")
+    st.header("Relatório por Filtros – Lista e Textos")
 
     # Base para filtros
     df_filtros = df.copy()
-    df_filtros["data_do_periodo"] = pd.to_datetime(df_filtros["data_do_periodo"])
+    df_filtros["data_do_periodo"] = pd.to_datetime(df_filtros["data_do_periodo"], errors="coerce")
     df_filtros["data"] = df_filtros["data_do_periodo"].dt.date
 
     # ---- Filtros
@@ -620,11 +620,11 @@ if modo == "Relatório por Filtros (Todos)":
             format_func=lambda x: x.strftime("%d/%m/%Y")
         )
 
-    gerar_lote = st.button("Gerar lista de entregadores")
+    gerar = st.button("Gerar")
 
-    if gerar_lote:
+    if gerar:
+        # aplica filtros
         df_sel = df_filtros.copy()
-
         if filtro_subpraca:
             df_sel = df_sel[df_sel["sub_praca"].isin(filtro_subpraca)]
         if filtro_turno:
@@ -642,20 +642,35 @@ if modo == "Relatório por Filtros (Todos)":
         st.subheader("👤 Entregadores encontrados")
         st.dataframe(pd.DataFrame({"pessoa_entregadora": nomes_filtrados}), use_container_width=True)
 
-        # CSV
+        # Downloads de nomes
         csv_nomes = pd.DataFrame({"pessoa_entregadora": nomes_filtrados}).to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "⬇️ Baixar CSV (apenas nomes)",
-            data=csv_nomes,
-            file_name="entregadores_por_filtros_nomes.csv",
-            mime="text/csv"
-        )
+        st.download_button("⬇️ Baixar CSV (apenas nomes)", data=csv_nomes,
+                           file_name="entregadores_por_filtros_nomes.csv", mime="text/csv")
 
-        # TXT
         txt_nomes = "\n".join(nomes_filtrados)
+        st.download_button("⬇️ Baixar TXT (apenas nomes)", data=txt_nomes.encode("utf-8"),
+                           file_name="entregadores_por_filtros_nomes.txt", mime="text/plain")
+
+        # ---------- Texto detalhado por entregador ----------
+        from relatorios import gerar_dados
+
+        st.subheader("📝 Texto detalhado por entregador (blocos)")
+        blocos = []
+        # usa o df já filtrado para cada entregador
+        for nome in nomes_filtrados:
+            chunk = df_sel[df_sel["pessoa_entregadora"] == nome]
+            bloco = gerar_dados(nome, None, None, chunk)
+            if bloco:
+                blocos.append(bloco.strip())
+
+        texto_final = "\n" + ("\n" + "—" * 40 + "\n").join(blocos) if blocos else "Sem blocos gerados para os filtros."
+
+        st.text_area("Resultado:", value=texto_final, height=500)
+
         st.download_button(
-            "⬇️ Baixar TXT (apenas nomes)",
-            data=txt_nomes.encode("utf-8"),
-            file_name="entregadores_por_filtros_nomes.txt",
+            "⬇️ Baixar TXT (blocos detalhados)",
+            data=texto_final.encode("utf-8"),
+            file_name="relatorio_por_filtros_blocos.txt",
             mime="text/plain"
         )
+
