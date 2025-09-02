@@ -87,9 +87,6 @@ st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 # Menu
 # -------------------------------------------------------------------
 
-# -------------------------------------------------------------------
-# Menu lateral (categorias como "accordions" que expandem os modos)
-# -------------------------------------------------------------------
 MENU = {
     "Desempenho do Entregador": [
         "Ver geral",
@@ -119,20 +116,25 @@ with st.sidebar:
     for cat, opts in MENU.items():
         expanded = (st.session_state.open_cat == cat)
         with st.expander(cat, expanded=expanded):
-            escolha = st.radio(
-                f"Opções de {cat}",
-                opts,
-                key=f"radio_{cat}",
-                label_visibility="collapsed",
-            )
-            if escolha:
-                st.session_state.modo = escolha
-                st.session_state.open_cat = cat
-                st.rerun()   # 🔑 força recarregar já com o novo modo
+            for opt in opts:
+                ativo = (st.session_state.modo == opt)
+                estilo = (
+                    "background-color:#1f6feb;color:white;font-weight:bold;"
+                    if ativo else
+                    "background-color:#21262d;color:#c9d1d9;"
+                )
+                if st.button(opt, key=f"btn_{cat}_{opt}", use_container_width=True):
+                    st.session_state.modo = opt
+                    st.session_state.open_cat = cat
+                    st.rerun()
+                # hackzinho pra pintar botão ativo
+                st.markdown(
+                    f"<style>div[data-testid='stSidebar'] button[kind='secondary']#{st.session_state.modo}{{{estilo}}}</style>",
+                    unsafe_allow_html=True
+                )
 
-# compat: mantém a variável 'modo'
+# compat: mantém variável 'modo' que o resto do app já usa
 modo = st.session_state.modo
-
 
 
 # -------------------------------------------------------------------
