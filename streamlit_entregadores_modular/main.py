@@ -32,30 +32,71 @@ def _hms_from_hours(h):
 # -------------------------------------------------------------------
 # Config da página
 # -------------------------------------------------------------------
-st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
+st.set_page_config(page_title="Painel de Entregadores", page_icon="📋", layout="wide")
 
 # -------------------------------------------------------------------
-# Estilo
+# Estilo (apenas front — não altera lógica)
 # -------------------------------------------------------------------
 st.markdown(
     """
     <style>
-        body { background-color: #0e1117; color: #c9d1d9; }
-        .stButton>button {
-            background-color: #1f6feb;
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-weight: bold;
-        }
-        .stButton>button:hover { background-color: #388bfd; }
-        .stSidebar { background-color: #161b22; }
-        h1, h2, h3 { color: #58a6ff; }
-        .stSelectbox, .stMultiSelect, .stTextInput {
-            background-color: #21262d;
-            color: #c9d1d9;
-        }
+      /* Fonte limpa e consistente */
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+      html, body, [class*="css"] { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+
+      /* Fundo escuro elegante */
+      body { background-color: #0c1118; color: #cfd6e4; }
+      .stApp { background: linear-gradient(180deg, #0c1118 0%, #0d1320 100%); }
+
+      /* Sidebar */
+      .stSidebar { background: #0f1722; border-right: 1px solid rgba(255,255,255,0.06); }
+
+      /* Títulos */
+      h1, h2, h3 { color: #7cc4ff; letter-spacing: .3px; }
+
+      /* Botões padrão */
+      .stButton>button {
+        background: linear-gradient(180deg, #1f6feb 0%, #1a5fd1 100%);
+        color: white; border: 0; padding: 0.55rem 1rem; border-radius: 10px;
+        font-weight: 700; transition: transform .05s ease-out, filter .15s ease;
+        box-shadow: 0 6px 16px rgba(31,111,235,.25);
+      }
+      .stButton>button:hover { filter: brightness(1.05); transform: translateY(-1px); }
+      .stButton>button:active { transform: translateY(0); }
+
+      /* “Cards” genéricos (containers) */
+      .card {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 16px; padding: 16px 18px;
+        box-shadow: 0 6px 24px rgba(0,0,0,.25);
+      }
+
+      /* Métricas mais lindas */
+      [data-testid="stMetric"] {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 14px; padding: 14px;
+      }
+      [data-testid="stMetric"] [data-testid="stMetricDelta"] {
+        font-weight: 700;
+      }
+
+      /* Tabelas (st.dataframe) */
+      div[data-testid="stDataFrame"] { border-radius: 12px; overflow: hidden; }
+      div[data-testid="stDataFrame"] table { font-size: 0.95rem; }
+      div[data-testid="stDataFrame"] [role="gridcell"] { border-bottom: 1px solid rgba(255,255,255,0.06) !important; }
+
+      /* Plotly: remove bordas e deixa mais “flat” */
+      .js-plotly-plot .plotly .modebar { display: none; }
+      .plot-container { border-radius: 14px; overflow: hidden; }
+
+      /* Botão de atualizar da Home com estilo “secundário” (se quiser usar) */
+      .btn-ghost > button {
+        background: transparent !important; border: 1px solid rgba(255,255,255,.18) !important;
+        color: #cfd6e4 !important; box-shadow: none !important;
+      }
+      .btn-ghost > button:hover { border-color: rgba(255,255,255,.35) !important; }
     </style>
     """,
     unsafe_allow_html=True
@@ -241,6 +282,7 @@ if modo == "Indicadores Gerais":
             textfont=dict(size=16, color="white"),
             marker_line_color="rgba(255,255,255,0.25)",
             marker_line_width=0.5,
+            hovertemplate="<b>%{x}</b><br>%{y:.1f}h<extra></extra>",
         )
         fig_mensal.update_layout(
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -265,7 +307,7 @@ if modo == "Indicadores Gerais":
                 labels={"dia": "Dia", "horas": "Horas"},
                 template="plotly_dark",
             )
-            fig_linha.update_traces(mode="lines", line_shape="spline",
+            fig_linha.update_traces(mode="lines+markers", line_shape="spline",
                                     hovertemplate="Dia %{x}<br>%{y:.2f}h<extra></extra>")
             fig_linha.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -355,6 +397,7 @@ if modo == "Indicadores Gerais":
         textfont=dict(size=16, color="white"),
         marker_line_color="rgba(255,255,255,0.25)",
         marker_line_width=0.5,
+        hovertemplate="<b>%{x}</b><br>%{y}<extra></extra>",
     )
     fig.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
@@ -372,10 +415,17 @@ if modo == "Indicadores Gerais":
     fig_dia = px.line(
         por_dia, x="dia", y=col,
         title=f"📈 {label} por dia (mês atual)",
-        labels={"dia": "Dia", col: label},
+        labels={"dia": "Dia", col: "Quantidade"},
         template="plotly_dark"
     )
-    fig_dia.update_traces(line_shape="spline", mode="lines+markers")
+    fig_dia.update_traces(line_shape="spline", mode="lines+markers",
+                          hovertemplate="Dia %{x}<br>%{y}<extra></extra>")
+    fig_dia.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white"), title_font=dict(size=22),
+        margin=dict(t=60, r=20, b=60, l=60),
+    )
+
     total_mes = int(por_dia[col].sum())
     st.metric(f"🚗 {label} no mês", total_mes)
     st.plotly_chart(fig_dia, use_container_width=True)
@@ -503,10 +553,15 @@ if modo == "Categorias de Entregadores":
 
         st.subheader("Tabela de classificação")
         cols_cat = ["pessoa_entregadora","categoria","tempo_hms","aceitacao_%","conclusao_%","ofertadas","aceitas","completas","criterios_atingidos"]
-        st.dataframe(
-            df_cat[cols_cat].style.format({"aceitacao_%":"{:.1f}","conclusao_%":"{:.1f}"}),
-            use_container_width=True
+        estilo = (df_cat[cols_cat]
+                  .style
+                  .format({"aceitacao_%":"{:.1f}","conclusao_%":"{:.1f}"})
+                  .set_properties(**{"border-color":"rgba(255,255,255,0.08)"})
+                  .set_table_styles([
+                    {"selector":"th", "props":[("background-color","rgba(255,255,255,0.06)"),("color","#e6efff")]}
+                  ])
         )
+        st.dataframe(estilo, use_container_width=True)
 
         csv_cat = df_cat[cols_cat].to_csv(index=False, decimal=",").encode("utf-8")
         st.download_button("⬇️ Baixar CSV", data=csv_cat, file_name="categorias_entregadores.csv", mime="text/csv")
@@ -566,6 +621,7 @@ if modo == "UTR":
         textfont=dict(size=18, color="white"),
         marker_line_color="rgba(255,255,255,0.25)",
         marker_line_width=0.5,
+        hovertemplate="Dia %{x}<br>UTR %{y:.2f}<extra></extra>",
     )
     fig.update_xaxes(
         tickmode="linear", dtick=1, tick0=1,
@@ -672,7 +728,6 @@ if modo == "Relação de Entregadores":
         st.subheader("👤 Entregadores encontrados")
         st.dataframe(pd.DataFrame({"pessoa_entregadora": nomes_filtrados}), use_container_width=True)
 
-
         # ---------- Texto detalhado por entregador ----------
         from relatorios import gerar_dados
 
@@ -773,17 +828,18 @@ if modo == "Início":
     utr_mes = round(utr_mes, 2)
 
     st.subheader(f"📦 Resumo do mês atual ({mes_atual:02d}/{ano_atual})")
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.metric("Corridas ofertadas (UTR)", f"{ofertadas:,}".replace(",", "."), help="Número total de corridas ofertadas no mês. UTR ao lado.")
-        st.caption(f"UTR médio: **{utr_mes:.2f}**")
-    with m2:
-        st.metric("Corridas aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%", help="% sobre ofertadas")
-    with m3:
-        st.metric("Rejeições", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%", help="% sobre ofertadas")
-    with m4:
-        st.metric("Entregadores ativos", f"{entreg_uniq}", help="Quantidade de pessoas diferentes que atuaram no mês")
+    with st.container():
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric("Corridas ofertadas (UTR)", f"{ofertadas:,}".replace(",", "."), help="Número total de corridas ofertadas no mês. UTR ao lado.")
+            st.caption(f"UTR médio: **{utr_mes:.2f}**")
+        with m2:
+            st.metric("Corridas aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%", help="% sobre ofertadas")
+        with m3:
+            st.metric("Rejeições", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%", help="% sobre ofertadas")
+        with m4:
+            st.metric("Entregadores ativos", f"{entreg_uniq}", help="Quantidade de pessoas diferentes que atuaram no mês")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-
