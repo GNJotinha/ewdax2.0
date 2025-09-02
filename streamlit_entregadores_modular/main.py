@@ -695,34 +695,38 @@ if modo == "Relação de Entregadores":
 if modo == "Início":
     st.title("📋 Painel de Entregadores")
     # ---------- Logo de fundo por nível ----------
-    nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
-    logo_admin = st.secrets.get("LOGO_ADMIN_URL", "")
-    logo_user  = st.secrets.get("LOGO_USER_URL", "")
-    bg_logo = logo_admin if nivel == "admin" and logo_admin else logo_user
+# utils de UI (pode por no topo do main.py)
+def aplicar_logo_de_fundo(nivel: str):
+    # mapeia nível -> secret correspondente
+    mapa = {
+        "admin": "LOGO_ADMIN_URL",
+        "user": "LOGO_USER_URL",
+        "gestor": "LOGO_GESTOR_URL",       # opcional (se quiser)
+        "supervisor": "LOGO_SUPERVISOR_URL" # opcional
+    }
+    # pega URL pelo nível, senão cai no user
+    url = st.secrets.get(mapa.get(nivel, "LOGO_USER_URL"), "")
+    if not url:
+        return  # sem URL, sem fundo
 
-    if bg_logo:
-        st.markdown(
-            f"""
-            <style>
-              .home-bg {{
-                position: relative;
-                overflow: hidden;
-              }}
-              .home-bg:before {{
-                content: "";
-                position: absolute;
-                inset: 0;
-                background-image: url('{bg_logo}');
-                background-repeat: no-repeat;
-                background-position: center 20%;
-                background-size: 40%;
-                opacity: 0.06;  /* bem sutil */
-                pointer-events: none;
-              }}
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+    st.markdown(f"""
+        <style>
+        #bg-logo {{
+            position: fixed;
+            inset: 0;
+            background-image: url('{url}');
+            background-repeat: no-repeat;
+            background-position: center 18%;
+            background-size: 40%;
+            opacity: 0.06;    /* ajuste aqui (0.03 a 0.12) */
+            pointer-events: none;
+            z-index: 0;
+        }}
+        .block-container {{ position: relative; z-index: 1; }}
+        </style>
+        <div id="bg-logo"></div>
+    """, unsafe_allow_html=True)
+
     st.markdown("<div class='home-bg'>", unsafe_allow_html=True)
 
     # ---------- Último dia com dados ----------
