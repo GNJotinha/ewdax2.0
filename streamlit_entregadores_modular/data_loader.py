@@ -52,7 +52,17 @@ def _ler(path: Path) -> pd.DataFrame:
     df["ano"] = df["data_do_periodo"].dt.year
     df["pessoa_entregadora_normalizado"] = df["pessoa_entregadora"].apply(normalizar)
 
-    # 🔽 novo: garantir numéricos
+    # 🔹 NOVO: mes_ano já pronto (evita reconverter em cada tela)
+    df["mes_ano"] = df["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
+
+    # 🔹 NOVO: segundos_abs vetorizado (muito mais rápido)
+    if "tempo_disponivel_absoluto" in df.columns:
+        td = pd.to_timedelta(df["tempo_disponivel_absoluto"], errors="coerce")
+        df["segundos_abs"] = td.dt.total_seconds().fillna(0).astype(int)
+    else:
+        df["segundos_abs"] = 0
+
+    # 🔽 já estava no seu código
     num_cols = [
         "numero_de_corridas_ofertadas",
         "numero_de_corridas_aceitas",
@@ -65,3 +75,4 @@ def _ler(path: Path) -> pd.DataFrame:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
 
     return df
+
