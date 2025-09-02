@@ -89,6 +89,9 @@ st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 # -------------------------------------------------------------------
 # Menu lateral (cascata: Categoria -> Subopção)
 # -------------------------------------------------------------------
+# -------------------------------------------------------------------
+# Menu lateral (categorias como "accordions" que expandem os modos)
+# -------------------------------------------------------------------
 MENU = {
     "Desempenho do Entregador": [
         "Ver geral",
@@ -106,38 +109,44 @@ MENU = {
     ],
 }
 
-# guarda último sub-modo usado por categoria (pra lembrar ao trocar e voltar)
-if "menu_hist" not in st.session_state:
-    st.session_state.menu_hist = {cat: opts[0] for cat, opts in MENU.items()}
-
-if "menu_cat" not in st.session_state:
-    st.session_state.menu_cat = "Desempenho do Entregador"
+# estado inicial
+if "modo" not in st.session_state:
+    st.session_state.modo = "Indicadores Gerais"
+if "open_cat" not in st.session_state:
+    # abre a categoria do modo atual
+    for c, opts in MENU.items():
+        if st.session_state.modo in opts:
+            st.session_state.open_cat = c
+            break
+    else:
+        st.session_state.open_cat = "Dashboards"
 
 with st.sidebar:
     st.markdown("### 🧭 Navegação")
 
-    # 1) Categoria (selectbox)
-    cat = st.selectbox(
-        "Seção",
-        options=list(MENU.keys()),
-        index=list(MENU.keys()).index(st.session_state.menu_cat),
-        key="menu_cat",
-    )
+    # função pra setar modo e manter só um accordion aberto
+    def _select(opt, cat):
+        st.session_state.modo = opt
+        st.session_state.open_cat = cat
 
-    # 2) Subopção da categoria (selectbox)
-    sub_default = st.session_state.menu_hist.get(cat, MENU[cat][0])
-    sub = st.selectbox(
-        "Opção",
-        options=MENU[cat],
-        index=MENU[cat].index(sub_default) if sub_default in MENU[cat] else 0,
-        key=f"menu_sub_{cat}",  # chave por categoria pra manter estado independente
-    )
+    # desenha cada categoria como um expander
+    for cat, opts in MENU.items():
+        expanded = (st.session_state.open_cat == cat)
+        with st.expander(f"▶ {cat}" if not expanded else f"▼ {cat}", expanded=expanded):
+            # você pode usar radio OU botões; deixo radio pq preserva seleção
+            escolha = st.radio(
+                " ",
+                opts,
+                index=opts.index(st.session_state.modo) if st.session_state.modo in opts else 0,
+                key=f"radio_{cat}",
+                label_visibility="collapsed",
+            )
+            if escolha != st.session_state.modo:
+                _select(escolha, cat)
 
-    # atualiza histórico (lembra o último sub escolhido por categoria)
-    st.session_state.menu_hist[cat] = sub
+# compat: mantém a variável 'modo' usada nos blocos abaixo
+modo = st.session_state.modo
 
-# compat: mantém a variável 'modo' que o resto do app usa
-modo = st.session_state.menu_hist[st.session_state.menu_cat]
 
 # -------------------------------------------------------------------
 # Dados
