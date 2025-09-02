@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
-
+from pathlib import Path
 from utils import tempo_para_segundos  
-
 from relatorios import (
     gerar_dados,
     gerar_simplicado,
@@ -742,8 +741,23 @@ if modo == "Início":
             st.subheader("🔄 Atualização de base")
             st.caption("Este botão só aparece na tela inicial.")
             if st.button("Atualizar dados agora", use_container_width=True):
-                st.cache_data.clear()
+                try:
+                    # 1) Remove cópias locais pra forçar o data_loader a ir no Drive
+                    Path("Calendarios.xlsx").unlink(missing_ok=True)
+                    Path("/mnt/data/Calendarios.xlsx").unlink(missing_ok=True)
+            
+                    # 2) Limpa cache de dados do Streamlit
+                    st.cache_data.clear()
+            
+                    # 3) Feedback rápido pro usuário
+                    st.toast("Recarregando dados do Google Drive…", icon="🔁")
+            
+                except Exception as e:
+                    st.warning(f"Não consegui apagar o arquivo local: {e}")
+            
+                # 4) Reexecuta o app (vai chamar carregar_dados() de novo → baixa do Drive)
                 st.rerun()
+
 
     st.divider()
 
