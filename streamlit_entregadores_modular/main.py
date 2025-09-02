@@ -171,12 +171,39 @@ if "mes_ano" not in df.columns:
     base_dt = pd.to_datetime(df.get("data_do_periodo", df.get("data")), errors="coerce")
     df["mes_ano"] = base_dt.dt.to_period("M").dt.to_timestamp()
 
+# --- segundos_abs robusto (várias origens de dado) ---
 if "segundos_abs" not in df.columns:
-    if "tempo_disponivel_absoluto" in df.columns:
-        td = pd.to_timedelta(df["tempo_disponivel_absoluto"], errors="coerce")
-        df["segundos_abs"] = td.dt.total_seconds().fillna(0).astype(int)
+    col = "tempo_disponivel_absoluto"
+    if col in df.columns:
+        s = df[col]
+
+        try:
+            # 1) Se já for timedelta -> total_seconds
+            if pd.api.types.is_timedelta64_dtype(s):
+                df["segundos_abs"] = s.dt.total_seconds().fillna(0).astype(int)
+
+            # 2) Se for numérico -> assume segundos já (ou HHMMSS?); tratamos como segundos
+            elif pd.api.types.is_numeric_dtype(s):
+                df["segundos_abs"] = pd.to_numeric(s, errors="coerce").fillna(0).astype(int)
+
+            # 3) Se for objeto: tenta parsear como string "HH:MM:SS"
+            else:
+                # força string antes de to_timedelta para evitar tipos exóticos (ex.: datetime.time)
+                td = pd.to_timedelta(s.astype(str), errors="coerce")
+                if td.notna().any():
+                    df["segundos_abs"] = td.dt.total_seconds().fillna(0).astype(int)
+                else:
+                    # 4) Fallback final: nossa função Python segura
+                    from utils import tempo_para_segundos
+                    df["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
+
+        except Exception:
+            # Qualquer erro inesperado -> fallback seguro
+            from utils import tempo_para_segundos
+            df["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
     else:
         df["segundos_abs"] = 0
+
 
 # df_key para cache; muda quando entram linhas novas ou última data muda
 df_key = (df.shape, pd.to_datetime(df["data"]).max())
