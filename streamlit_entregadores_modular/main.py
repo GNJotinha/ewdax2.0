@@ -106,13 +106,20 @@ MENU = {
 
 # estado inicial
 if "modo" not in st.session_state:
-    st.session_state.modo = "Indicadores Gerais"
+    st.session_state.modo = "Início"
 if "open_cat" not in st.session_state:
-    st.session_state.open_cat = "Dashboards"
+    st.session_state.open_cat = None
 
 with st.sidebar:
     st.markdown("### 🧭 Navegação")
 
+    # botão Home no topo
+    if st.button("🏠 Início", use_container_width=True):
+        st.session_state.modo = "Início"
+        st.session_state.open_cat = None
+        st.rerun()
+
+    # expanders das categorias
     for cat, opts in MENU.items():
         expanded = (st.session_state.open_cat == cat)
         with st.expander(cat, expanded=expanded):
@@ -127,13 +134,12 @@ with st.sidebar:
                     st.session_state.modo = opt
                     st.session_state.open_cat = cat
                     st.rerun()
-                # hackzinho pra pintar botão ativo
                 st.markdown(
                     f"<style>div[data-testid='stSidebar'] button[kind='secondary']#{st.session_state.modo}{{{estilo}}}</style>",
                     unsafe_allow_html=True
                 )
 
-# compat: mantém variável 'modo' que o resto do app já usa
+# compat
 modo = st.session_state.modo
 
 
