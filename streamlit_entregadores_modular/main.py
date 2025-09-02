@@ -586,18 +586,15 @@ if modo == "UTR":
 # -------------------------------------------------------------------
 # Relatório por Filtros (Todos)
 # -------------------------------------------------------------------
-# -------------------------------------------------------------------
-# Relatório por Filtros (Todos)
-# -------------------------------------------------------------------
-if modo == "Relação de Entregadores":
-    st.header("Relatório por Filtros")
+if modo == "Relatório por Filtros (Todos)":
+    st.header("Relatório por Filtros – Lista de Entregadores")
 
     # Base para filtros
     df_filtros = df.copy()
     df_filtros["data_do_periodo"] = pd.to_datetime(df_filtros["data_do_periodo"])
     df_filtros["data"] = df_filtros["data_do_periodo"].dt.date
 
-    # ---- Filtros (sem escolher entregador)
+    # ---- Filtros
     subpracas = sorted([x for x in df_filtros["sub_praca"].dropna().unique()])
     filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
 
@@ -623,7 +620,7 @@ if modo == "Relação de Entregadores":
             format_func=lambda x: x.strftime("%d/%m/%Y")
         )
 
-    gerar_lote = st.button("Gerar relatório (todos)")
+    gerar_lote = st.button("Gerar lista de entregadores")
 
     if gerar_lote:
         df_sel = df_filtros.copy()
@@ -636,55 +633,29 @@ if modo == "Relação de Entregadores":
             df_sel = df_sel[df_sel["data"].isin(dias_escolhidos)]
 
         if df_sel.empty:
-            st.info("❌ Nenhum dado encontrado para os filtros aplicados.")
+            st.info("❌ Nenhum entregador encontrado com os filtros aplicados.")
             st.stop()
 
-        # ---------- Resumo tabular por entregador ----------
-        ag = df_sel.groupby("pessoa_entregadora", dropna=True).agg(
-            ofertadas=("numero_de_corridas_ofertadas", "sum"),
-            aceitas=("numero_de_corridas_aceitas", "sum"),
-            rejeitadas=("numero_de_corridas_rejeitadas", "sum"),
-            completas=("numero_de_corridas_completadas", "sum"),
-            tempo_online_pct=("tempo_disponivel_escalado", "mean"),
-            dias=("data", "nunique"),
-        ).reset_index()
+        # ---------- Apenas nomes ----------
+        nomes_filtrados = sorted(df_sel["pessoa_entregadora"].dropna().unique())
 
-        ag["aceitacao_%"] = (ag["aceitas"] / ag["ofertadas"] * 100).where(ag["ofertadas"] > 0, 0).round(1)
-        ag["conclusao_%"] = (ag["completas"] / ag["aceitas"] * 100).where(ag["aceitas"] > 0, 0).round(1)
-        ag["tempo_online_%"] = ag["tempo_online_pct"].round(1)  # já 0–100
-        cols_show = [
-            "pessoa_entregadora", "dias",
-            "ofertadas", "aceitas", "rejeitadas", "completas",
-            "aceitacao_%", "conclusao_%", "tempo_online_%"
-        ]
+        st.subheader("👤 Entregadores encontrados")
+        st.dataframe(pd.DataFrame({"pessoa_entregadora": nomes_filtrados}), use_container_width=True)
 
-        st.subheader("Relação de entregadores")
+        # CSV
+        csv_nomes = pd.DataFrame({"pessoa_entregadora": nomes_filtrados}).to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "⬇️ Baixar CSV (apenas nomes)",
+            data=csv_nomes,
+            file_name="entregadores_por_filtros_nomes.csv",
+            mime="text/csv"
+        )
 
-        # ---- NOVO: toggle para mostrar só nomes na tabela
-        mostrar_so_nomes = st.toggle("Mostrar só nomes na tabela", value=False)
-
-        if mostrar_so_nomes:
-            nomes_filtrados = sorted(df_sel["pessoa_entregadora"].dropna().unique())
-            st.dataframe(
-                pd.DataFrame({"pessoa_entregadora": nomes_filtrados}),
-                use_container_width=True
-            )
-        else:
-            st.dataframe(
-                ag[cols_show].sort_values(["dias", "completas", "aceitacao_%"], ascending=[False, False, False]),
-                use_container_width=True
-            )
-
-
-        # ---------- Texto por entregador (reuso do seu gerador) ----------
-        from relatorios import gerar_dados
-
-        blocos = []
-        for nome in sorted(df_sel["pessoa_entregadora"].dropna().unique()):
-            bloco = gerar_dados(nome, None, None, df_sel[df_sel["pessoa_entregadora"] == nome])
-            if bloco:
-                blocos.append(bloco.strip())
-
-        texto_final = "\n" + ("\n" + "—" * 40 + "\n").join(blocos)
-        st.subheader("📝 Texto (todos os entregadores nos filtros)")
-        st.text_area("Resultado:", value=texto_final or "Sem blocos gerados.", height=500)
+        # TXT
+        txt_nomes = "\n".join(nomes_filtrados)
+        st.download_button(
+            "⬇️ Baixar TXT (apenas nomes)",
+            data=txt_nomes.encode("utf-8"),
+            file_name="entregadores_por_filtros_nomes.txt",
+            mime="text/plain"
+        )
