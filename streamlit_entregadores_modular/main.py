@@ -117,7 +117,7 @@ if "open_cat" not in st.session_state:
         st.session_state.open_cat = "Dashboards"
 
 with st.sidebar:
-    st.markdown("### 🧭 Navegação")
+    st.markdown("Movee")
 
     # função pra setar modo e manter só um accordion aberto
     def _select(opt, cat):
