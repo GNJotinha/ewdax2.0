@@ -739,15 +739,11 @@ if modo == "Início":
             st.subheader("🗓️ Último dia com dados")
             st.metric(label="Data mais recente", value=ultimo_dia_txt)
         with c2:
-            if nivel == "admin":
-                st.subheader("🔄 Atualização de base")
-                st.caption("Este botão só aparece na tela inicial.")
-                if st.button("Atualizar dados agora", use_container_width=True):
-                    st.cache_data.clear()
-                    st.rerun()
-            else:
-                st.subheader("🔒 Atualização de base")
-                st.caption("Disponível apenas para administradores.")
+            st.subheader("🔄 Atualização de base")
+            st.caption("Este botão só aparece na tela inicial.")
+            if st.button("Atualizar dados agora", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
 
     st.divider()
 
