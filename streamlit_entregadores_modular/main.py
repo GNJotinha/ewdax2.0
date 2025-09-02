@@ -586,8 +586,8 @@ if modo == "UTR":
 # -------------------------------------------------------------------
 # Relatório por Filtros (Todos)
 # -------------------------------------------------------------------
-if modo == "Relatório por Filtros (Todos)":
-    st.header("Relatório por Filtros – Lista e Textos")
+if modo == "Relação de Entregadores":
+    st.header("Relatório")
 
     # Base para filtros
     df_filtros = df.copy()
@@ -636,25 +636,17 @@ if modo == "Relatório por Filtros (Todos)":
             st.info("❌ Nenhum entregador encontrado com os filtros aplicados.")
             st.stop()
 
-        # ---------- Apenas nomes ----------
+        # ---------- nomes ----------
         nomes_filtrados = sorted(df_sel["pessoa_entregadora"].dropna().unique())
 
         st.subheader("👤 Entregadores encontrados")
         st.dataframe(pd.DataFrame({"pessoa_entregadora": nomes_filtrados}), use_container_width=True)
 
-        # Downloads de nomes
-        csv_nomes = pd.DataFrame({"pessoa_entregadora": nomes_filtrados}).to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Baixar CSV (apenas nomes)", data=csv_nomes,
-                           file_name="entregadores_por_filtros_nomes.csv", mime="text/csv")
-
-        txt_nomes = "\n".join(nomes_filtrados)
-        st.download_button("⬇️ Baixar TXT (apenas nomes)", data=txt_nomes.encode("utf-8"),
-                           file_name="entregadores_por_filtros_nomes.txt", mime="text/plain")
 
         # ---------- Texto detalhado por entregador ----------
         from relatorios import gerar_dados
 
-        st.subheader("📝 Texto detalhado por entregador (blocos)")
+        st.subheader("Números")
         blocos = []
         # usa o df já filtrado para cada entregador
         for nome in nomes_filtrados:
@@ -667,10 +659,5 @@ if modo == "Relatório por Filtros (Todos)":
 
         st.text_area("Resultado:", value=texto_final, height=500)
 
-        st.download_button(
-            "⬇️ Baixar TXT (blocos detalhados)",
-            data=texto_final.encode("utf-8"),
-            file_name="relatorio_por_filtros_blocos.txt",
-            mime="text/plain"
-        )
+
 
