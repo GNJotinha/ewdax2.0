@@ -291,55 +291,43 @@ def _horas_para_hms(horas_float):
 
 def utr_por_entregador_turno(df, mes=None, ano=None):
     """
-    UTR DIÁRIO por (pessoa_entregadora, periodo, data).
-    Mantém o MESMO nome da função antiga para não quebrar a interface.
-    Retorna colunas:
+    UTR DIÁRIO por (pessoa_entregadora, periodo, data) — versão vetorizada.
+    Retorna:
       ['data','pessoa_entregadora','periodo','tempo_hms','supply_hours','corridas_ofertadas','UTR']
     """
-    dados = df.copy()
-
-    # Recorte opcional por mês/ano
+    dados = df
     if mes is not None and ano is not None:
         dados = dados[(dados["mes"] == mes) & (dados["ano"] == ano)]
-
     if dados.empty:
         return pd.DataFrame(columns=[
             "data","pessoa_entregadora","periodo","tempo_hms","supply_hours",
             "corridas_ofertadas","UTR"
         ])
 
-    # Garante a existência/valores do turno
     if "periodo" not in dados.columns:
-        dados["periodo"] = "(sem turno)"
-    dados["periodo"] = dados["periodo"].fillna("(sem turno)")
+        dados = dados.assign(periodo="(sem turno)")
+    # 'data' já vem como date no loader
 
-    # Garantir 'data' como date (não datetime) para agrupar por dia corretamente
-    if pd.api.types.is_datetime64_any_dtype(dados.get("data")):
-        dados["data"] = dados["data"].dt.date
+    g = (
+        dados
+        .groupby(["pessoa_entregadora", "periodo", "data"], dropna=False)
+        .agg(
+            corridas_ofertadas=("numero_de_corridas_ofertadas", "sum"),
+            segundos=("segundos_abs", "sum"),
+        )
+        .reset_index()
+    )
 
-    registros = []
-    grp = dados.groupby(["pessoa_entregadora", "periodo", "data"], dropna=False)
-    for (nome, turno, dia), g in grp:
-        sh = _horas_from_abs(g)  # soma horas do dia
-        ofertadas = float(g.get("numero_de_corridas_ofertadas", 0).sum())
-        utr = (ofertadas / sh) if sh > 0 else 0.0
+    g["supply_hours"] = g["segundos"] / 3600.0
+    g["UTR"] = g["corridas_ofertadas"] / g["supply_hours"]
+    g.loc[g["supply_hours"] <= 0, "UTR"] = 0.0
+    g["tempo_hms"] = pd.to_timedelta(g["segundos"], unit="s").astype(str)
 
-        registros.append({
-            "data": dia,
-            "pessoa_entregadora": nome,
-            "periodo": turno,
-            "tempo_hms": _horas_para_hms(sh),   # HH:MM:SS por dia
-            "supply_hours": round(sh, 2),
-            "corridas_ofertadas": int(ofertadas),
-            "UTR": utr,
-        })
-
-    out = pd.DataFrame(registros)
-    if out.empty:
-        return out
-
-    # Ordena por data crescente (e depois por UTR desc para desempate visual)
-    out = out.sort_values(by=["data", "UTR"], ascending=[True, False]).reset_index(drop=True)
+    out = (
+        g.drop(columns="segundos")
+         .sort_values(["data", "UTR"], ascending=[True, False])
+         .reset_index(drop=True)
+    )
     return out
 
 
