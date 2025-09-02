@@ -151,19 +151,6 @@ df["data"] = pd.to_datetime(df["data"])
 df["mes_ano"] = df["data"].dt.to_period("M").dt.to_timestamp()
 entregadores = get_entregadores(df)
 
-nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
-if nivel == "admin":
-    if st.button("🔄 Atualizar dados"):
-        st.cache_data.clear()
-        st.rerun()
-
-# -------------------------------------------------------------------
-# (Aqui seguem todas as páginas: Ver geral, Simplificada, Indicadores Gerais,
-# Alertas de Faltas, Relatório Customizado, Categorias de Entregadores e UTR)
-# -------------------------------------------------------------------
-
-# ... [restante do arquivo igual ao que você já rodava — com os gráficos, relatórios e métricas]
-
 # -------------------------------------------------------------------
 # Ver geral / Simplificada
 # -------------------------------------------------------------------
@@ -701,6 +688,108 @@ if modo == "Relação de Entregadores":
         texto_final = "\n" + ("\n" + "—" * 40 + "\n").join(blocos) if blocos else "Sem blocos gerados para os filtros."
 
         st.text_area("Resultado:", value=texto_final, height=500)
+
+# ================================
+# 🏠 TELA INICIAL
+# ================================
+if modo == "Início":
+    st.title("📋 Painel de Entregadores")
+    # ---------- Logo de fundo por nível ----------
+    nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
+    logo_admin = st.secrets.get("LOGO_ADMIN_URL", "")
+    logo_user  = st.secrets.get("LOGO_USER_URL", "")
+    bg_logo = logo_admin if nivel == "admin" and logo_admin else logo_user
+
+    if bg_logo:
+        st.markdown(
+            f"""
+            <style>
+              .home-bg {{
+                position: relative;
+                overflow: hidden;
+              }}
+              .home-bg:before {{
+                content: "";
+                position: absolute;
+                inset: 0;
+                background-image: url('{bg_logo}');
+                background-repeat: no-repeat;
+                background-position: center 20%;
+                background-size: 40%;
+                opacity: 0.06;  /* bem sutil */
+                pointer-events: none;
+              }}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+    st.markdown("<div class='home-bg'>", unsafe_allow_html=True)
+
+    # ---------- Último dia com dados ----------
+    try:
+        ultimo_dia = pd.to_datetime(df["data"]).max().date()
+        ultimo_dia_txt = ultimo_dia.strftime("%d/%m/%Y")
+    except Exception:
+        ultimo_dia_txt = "—"
+
+    # ---------- Card Atualizar dados (apenas aqui) ----------
+    with st.container():
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            st.subheader("🗓️ Último dia com dados")
+            st.metric(label="Data mais recente", value=ultimo_dia_txt)
+        with c2:
+            if nivel == "admin":
+                st.subheader("🔄 Atualização de base")
+                st.caption("Este botão só aparece na tela inicial.")
+                if st.button("Atualizar dados agora", use_container_width=True):
+                    st.cache_data.clear()
+                    st.rerun()
+            else:
+                st.subheader("🔒 Atualização de base")
+                st.caption("Disponível apenas para administradores.")
+
+    st.divider()
+
+    # ---------- Resumo do mês atual ----------
+    hoje = pd.Timestamp.today()
+    mes_atual, ano_atual = int(hoje.month), int(hoje.year)
+    df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
+
+    ofertadas = int(df_mes.get("numero_de_corridas_ofertadas", 0).sum())
+    aceitas   = int(df_mes.get("numero_de_corridas_aceitas", 0).sum())
+    rejeitadas= int(df_mes.get("numero_de_corridas_rejeitadas", 0).sum())
+    entreg_uniq = int(df_mes.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().nunique())
+
+    # %s
+    acc_pct  = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
+    rej_pct  = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
+
+    # UTR do mês (corridas ofertadas por hora) — usando suas funções
+    try:
+        # opção A (mais fiel): soma horas e divide pelo total de ofertadas
+        horas_totais = _horas_from_abs(df_mes) if not df_mes.empty else 0.0
+        utr_mes = (ofertadas / horas_totais) if horas_totais > 0 else 0.0
+    except Exception:
+        # fallback B (média diária a partir da base UTR)
+        base_utr = utr_por_entregador_turno(df, mes_atual, ano_atual)
+        utr_mes = float(base_utr["UTR"].mean()) if not base_utr.empty else 0.0
+    utr_mes = round(utr_mes, 2)
+
+    st.subheader(f"📦 Resumo do mês atual ({mes_atual:02d}/{ano_atual})")
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.metric("Corridas ofertadas (UTR)", f"{ofertadas:,}".replace(",", "."), help="Número total de corridas ofertadas no mês. UTR ao lado.")
+        st.caption(f"UTR médio: **{utr_mes:.2f}**")
+    with m2:
+        st.metric("Corridas aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%", help="% sobre ofertadas")
+    with m3:
+        st.metric("Rejeições", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%", help="% sobre ofertadas")
+    with m4:
+        st.metric("Entregadores ativos", f"{entreg_uniq}", help="Quantidade de pessoas diferentes que atuaram no mês")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
