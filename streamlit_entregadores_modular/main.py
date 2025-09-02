@@ -665,14 +665,12 @@ if modo == "Relação de Entregadores":
         )
 
         # ---------- Download CSV ----------
-        csv_bin = ag[cols_show].to_csv(index=False, decimal=",").encode("utf-8")
-        st.download_button(
-            "⬇️ Baixar CSV (resumo por entregador)",
-            data=csv_bin,
-            file_name="relatorio_por_filtros_todos.csv",
-            mime="text/csv"
-        )
 
+        nomes_filtrados = sorted(df_sel["pessoa_entregadora"].dropna().unique())
+        csv_bin = pd.DataFrame({"pessoa_entregadora": nomes_filtrados}).to_csv(
+            index=False
+        ).encode("utf-8")
+        
         # ---------- Texto por entregador (reuso do seu gerador) ----------
         from relatorios import gerar_dados  # usa sua função existente
 
