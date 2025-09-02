@@ -375,9 +375,23 @@ if modo == "Indicadores Gerais":
             axis=1
         )
 
-    elif tipo_grafico == "Corridas ofertadas":
-        # Reaproveita horas_mensais pré-calculado (sem recomputar segundos)
+elif tipo_grafico == "Corridas ofertadas":
+    # horas por mês a partir do tempo_disponivel_absoluto (absoluto)
+    if "tempo_disponivel_absoluto" not in df.columns:
+        mensal["__label_text__"] = mensal[col].fillna(0).astype(int).astype(str) + "\nUTR 0.00"
+    else:
+        df_aux = df.copy()
+        # converter HH:MM:SS -> segundos e somar por mês
+        df_aux["segundos_abs"] = df_aux["tempo_disponivel_absoluto"].map(tempo_para_segundos).fillna(0).astype(int)
+        horas_mensais = (
+            df_aux.groupby("mes_ano", as_index=False)["segundos_abs"]
+                 .sum()
+                 .assign(horas=lambda d: d["segundos_abs"]/3600.0)
+                 .drop(columns="segundos_abs")
+        )
         mensal = mensal.merge(horas_mensais, on="mes_ano", how="left")
+
+        # UTR mensal (ponderada no absoluto): ofertadas_mês / horas_mês
         mensal["UTR_medio"] = mensal.apply(
             lambda r: (float(r[col]) / float(r["horas"])) if (pd.notna(r["horas"]) and r["horas"] > 0) else 0.0,
             axis=1
@@ -386,44 +400,7 @@ if modo == "Indicadores Gerais":
             lambda r: f"{int(r[col])}\nUTR {float(r['UTR_medio']):.2f}",
             axis=1
         )
-    else:
-        mensal["__label_text__"] = mensal[col].fillna(0).astype(int).astype(str)
 
-    fig = px.bar(
-        mensal, x="mes_rotulo", y=col, text="__label_text__", title=titulo,
-        labels={col: label, "mes_rotulo": "Mês/Ano"},
-        template="plotly_dark", color_discrete_sequence=["#00BFFF"]
-    )
-    fig.update_traces(
-        texttemplate="%{text}",
-        textposition="outside",
-        textfont=dict(size=16, color="white"),
-        marker_line_color="rgba(255,255,255,0.25)",
-        marker_line_width=0.5,
-    )
-    fig.update_layout(
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="white"), title_font=dict(size=22),
-        xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
-        bargap=0.25, margin=dict(t=80, r=20, b=60, l=60), showlegend=False,
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    por_dia = (
-        df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-                    .groupby("dia", as_index=False)[col].sum()
-                    .sort_values("dia")
-    )
-    fig_dia = px.line(
-        por_dia, x="dia", y=col,
-        title=f"📈 {label} por dia (mês atual)",
-        labels={"dia": "Dia", col: label},
-        template="plotly_dark"
-    )
-    fig_dia.update_traces(line_shape="spline", mode="lines+markers")
-    total_mes = int(por_dia[col].sum())
-    st.metric(f"🚗 {label} no mês", total_mes)
-    st.plotly_chart(fig_dia, use_container_width=True)
 
 # -------------------------------------------------------------------
 # Alertas de Faltas
