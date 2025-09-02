@@ -586,15 +586,18 @@ if modo == "UTR":
 # -------------------------------------------------------------------
 # Relatório por Filtros (Todos)
 # -------------------------------------------------------------------
+# -------------------------------------------------------------------
+# Relatório por Filtros (Todos)
+# -------------------------------------------------------------------
 if modo == "Relação de Entregadores":
-    st.header("Relatório por Filtros – Todos os Entregadores")
+    st.header("Relatório por Filtros")
 
     # Base para filtros
     df_filtros = df.copy()
     df_filtros["data_do_periodo"] = pd.to_datetime(df_filtros["data_do_periodo"])
     df_filtros["data"] = df_filtros["data_do_periodo"].dt.date
 
-    # ---- Filtros iguais ao Customizado (sem escolher entregador)
+    # ---- Filtros (sem escolher entregador)
     subpracas = sorted([x for x in df_filtros["sub_praca"].dropna().unique()])
     filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
 
@@ -637,7 +640,6 @@ if modo == "Relação de Entregadores":
             st.stop()
 
         # ---------- Resumo tabular por entregador ----------
-        # métricas brutas
         ag = df_sel.groupby("pessoa_entregadora", dropna=True).agg(
             ofertadas=("numero_de_corridas_ofertadas", "sum"),
             aceitas=("numero_de_corridas_aceitas", "sum"),
@@ -647,32 +649,35 @@ if modo == "Relação de Entregadores":
             dias=("data", "nunique"),
         ).reset_index()
 
-        # taxas
         ag["aceitacao_%"] = (ag["aceitas"] / ag["ofertadas"] * 100).where(ag["ofertadas"] > 0, 0).round(1)
         ag["conclusao_%"] = (ag["completas"] / ag["aceitas"] * 100).where(ag["aceitas"] > 0, 0).round(1)
-        ag["tempo_online_%"] = (ag["tempo_online_pct"]).round(1)  # já está 0–100 na base
-
+        ag["tempo_online_%"] = ag["tempo_online_pct"].round(1)  # já 0–100
         cols_show = [
             "pessoa_entregadora", "dias",
             "ofertadas", "aceitas", "rejeitadas", "completas",
             "aceitacao_%", "conclusao_%", "tempo_online_%"
         ]
 
-        st.subheader("📊 Tabela – Entregadores dentro dos filtros")
-        st.dataframe(
-            ag[cols_show].sort_values(["dias", "completas", "aceitacao_%"], ascending=[False, False, False]),
-            use_container_width=True
-        )
+        st.subheader("Relação de entregadores")
 
-        # ---------- Download CSV ----------
+        # ---- NOVO: toggle para mostrar só nomes na tabela
+        mostrar_so_nomes = st.toggle("Mostrar só nomes na tabela", value=False)
 
-        nomes_filtrados = sorted(df_sel["pessoa_entregadora"].dropna().unique())
-        csv_bin = pd.DataFrame({"pessoa_entregadora": nomes_filtrados}).to_csv(
-            index=False
-        ).encode("utf-8")
-        
+        if mostrar_so_nomes:
+            nomes_filtrados = sorted(df_sel["pessoa_entregadora"].dropna().unique())
+            st.dataframe(
+                pd.DataFrame({"pessoa_entregadora": nomes_filtrados}),
+                use_container_width=True
+            )
+        else:
+            st.dataframe(
+                ag[cols_show].sort_values(["dias", "completas", "aceitacao_%"], ascending=[False, False, False]),
+                use_container_width=True
+            )
+
+
         # ---------- Texto por entregador (reuso do seu gerador) ----------
-        from relatorios import gerar_dados  # usa sua função existente
+        from relatorios import gerar_dados
 
         blocos = []
         for nome in sorted(df_sel["pessoa_entregadora"].dropna().unique()):
@@ -683,5 +688,3 @@ if modo == "Relação de Entregadores":
         texto_final = "\n" + ("\n" + "—" * 40 + "\n").join(blocos)
         st.subheader("📝 Texto (todos os entregadores nos filtros)")
         st.text_area("Resultado:", value=texto_final or "Sem blocos gerados.", height=500)
-
-
