@@ -692,9 +692,7 @@ if modo == "Relação de Entregadores":
 # ================================
 # 🏠 TELA INICIAL
 # ================================
-# ================================
-# 🏠 TELA INICIAL
-# ================================
+
 if modo == "Início":
     st.title("📋 Painel de Entregadores")
     # ---------- Logo de fundo por nível ----------
@@ -743,8 +741,7 @@ if modo == "Início":
             st.metric(label="Data mais recente", value=ultimo_dia_txt)
         with c2:
             st.subheader("🔄 Atualização de base")
-            st.caption("Este botão só aparece na tela inicial.")
-            if st.button("Atualizar dados agora", use_container_width=True):
+            if st.button("Atualizar dados", use_container_width=True):
                 st.cache_data.clear()
                 st.rerun()
 
