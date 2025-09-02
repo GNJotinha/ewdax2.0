@@ -690,98 +690,126 @@ if modo == "Relação de Entregadores":
         st.text_area("Resultado:", value=texto_final, height=500)
 
 # ================================
-# 🏠 TELA INICIAL
+# 🏠 TELA INICIAL (organizada)
 # ================================
-
 if modo == "Início":
-    st.title("📋 Painel de Entregadores")
-    # ---------- Logo de fundo por nível ----------
-    nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
-    logo_admin = st.secrets.get("LOGO_ADMIN_URL", "")
-    logo_user  = st.secrets.get("LOGO_USER_URL", "")
-    bg_logo = logo_admin if nivel == "admin" and logo_admin else logo_user
+    st.markdown("<h1>📋 Painel de Entregadores</h1>", unsafe_allow_html=True)
 
-    if bg_logo:
-        st.markdown(
-            f"""
-            <style>
-              .home-bg {{
-                position: relative;
-                overflow: hidden;
-              }}
-              .home-bg:before {{
-                content: "";
-                position: absolute;
-                inset: 0;
-                background-image: url('{bg_logo}');
-                background-repeat: no-repeat;
-                background-position: center 20%;
-                background-size: 40%;
-                opacity: 0.06;  /* bem sutil */
-                pointer-events: none;
-              }}
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-    st.markdown("<div class='home-bg'>", unsafe_allow_html=True)
+    # --- fundo com logo por nível (usa helper que te passei) ---
+    nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
+    try:
+        aplicar_logo_de_fundo(nivel)  # mantém sutil (opacity 0.06)
+    except Exception:
+        pass
+
+    # --- CSS dos cards/KPIs ---
+    st.markdown("""
+    <style>
+      .card { background:#161b22;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:18px }
+      .kpi  { background:#161b22;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:16px;text-align:center }
+      .kpi h3{ margin:0 0 6px 0;font-size:0.95rem;color:#c9d1d9 }
+      .kpi .val{ font-size:2rem;font-weight:700;color:#fff;line-height:1.1 }
+      .kpi .sub{ margin-top:6px;font-size:.85rem;opacity:.85 }
+      .muted{opacity:.75;font-size:.9rem}
+    </style>
+    """, unsafe_allow_html=True)
 
     # ---------- Último dia com dados ----------
     try:
-        ultimo_dia = pd.to_datetime(df["data"]).max().date()
-        ultimo_dia_txt = ultimo_dia.strftime("%d/%m/%Y")
+        ultimo_dt = pd.to_datetime(df["data"], errors="coerce").dropna().max()
+        ultimo_txt = ultimo_dt.strftime("%d/%m/%Y") if pd.notna(ultimo_dt) else "—"
     except Exception:
-        ultimo_dia_txt = "—"
+        ultimo_dt, ultimo_txt = None, "—"
 
-    # ---------- Card Atualizar dados (apenas aqui) ----------
-    with st.container():
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            st.subheader("🗓️ Último dia com dados")
-            st.metric(label=value=ultimo_dia_txt)
-        with c2:
-            st.subheader("🔄 Atualização de base")
+    # ---------- Cabeçalho: Último dia + Atualização (só aqui) ----------
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        st.markdown("#### 🗓️ Último dia com dados")
+        st.markdown(f"""
+            <div class="card">
+              <div class="muted">Data mais recente</div>
+              <div style="font-size:2.4rem;font-weight:800;margin-top:6px">{ultimo_txt}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with c2:
+        st.markdown("#### 🔄 Atualização de base")
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        if nivel == "admin":
             if st.button("Atualizar dados", use_container_width=True):
                 st.cache_data.clear()
                 st.rerun()
+        else:
+            st.caption("Disponível apenas para administradores.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
 
-    # ---------- Resumo do mês atual ----------
+    # ---------- Resumo (mês atual ou último com dados) ----------
     hoje = pd.Timestamp.today()
-    mes_atual, ano_atual = int(hoje.month), int(hoje.year)
-    df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
+    mes_ref, ano_ref = int(hoje.month), int(hoje.year)
+    df_mes = df[(df["mes"] == mes_ref) & (df["ano"] == ano_ref)].copy()
 
-    ofertadas = int(df_mes.get("numero_de_corridas_ofertadas", 0).sum())
-    aceitas   = int(df_mes.get("numero_de_corridas_aceitas", 0).sum())
-    rejeitadas= int(df_mes.get("numero_de_corridas_rejeitadas", 0).sum())
-    entreg_uniq = int(df_mes.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().nunique())
+    if df_mes.empty and ultimo_dt is not None:
+        mes_ref, ano_ref = int(ultimo_dt.month), int(ultimo_dt.year)
+        df_mes = df[(df["mes"] == mes_ref) & (df["ano"] == ano_ref)].copy()
+        sufixo_periodo = " (último mês com dados)"
+    else:
+        sufixo_periodo = ""
 
-    # %s
-    acc_pct  = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
-    rej_pct  = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
+    # números base
+    ofertadas  = int(df_mes.get("numero_de_corridas_ofertadas", 0).sum()) if not df_mes.empty else 0
+    aceitas    = int(df_mes.get("numero_de_corridas_aceitas", 0).sum()) if not df_mes.empty else 0
+    rejeitadas = int(df_mes.get("numero_de_corridas_rejeitadas", 0).sum()) if not df_mes.empty else 0
+    ativos     = int(df_mes.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().nunique()) if not df_mes.empty else 0
 
-    # UTR do mês (corridas ofertadas por hora) — usando suas funções
+    acc_pct = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
+    rej_pct = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
+
+    # UTR do mês (ofertadas / horas totais); fallback via base_utr
     try:
-        # opção A (mais fiel): soma horas e divide pelo total de ofertadas
-        horas_totais = _horas_from_abs(df_mes) if not df_mes.empty else 0.0
-        utr_mes = (ofertadas / horas_totais) if horas_totais > 0 else 0.0
+        horas_mes = _horas_from_abs(df_mes) if not df_mes.empty else 0.0
+        utr_mes = round((ofertadas / horas_mes), 2) if horas_mes > 0 else 0.0
     except Exception:
-        # fallback B (média diária a partir da base UTR)
-        base_utr = utr_por_entregador_turno(df, mes_atual, ano_atual)
-        utr_mes = float(base_utr["UTR"].mean()) if not base_utr.empty else 0.0
-    utr_mes = round(utr_mes, 2)
+        base_utr = utr_por_entregador_turno(df, mes_ref, ano_ref)
+        utr_mes = round(float(base_utr["UTR"].mean()), 2) if not base_utr.empty else 0.0
 
-    st.subheader(f"📦 Resumo do mês atual ({mes_atual:02d}/{ano_atual})")
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.metric("Corridas ofertadas (UTR)", f"{ofertadas:,}".replace(",", "."), help="Número total de corridas ofertadas no mês. UTR ao lado.")
-        st.caption(f"UTR médio: **{utr_mes:.2f}**")
-    with m2:
-        st.metric("Corridas aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%", help="% sobre ofertadas")
-    with m3:
-        st.metric("Rejeições", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%", help="% sobre ofertadas")
-    with m4:
-        st.metric("Entregadores ativos", f"{entreg_uniq}", help="Quantidade de pessoas diferentes que atuaram no mês")
+    st.markdown(f"### 📦 Resumo do mês ({mes_ref:02d}/{ano_ref}){sufixo_periodo}")
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.markdown(f"""
+            <div class="kpi">
+              <h3>Corridas ofertadas</h3>
+              <div class="val">{ofertadas:,}</div>
+              <div class="sub">UTR médio: <b>{utr_mes:.2f}</b></div>
+            </div>
+        """.replace(",", "."), unsafe_allow_html=True)
+
+    with k2:
+        st.markdown(f"""
+            <div class="kpi">
+              <h3>Corridas aceitas</h3>
+              <div class="val">{aceitas:,}</div>
+              <div class="sub">% sobre ofertadas: <b>{acc_pct:.1f}%</b></div>
+            </div>
+        """.replace(",", "."), unsafe_allow_html=True)
+
+    with k3:
+        st.markdown(f"""
+            <div class="kpi">
+              <h3>Rejeições</h3>
+              <div class="val">{rejeitadas:,}</div>
+              <div class="sub">% sobre ofertadas: <b>{rej_pct:.1f}%</b></div>
+            </div>
+        """.replace(",", "."), unsafe_allow_html=True)
+
+    with k4:
+        st.markdown(f"""
+            <div class="kpi">
+              <h3>Entregadores ativos</h3>
+              <div class="val">{ativos}</div>
+              <div class="sub">Pessoas únicas no período</div>
+            </div>
+        """, unsafe_allow_html=True)
+
