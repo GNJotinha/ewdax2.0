@@ -738,7 +738,7 @@ if modo == "Início":
         c1, c2 = st.columns([1, 2])
         with c1:
             st.subheader("🗓️ Último dia com dados")
-            st.metric(label="Data mais recente", value=ultimo_dia_txt)
+            st.metric(label=value=ultimo_dia_txt)
         with c2:
             st.subheader("🔄 Atualização de base")
             if st.button("Atualizar dados", use_container_width=True):
