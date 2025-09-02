@@ -1,9 +1,11 @@
+# main.py
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 
-from utils import tempo_para_segundos  # fallback se precisar
+from utils import tempo_para_segundos  # fallback (se precisar)
 
 from relatorios import (
     gerar_dados,
@@ -11,7 +13,7 @@ from relatorios import (
     gerar_alertas_de_faltas,
     get_entregadores,
     classificar_entregadores,
-    utr_por_entregador_turno,   
+    utr_por_entregador_turno,
     utr_pivot_por_entregador,
     _horas_from_abs,
 )
@@ -36,10 +38,9 @@ def _hms_from_hours(h):
 @st.cache_data
 def _utr_mensal_cached(df_key, mes: int, ano: int, turno: str | None):
     """
-    UTR mensal = ofertadas_totais / horas_totais (ponderado), opcionalmente por turno.
-    Cacheia por (df_key, mes, ano, turno).
+    UTR mensal (ponderada no absoluto) = ofertadas_totais / horas_totais,
+    opcionalmente filtrando por turno. Cacheia por (df_key, mes, ano, turno).
     """
-    # usa 'df' global em runtime; cache invalida quando df_key muda
     dados = df[(df["mes"] == mes) & (df["ano"] == ano)]
     if turno and turno != "Todos os turnos" and "periodo" in dados.columns:
         dados = dados[dados["periodo"] == turno]
@@ -131,7 +132,6 @@ MENU = {
     ],
 }
 
-# estado inicial
 if "modo" not in st.session_state:
     st.session_state.modo = "Início"
 if "open_cat" not in st.session_state:
@@ -140,13 +140,11 @@ if "open_cat" not in st.session_state:
 with st.sidebar:
     st.markdown("### 🧭 Navegação")
 
-    # botão Home no topo
     if st.button("🏠 Início", use_container_width=True):
         st.session_state.modo = "Início"
         st.session_state.open_cat = None
         st.rerun()
 
-    # expanders das categorias
     for cat, opts in MENU.items():
         expanded = (st.session_state.open_cat == cat)
         with st.expander(cat, expanded=expanded):
@@ -156,56 +154,39 @@ with st.sidebar:
                     st.session_state.open_cat = cat
                     st.rerun()
 
-# compat
 modo = st.session_state.modo
-
 
 # -------------------------------------------------------------------
 # Dados
 # -------------------------------------------------------------------
 df = carregar_dados()
 
-# Garantias/fallbacks (caso o loader ainda não tenha criado)
+# Fallbacks robustos (caso o loader não traga prontos)
 if "mes_ano" not in df.columns:
-    # cria a partir de data_do_periodo se existir; senão, tenta "data"
     base_dt = pd.to_datetime(df.get("data_do_periodo", df.get("data")), errors="coerce")
     df["mes_ano"] = base_dt.dt.to_period("M").dt.to_timestamp()
 
-# --- segundos_abs robusto (várias origens de dado) ---
 if "segundos_abs" not in df.columns:
     col = "tempo_disponivel_absoluto"
     if col in df.columns:
         s = df[col]
-
         try:
-            # 1) Se já for timedelta -> total_seconds
             if pd.api.types.is_timedelta64_dtype(s):
                 df["segundos_abs"] = s.dt.total_seconds().fillna(0).astype(int)
-
-            # 2) Se for numérico -> assume segundos já (ou HHMMSS?); tratamos como segundos
             elif pd.api.types.is_numeric_dtype(s):
                 df["segundos_abs"] = pd.to_numeric(s, errors="coerce").fillna(0).astype(int)
-
-            # 3) Se for objeto: tenta parsear como string "HH:MM:SS"
             else:
-                # força string antes de to_timedelta para evitar tipos exóticos (ex.: datetime.time)
                 td = pd.to_timedelta(s.astype(str), errors="coerce")
                 if td.notna().any():
                     df["segundos_abs"] = td.dt.total_seconds().fillna(0).astype(int)
                 else:
-                    # 4) Fallback final: nossa função Python segura
-                    from utils import tempo_para_segundos
                     df["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
-
         except Exception:
-            # Qualquer erro inesperado -> fallback seguro
-            from utils import tempo_para_segundos
             df["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
     else:
         df["segundos_abs"] = 0
 
-
-# df_key para cache; muda quando entram linhas novas ou última data muda
+# chave leve do dataset para cache (muda quando entram linhas novas ou última data muda)
 df_key = (df.shape, pd.to_datetime(df["data"]).max())
 
 # horas por mês pré-agregadas (reuso nos gráficos)
@@ -250,7 +231,7 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
                 st.text_area("Resultado:", value="\n\n".join([t for t in [t1, t2] if t]), height=600)
 
 # -------------------------------------------------------------------
-# 📊 Indicadores Gerais (com % e UTR alinhado ao modo UTR)
+# 📊 Indicadores Gerais (com % e UTR alinhado)
 # -------------------------------------------------------------------
 if modo == "Indicadores Gerais":
     st.subheader("🔎 Escolha o indicador que deseja visualizar:")
@@ -268,17 +249,11 @@ if modo == "Indicadores Gerais":
         horizontal=True,
     )
 
-    # Preparos comuns
     mes_atual = pd.Timestamp.today().month
     ano_atual = pd.Timestamp.today().year
     df_mes_atual = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)]
 
-    # ===== Horas realizadas =====
     if tipo_grafico == "Horas realizadas":
-        if "segundos_abs" not in df.columns:
-            st.warning("Coluna 'segundos_abs' não encontrada.")
-            st.stop()
-
         mensal_horas = (
             df.groupby("mes_ano", as_index=False)["segundos_abs"].sum()
               .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
@@ -340,7 +315,6 @@ if modo == "Indicadores Gerais":
             st.info("Sem dados no mês atual para plotar as horas diárias.")
         st.stop()
 
-    # ===== Corridas (ofertadas/aceitas/rejeitadas/completadas) =====
     coluna_map = {
         "Corridas ofertadas": ("numero_de_corridas_ofertadas", "Corridas ofertadas por mês", "Corridas"),
         "Corridas aceitas": ("numero_de_corridas_aceitas", "Corridas aceitas por mês", "Corridas Aceitas"),
@@ -375,23 +349,9 @@ if modo == "Indicadores Gerais":
             axis=1
         )
 
-elif tipo_grafico == "Corridas ofertadas":
-    # horas por mês a partir do tempo_disponivel_absoluto (absoluto)
-    if "tempo_disponivel_absoluto" not in df.columns:
-        mensal["__label_text__"] = mensal[col].fillna(0).astype(int).astype(str) + "\nUTR 0.00"
-    else:
-        df_aux = df.copy()
-        # converter HH:MM:SS -> segundos e somar por mês
-        df_aux["segundos_abs"] = df_aux["tempo_disponivel_absoluto"].map(tempo_para_segundos).fillna(0).astype(int)
-        horas_mensais = (
-            df_aux.groupby("mes_ano", as_index=False)["segundos_abs"]
-                 .sum()
-                 .assign(horas=lambda d: d["segundos_abs"]/3600.0)
-                 .drop(columns="segundos_abs")
-        )
+    elif tipo_grafico == "Corridas ofertadas":
+        # Reaproveita horas_mensais (absoluto) pré-calculado
         mensal = mensal.merge(horas_mensais, on="mes_ano", how="left")
-
-        # UTR mensal (ponderada no absoluto): ofertadas_mês / horas_mês
         mensal["UTR_medio"] = mensal.apply(
             lambda r: (float(r[col]) / float(r["horas"])) if (pd.notna(r["horas"]) and r["horas"] > 0) else 0.0,
             axis=1
@@ -400,7 +360,44 @@ elif tipo_grafico == "Corridas ofertadas":
             lambda r: f"{int(r[col])}\nUTR {float(r['UTR_medio']):.2f}",
             axis=1
         )
+    else:
+        mensal["__label_text__"] = mensal[col].fillna(0).astype(int).astype(str)
 
+    fig = px.bar(
+        mensal, x="mes_rotulo", y=col, text="__label_text__", title=titulo,
+        labels={col: label, "mes_rotulo": "Mês/Ano"},
+        template="plotly_dark", color_discrete_sequence=["#00BFFF"]
+    )
+    fig.update_traces(
+        texttemplate="%{text}",
+        textposition="outside",
+        textfont=dict(size=16, color="white"),
+        marker_line_color="rgba(255,255,255,0.25)",
+        marker_line_width=0.5,
+    )
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white"), title_font=dict(size=22),
+        xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
+        bargap=0.25, margin=dict(t=80, r=20, b=60, l=60), showlegend=False,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    por_dia = (
+        df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
+                    .groupby("dia", as_index=False)[col].sum()
+                    .sort_values("dia")
+    )
+    fig_dia = px.line(
+        por_dia, x="dia", y=col,
+        title=f"📈 {label} por dia (mês atual)",
+        labels={"dia": "Dia", col: label},
+        template="plotly_dark"
+    )
+    fig_dia.update_traces(line_shape="spline", mode="lines+markers")
+    total_mes = int(por_dia[col].sum())
+    st.metric(f"🚗 {label} no mês", total_mes)
+    st.plotly_chart(fig_dia, use_container_width=True)
 
 # -------------------------------------------------------------------
 # Alertas de Faltas
@@ -534,10 +531,10 @@ if modo == "Categorias de Entregadores":
         st.download_button("⬇️ Baixar CSV", data=csv_cat, file_name="categorias_entregadores.csv", mime="text/csv")
 
 # -------------------------------------------------------------------
-# UTR — Barras limpas (1 cor), números grandes e dia embaixo de cada barra
+# UTR — PONDERADA no ABSOLUTO (dia e mês)
 # -------------------------------------------------------------------
 if modo == "UTR":
-    st.header("🧭 UTR – Corridas ofertadas por hora (média diária)")
+    st.header("🧭 UTR – Corridas ofertadas por hora (ponderada no absoluto)")
 
     col1, col2 = st.columns(2)
     mes_sel = col1.selectbox("Mês", list(range(1, 13)))
@@ -561,15 +558,21 @@ if modo == "UTR":
         st.info("Sem dados para o turno selecionado.")
         st.stop()
 
+    # --- DIÁRIO PONDERADO (ofertadas do dia ÷ horas do dia, ambas no absoluto) ---
     base_plot["data"] = pd.to_datetime(base_plot["data"])
     serie = (
-        base_plot.groupby(base_plot["data"].dt.day)["UTR"]
-        .mean()
-        .reset_index()
-        .rename(columns={"data": "dia_num", "UTR": "utr_media"})
+        base_plot
+          .assign(dia_num=lambda d: d["data"].dt.day)
+          .groupby("dia_num", as_index=False)
+          .agg(ofertadas=("corridas_ofertadas", "sum"),
+               horas=("supply_hours", "sum"))
     )
-    serie.columns = ["dia_num", "utr_media"]
-    serie = serie.sort_values("dia_num")
+    serie["utr_media"] = serie.apply(
+        lambda r: (r["ofertadas"] / r["horas"]) if r["horas"] > 0 else 0.0,
+        axis=1
+    )
+    serie = serie[["dia_num", "utr_media"]].sort_values("dia_num")
+
     y_max = (serie["utr_media"].max() or 0) * 1.25
 
     fig = px.bar(
@@ -577,8 +580,8 @@ if modo == "UTR":
         x="dia_num",
         y="utr_media",
         text="utr_media",
-        title=f"UTR médio por dia – {mes_sel:02d}/{ano_sel} • {('Todos os turnos' if turno_sel=='Todos os turnos' else turno_sel)}",
-        labels={"dia_num": "Dia do mês", "utr_media": "UTR médio"},
+        title=f"UTR por dia – {mes_sel:02d}/{ano_sel} • {('Todos os turnos' if turno_sel=='Todos os turnos' else turno_sel)}",
+        labels={"dia_num": "Dia do mês", "utr_media": "UTR (ofertadas/hora)"},
         template="plotly_dark",
         color_discrete_sequence=["#00BFFF"],
     )
@@ -609,17 +612,13 @@ if modo == "UTR":
         showlegend=False,
         margin=dict(t=70, r=20, b=60, l=60),
     )
-
     st.plotly_chart(fig, use_container_width=True)
 
-    # ✅ Métrica do mês usando a definição ponderada e cacheada (alinhada com a tela inicial)
-    utr_mes_metric = _utr_mensal_cached(
-        df_key,
-        mes_sel,
-        ano_sel,
-        None if turno_sel == "Todos os turnos" else turno_sel
-    )
-    st.metric("Média UTR no mês", f"{utr_mes_metric:.2f}")
+    # ✅ MÉTRICA DO MÊS PONDERADA (absoluto) COERENTE COM A TELA INICIAL
+    ofertadas_totais = base_plot["corridas_ofertadas"].sum()
+    horas_totais     = base_plot["supply_hours"].sum()
+    utr_mes          = (ofertadas_totais / horas_totais) if horas_totais > 0 else 0.0
+    st.metric("Média UTR no mês (ponderada)", f"{utr_mes:.2f}")
 
     st.caption("📄 O botão abaixo baixa o **CSV GERAL** (sem filtro de turno).")
     cols_csv = ["data","pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
@@ -644,17 +643,15 @@ if modo == "UTR":
     )
 
 # -------------------------------------------------------------------
-# Relatório por Filtros (Todos)
+# Relação de Entregadores (listar por filtros)
 # -------------------------------------------------------------------
 if modo == "Relação de Entregadores":
     st.header("Relatório")
 
-    # Base para filtros
     df_filtros = df.copy()
     df_filtros["data_do_periodo"] = pd.to_datetime(df_filtros["data_do_periodo"], errors="coerce")
     df_filtros["data"] = df_filtros["data_do_periodo"].dt.date
 
-    # ---- Filtros
     subpracas = sorted([x for x in df_filtros["sub_praca"].dropna().unique()])
     filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
 
@@ -683,7 +680,6 @@ if modo == "Relação de Entregadores":
     gerar = st.button("Gerar")
 
     if gerar:
-        # aplica filtros
         df_sel = df_filtros.copy()
         if filtro_subpraca:
             df_sel = df_sel[df_sel["sub_praca"].isin(filtro_subpraca)]
@@ -696,19 +692,14 @@ if modo == "Relação de Entregadores":
             st.info("❌ Nenhum entregador encontrado com os filtros aplicados.")
             st.stop()
 
-        # ---------- nomes ----------
         nomes_filtrados = sorted(df_sel["pessoa_entregadora"].dropna().unique())
 
         st.subheader("👤 Entregadores encontrados")
         st.dataframe(pd.DataFrame({"pessoa_entregadora": nomes_filtrados}), use_container_width=True)
 
-
-        # ---------- Texto detalhado por entregador ----------
         from relatorios import gerar_dados
-
         st.subheader("Números")
         blocos = []
-        # usa o df já filtrado para cada entregador
         for nome in nomes_filtrados:
             chunk = df_sel[df_sel["pessoa_entregadora"] == nome]
             bloco = gerar_dados(nome, None, None, chunk)
@@ -716,7 +707,6 @@ if modo == "Relação de Entregadores":
                 blocos.append(bloco.strip())
 
         texto_final = "\n" + ("\n" + "—" * 40 + "\n").join(blocos) if blocos else "Sem blocos gerados para os filtros."
-
         st.text_area("Resultado:", value=texto_final, height=500)
 
 # ================================
@@ -724,7 +714,8 @@ if modo == "Relação de Entregadores":
 # ================================
 if modo == "Início":
     st.title("📋 Painel de Entregadores")
-    # ---------- Logo de fundo por nível ----------
+
+    # Logo de fundo por nível
     nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
     logo_admin = st.secrets.get("LOGO_ADMIN_URL", "")
     logo_user  = st.secrets.get("LOGO_USER_URL", "")
@@ -746,7 +737,7 @@ if modo == "Início":
                 background-repeat: no-repeat;
                 background-position: center 20%;
                 background-size: 40%;
-                opacity: 0.06;  /* bem sutil */
+                opacity: 0.06;
                 pointer-events: none;
               }}
             </style>
@@ -755,14 +746,14 @@ if modo == "Início":
         )
     st.markdown("<div class='home-bg'>", unsafe_allow_html=True)
 
-    # ---------- Último dia com dados ----------
+    # Último dia com dados
     try:
         ultimo_dia = pd.to_datetime(df["data"]).max().date()
         ultimo_dia_txt = ultimo_dia.strftime("%d/%m/%Y")
     except Exception:
         ultimo_dia_txt = "—"
 
-    # ---------- Card Atualizar dados (apenas aqui) ----------
+    # Card Atualizar dados
     with st.container():
         c1, c2 = st.columns([1, 2])
         with c1:
@@ -777,7 +768,7 @@ if modo == "Início":
 
     st.divider()
 
-    # ---------- Resumo do mês atual ----------
+    # Resumo do mês atual
     hoje = pd.Timestamp.today()
     mes_atual, ano_atual = int(hoje.month), int(hoje.year)
     df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
@@ -787,18 +778,17 @@ if modo == "Início":
     rejeitadas= int(df_mes.get("numero_de_corridas_rejeitadas", 0).sum())
     entreg_uniq = int(df_mes.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().nunique())
 
-    # %s
     acc_pct  = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
     rej_pct  = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
 
-    # ✅ UTR do mês (ofertadas por hora) — definição única + cache
+    # ✅ UTR do mês (ofertadas por hora, absoluto) — cacheada
     utr_mes = round(_utr_mensal_cached(df_key, mes_atual, ano_atual, None), 2)
 
     st.subheader(f"📦 Resumo do mês atual ({mes_atual:02d}/{ano_atual})")
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.metric("Corridas ofertadas (UTR)", f"{ofertadas:,}".replace(",", "."), help="Número total de corridas ofertadas no mês. UTR ao lado.")
-        st.caption(f"UTR médio: **{utr_mes:.2f}**")
+        st.metric("Corridas ofertadas (UTR)", f"{ofertadas:,}".replace(",", "."), help="Total de corridas ofertadas no mês. UTR ao lado.")
+        st.caption(f"UTR (ponderada): **{utr_mes:.2f}**")
     with m2:
         st.metric("Corridas aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%", help="% sobre ofertadas")
     with m3:
