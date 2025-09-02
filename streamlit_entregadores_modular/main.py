@@ -86,19 +86,58 @@ st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 # -------------------------------------------------------------------
 # Menu
 # -------------------------------------------------------------------
-modo = st.sidebar.radio("Escolha uma opção:", [
-    "Indicadores Gerais",
-    "Ver geral",
-    "Simplificada (WhatsApp)",
-    "Alertas de Faltas",
-    "Relatório Customizado",
-    "Categorias de Entregadores",
-    "UTR",
-    "Relação de Entregadores" 
-])
+# -------------------------------------------------------------------
+# Menu lateral (cascata: Categoria -> Subopção)
+# -------------------------------------------------------------------
+MENU = {
+    "Desempenho do Entregador": [
+        "Ver geral",
+        "Simplificada (WhatsApp)",
+        "Relatório Customizado",
+    ],
+    "Relatórios": [
+        "Alertas de Faltas",
+        "Relação de Entregadores",
+        "Categorias de Entregadores",
+    ],
+    "Dashboards": [
+        "UTR",
+        "Indicadores Gerais",
+    ],
+}
 
-if not modo:
-    st.stop()
+# guarda último sub-modo usado por categoria (pra lembrar ao trocar e voltar)
+if "menu_hist" not in st.session_state:
+    st.session_state.menu_hist = {cat: opts[0] for cat, opts in MENU.items()}
+
+if "menu_cat" not in st.session_state:
+    st.session_state.menu_cat = "Desempenho do Entregador"
+
+with st.sidebar:
+    st.markdown("### 🧭 Navegação")
+
+    # 1) Categoria (selectbox)
+    cat = st.selectbox(
+        "Seção",
+        options=list(MENU.keys()),
+        index=list(MENU.keys()).index(st.session_state.menu_cat),
+        key="menu_cat",
+    )
+
+    # 2) Subopção da categoria (selectbox)
+    sub_default = st.session_state.menu_hist.get(cat, MENU[cat][0])
+    sub = st.selectbox(
+        "Opção",
+        options=MENU[cat],
+        index=MENU[cat].index(sub_default) if sub_default in MENU[cat] else 0,
+        key=f"menu_sub_{cat}",  # chave por categoria pra manter estado independente
+    )
+
+    # atualiza histórico (lembra o último sub escolhido por categoria)
+    st.session_state.menu_hist[cat] = sub
+
+# compat: mantém a variável 'modo' que o resto do app usa
+modo = st.session_state.menu_hist[st.session_state.menu_cat]
 
 # -------------------------------------------------------------------
 # Dados
