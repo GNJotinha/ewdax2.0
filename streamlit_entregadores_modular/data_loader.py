@@ -9,29 +9,58 @@ SHEET = "Base 2025"
 
 @st.cache_data
 def carregar_dados(force: bool = False):
+    """
+    Carrega a planilha local ou baixa do Drive.
+    Se force=True, apaga o arquivo local e rebaixa SEMPRE antes de ler.
+    """
     destino = Path("Calendarios.xlsx")
 
+    # Força re-download
     if force:
-        destino.unlink(missing_ok=True)
+        try:
+            destino.unlink(missing_ok=True)
+        except Exception:
+            pass
         _baixar_drive_forcado(destino)
         return _ler(destino)
 
+    # Fluxo normal (usa cache no disco se existir)
     if destino.exists() and destino.stat().st_size > 0:
         return _ler(destino)
 
+    # Fallback de backup empacotado no deploy
     backup = Path("/mnt/data/Calendarios.xlsx")
     if backup.exists() and backup.stat().st_size > 0:
         return _ler(backup)
 
+    # Se não tem local, baixa do Drive
     _baixar_drive_forcado(destino)
     return _ler(destino)
 
 
+def _baixar_drive_forcado(out: Path) -> None:
+    """Baixa SEMPRE do Drive usando o CALENDARIO_FILE_ID do secrets."""
+    file_id = st.secrets.get("CALENDARIO_FILE_ID", "").strip()
+    if not file_id:
+        raise RuntimeError("CALENDARIO_FILE_ID não definido em st.secrets.")
+
+    try:
+        out.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+    ok = _baixar_drive(file_id, out)
+    if not ok or (not out.exists() or out.stat().st_size == 0):
+        raise RuntimeError("Falha ao baixar Calendarios.xlsx do Google Drive.")
+
+
 def _baixar_drive(file_id: str, out: Path) -> bool:
     try:
+        # Tenta por ID direto
         gdown.download(id=file_id, output=str(out), quiet=True)
         if out.exists() and out.stat().st_size > 0:
             return True
+        # Tenta por URL como fallback
         url = f"https://drive.google.com/uc?export=download&id={file_id}"
         gdown.download(url=url, output=str(out), quiet=True, fuzzy=True)
         return out.exists() and out.stat().st_size > 0
