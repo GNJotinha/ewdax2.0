@@ -21,6 +21,13 @@ from relatorios import (
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 
+# -------------------------------------------------------------------
+# Dados
+# -------------------------------------------------------------------
+# Consome a flag do botão e força o re-download se presente
+force_refresh = st.session_state.pop("__force_refresh__", False)
+df = carregar_dados(force=force_refresh)
+
 
 def _hms_from_hours(h):
     try:
@@ -790,7 +797,8 @@ if modo == "Início":
             st.subheader("🔄 Atualização de base")
             st.caption("Este botão só aparece na tela inicial.")
             if st.button("Atualizar dados agora", use_container_width=True):
-                st.cache_data.clear()
+                # Sinaliza para recarregar a planilha do Drive e refaz o run
+                st.session_state["__force_refresh__"] = True
                 st.rerun()
 
     st.divider()
@@ -800,13 +808,13 @@ if modo == "Início":
     mes_atual, ano_atual = int(hoje.month), int(hoje.year)
     df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
 
-    ofertadas = int(df_mes.get("numero_de_corridas_ofertadas", 0).sum())
-    aceitas   = int(df_mes.get("numero_de_corridas_aceitas", 0).sum())
-    rejeitadas= int(df_mes.get("numero_de_corridas_rejeitadas", 0).sum())
+    ofertadas  = int(df_mes.get("numero_de_corridas_ofertadas", 0).sum())
+    aceitas    = int(df_mes.get("numero_de_corridas_aceitas", 0).sum())
+    rejeitadas = int(df_mes.get("numero_de_corridas_rejeitadas", 0).sum())
     entreg_uniq = int(df_mes.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().nunique())
 
-    acc_pct  = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
-    rej_pct  = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
+    acc_pct = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
+    rej_pct = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
 
     # ✅ UTR do mês (ofertadas por hora, absoluto) — cacheada
     utr_mes = round(_utr_mensal_cached(df_key, mes_atual, ano_atual, None), 2)
@@ -824,4 +832,5 @@ if modo == "Início":
         st.metric("Entregadores ativos", f"{entreg_uniq}", help="Quantidade de pessoas diferentes que atuaram no mês")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
 
