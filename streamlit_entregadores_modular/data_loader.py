@@ -44,35 +44,44 @@ def _baixar_drive(file_id: str, out: Path) -> bool:
         st.warning(f"Download falhou: {e}")
         return False
 
-def _ler(path: Path) -> pd.DataFrame:
-    df = pd.read_excel(path, sheet_name=SHEET)
-    df["data_do_periodo"] = pd.to_datetime(df["data_do_periodo"])
-    df["data"] = df["data_do_periodo"].dt.date
-    df["mes"] = df["data_do_periodo"].dt.month
-    df["ano"] = df["data_do_periodo"].dt.year
-    df["pessoa_entregadora_normalizado"] = df["pessoa_entregadora"].apply(normalizar)
+    # 🔹 NOVO: segundos_abs robusto (aguenta números, HH:MM:SS, vírgulas, lixo…)
+    df["segundos_abs"] = 0
+    col = "tempo_disponivel_absoluto"
+    if col in df.columns:
+        s = df[col]
 
-    # 🔹 NOVO: mes_ano já pronto (evita reconverter em cada tela)
-    df["mes_ano"] = df["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
+        try:
+            # 1) Já é timedelta?
+            if pd.api.types.is_timedelta64_dtype(s):
+                df["segundos_abs"] = s.dt.total_seconds().fillna(0).astype(int)
 
-    # 🔹 NOVO: segundos_abs vetorizado (muito mais rápido)
-    if "tempo_disponivel_absoluto" in df.columns:
-        td = pd.to_timedelta(df["tempo_disponivel_absoluto"], errors="coerce")
-        df["segundos_abs"] = td.dt.total_seconds().fillna(0).astype(int)
-    else:
-        df["segundos_abs"] = 0
+            # 2) Já é numérico? (assumimos segundos)
+            elif pd.api.types.is_numeric_dtype(s):
+                df["segundos_abs"] = pd.to_numeric(s, errors="coerce").fillna(0).astype(int)
 
-    # 🔽 já estava no seu código
-    num_cols = [
-        "numero_de_corridas_ofertadas",
-        "numero_de_corridas_aceitas",
-        "numero_de_corridas_rejeitadas",
-        "numero_de_corridas_completadas",
-        "tempo_disponivel_escalado",
-    ]
-    for c in num_cols:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+            else:
+                # 3) Normaliza casos bizarros: listas/tuplas → "h:m:s", vírgula → ponto
+                s_norm = (
+                    s.apply(lambda x: ":".join(map(str, x)) if isinstance(x, (list, tuple)) else x)
+                     .astype(str)
+                     .str.replace(",", ".", regex=False)
+                     .str.strip()
+                )
 
-    return df
+                td = pd.to_timedelta(s_norm, errors="coerce")
+                if td.notna().any():
+                    df["segundos_abs"] = td.dt.total_seconds().fillna(0).astype(int)
+                else:
+                    # 4) Último recurso: parser manual
+                    df["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
 
+            # (Opcional) Mostra exemplos inválidos, se tiver
+            invalid_mask = df["segundos_abs"].isna() | (df["segundos_abs"] < 0)
+            if invalid_mask.any():
+                exemplos = s[invalid_mask].dropna().astype(str).unique().tolist()[:3]
+                import streamlit as st
+                st.warning(f"⚠️ Valores de tempo inválidos detectados em '{col}'. Exemplos: {exemplos}")
+
+        except Exception:
+            # Se der ruim, cai no parser manual, sem travar o app
+            df["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
