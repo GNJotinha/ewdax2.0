@@ -824,3 +824,4 @@ if modo == "Início":
         st.metric("Entregadores ativos", f"{entreg_uniq}", help="Quantidade de pessoas diferentes que atuaram no mês")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
