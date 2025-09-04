@@ -8,8 +8,13 @@ from utils import normalizar, tempo_para_segundos
 SHEET = "Base 2025"
 
 @st.cache_data
-def carregar_dados():
+def carregar_dados(force: bool = False):
     destino = Path("Calendarios.xlsx")
+
+    if force:
+        destino.unlink(missing_ok=True)
+        _baixar_drive_forcado(destino)
+        return _ler(destino)
 
     if destino.exists() and destino.stat().st_size > 0:
         return _ler(destino)
@@ -18,12 +23,7 @@ def carregar_dados():
     if backup.exists() and backup.stat().st_size > 0:
         return _ler(backup)
 
-    file_id = st.secrets.get("CALENDARIO_FILE_ID", "").strip()
-    if not file_id:
-        raise RuntimeError("CALENDARIO_FILE_ID não definido em st.secrets.")
-    if not _baixar_drive(file_id, destino):
-        raise RuntimeError("Falha ao baixar Calendarios.xlsx do Google Drive.")
-
+    _baixar_drive_forcado(destino)
     return _ler(destino)
 
 
