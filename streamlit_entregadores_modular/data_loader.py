@@ -5,8 +5,10 @@ import gdown
 from pathlib import Path
 from utils import normalizar, tempo_para_segundos
 
-SHEET   = "Base 2025"
-FILE_ID = "COLOQUE_SEU_ID_AQUI"   # <- ID do arquivo no Drive (entre /d/ e /view)
+SHEET = "Base 2025"
+
+# 👉 COLE AQUI: pode ser o ID (ex: '1AbC...XYZ') ou o link completo do Drive (ex: 'https://drive.google.com/file/d/ID/view?...')
+FILE_ID_OR_URL = "COLE_ID_OU_LINK_AQUI"
 
 @st.cache_data
 def carregar_dados(force: bool = False):
@@ -39,26 +41,30 @@ def carregar_dados(force: bool = False):
 
 
 def _baixar_drive_forcado(out: Path) -> None:
-    if not FILE_ID or FILE_ID.strip() == "COLOQUE_SEU_ID_AQUI":
-        raise RuntimeError("Defina FILE_ID em data_loader.py com o ID do arquivo no Drive.")
+    src = (FILE_ID_OR_URL or "").strip()
+    if not src or src == "COLE_ID_OU_LINK_AQUI":
+        raise RuntimeError("Defina FILE_ID_OR_URL em data_loader.py com o ID ou o LINK do arquivo no Drive.")
     try:
         out.unlink(missing_ok=True)
     except Exception:
         pass
-    ok = _baixar_drive(FILE_ID, out)
+    ok = _baixar_drive(src, out)
     if not ok or (not out.exists() or out.stat().st_size == 0):
         raise RuntimeError("Falha ao baixar Calendarios.xlsx do Google Drive.")
 
 
-def _baixar_drive(file_id: str, out: Path) -> bool:
+def _baixar_drive(src: str, out: Path) -> bool:
     try:
-        # Tenta por ID
-        gdown.download(id=file_id, output=str(out), quiet=True)
-        if out.exists() and out.stat().st_size > 0:
-            return True
-        # Fallback por URL
-        url = f"https://drive.google.com/uc?export=download&id={file_id}"
-        gdown.download(url=url, output=str(out), quiet=True, fuzzy=True)
+        # Se vier um LINK do Drive, baixa por URL (fuzzy ajuda com /file/d/ID/view etc.)
+        if "drive.google" in src:
+            gdown.download(url=src, output=str(out), quiet=True, fuzzy=True)
+        else:
+            # Caso contrário, assume que é um ID
+            gdown.download(id=src, output=str(out), quiet=True)
+            # Fallback por URL se necessário
+            if not out.exists() or out.stat().st_size == 0:
+                url = f"https://drive.google.com/uc?export=download&id={src}"
+                gdown.download(url=url, output=str(out), quiet=True, fuzzy=True)
         return out.exists() and out.stat().st_size > 0
     except Exception:
         return False
