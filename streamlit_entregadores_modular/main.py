@@ -743,6 +743,12 @@ if modo == "Relação de Entregadores":
 if modo == "Início":
     st.title("📋 Painel de Entregadores")
 
+    from data_loader import carregar_dados
+
+    force_refresh = st.session_state.pop("__force_refresh__", False)
+    df = carregar_dados(force=force_refresh)
+
+
     # Logo de fundo por nível
     nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
     logo_admin = st.secrets.get("LOGO_ADMIN_URL", "")
@@ -791,7 +797,6 @@ if modo == "Início":
             st.subheader("🔄 Atualização de base")
             st.caption("Este botão só aparece na tela inicial.")
             if st.button("Atualizar dados agora", use_container_width=True):
-                # Sinaliza para recarregar a planilha do Drive e refaz o run
                 st.session_state["__force_refresh__"] = True
                 st.rerun()
 
