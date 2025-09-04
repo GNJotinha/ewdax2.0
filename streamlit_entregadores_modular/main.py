@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 
-from utils import tempo_para_segundos  # fallback (se precisar)
+from utils import normalizar, tempo_para_segundos  
 
 from relatorios import (
     gerar_dados,
