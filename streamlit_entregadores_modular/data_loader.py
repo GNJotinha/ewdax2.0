@@ -5,7 +5,8 @@ import gdown
 from pathlib import Path
 from utils import normalizar, tempo_para_segundos
 
-SHEET = "Base 2025"
+SHEET   = "Base 2025"
+FILE_ID = "COLOQUE_SEU_ID_AQUI"   # <- ID do arquivo no Drive (entre /d/ e /view)
 
 @st.cache_data
 def carregar_dados(force: bool = False):
@@ -14,8 +15,9 @@ def carregar_dados(force: bool = False):
     Se force=True, apaga o arquivo local e rebaixa SEMPRE antes de ler.
     """
     destino = Path("Calendarios.xlsx")
+    backup  = Path("/mnt/data/Calendarios.xlsx")
 
-    # Força re-download
+    # Força re-download do Drive
     if force:
         try:
             destino.unlink(missing_ok=True)
@@ -24,43 +26,37 @@ def carregar_dados(force: bool = False):
         _baixar_drive_forcado(destino)
         return _ler(destino)
 
-    # Fluxo normal (usa cache no disco se existir)
+    # Fluxo normal
     if destino.exists() and destino.stat().st_size > 0:
         return _ler(destino)
 
-    # Fallback de backup empacotado no deploy
-    backup = Path("/mnt/data/Calendarios.xlsx")
     if backup.exists() and backup.stat().st_size > 0:
         return _ler(backup)
 
-    # Se não tem local, baixa do Drive
+    # Primeira carga: baixa do Drive
     _baixar_drive_forcado(destino)
     return _ler(destino)
 
 
 def _baixar_drive_forcado(out: Path) -> None:
-    """Baixa SEMPRE do Drive usando o CALENDARIO_FILE_ID do secrets."""
-    file_id = st.secrets.get("CALENDARIO_FILE_ID", "").strip()
-    if not file_id:
-        raise RuntimeError("CALENDARIO_FILE_ID não definido em st.secrets.")
-
+    if not FILE_ID or FILE_ID.strip() == "COLOQUE_SEU_ID_AQUI":
+        raise RuntimeError("Defina FILE_ID em data_loader.py com o ID do arquivo no Drive.")
     try:
         out.unlink(missing_ok=True)
     except Exception:
         pass
-
-    ok = _baixar_drive(file_id, out)
+    ok = _baixar_drive(FILE_ID, out)
     if not ok or (not out.exists() or out.stat().st_size == 0):
         raise RuntimeError("Falha ao baixar Calendarios.xlsx do Google Drive.")
 
 
 def _baixar_drive(file_id: str, out: Path) -> bool:
     try:
-        # Tenta por ID direto
+        # Tenta por ID
         gdown.download(id=file_id, output=str(out), quiet=True)
         if out.exists() and out.stat().st_size > 0:
             return True
-        # Tenta por URL como fallback
+        # Fallback por URL
         url = f"https://drive.google.com/uc?export=download&id={file_id}"
         gdown.download(url=url, output=str(out), quiet=True, fuzzy=True)
         return out.exists() and out.stat().st_size > 0
@@ -109,12 +105,9 @@ def _ler(path: Path) -> pd.DataFrame:
             elif pd.api.types.is_numeric_dtype(s):
                 df["segundos_abs"] = pd.to_numeric(s, errors="coerce").fillna(0).astype(int)
             else:
-                # Normaliza listas/tuplas -> "h:m:s", troca vírgula por ponto
                 s_norm = (
                     s.apply(lambda x: ":".join(map(str, x)) if isinstance(x, (list, tuple)) else x)
-                     .astype(str)
-                     .str.replace(",", ".", regex=False)
-                     .str.strip()
+                     .astype(str).str.replace(",", ".", regex=False).str.strip()
                 )
                 td = pd.to_timedelta(s_norm, errors="coerce")
                 if td.notna().any():
