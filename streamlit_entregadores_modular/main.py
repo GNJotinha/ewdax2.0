@@ -21,12 +21,6 @@ from relatorios import (
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 
-# -------------------------------------------------------------------
-# Dados
-# -------------------------------------------------------------------
-# Consome a flag do botão e força o re-download se presente
-force_refresh = st.session_state.pop("__force_refresh__", False)
-df = carregar_dados(force=force_refresh)
 
 
 def _hms_from_hours(h):
