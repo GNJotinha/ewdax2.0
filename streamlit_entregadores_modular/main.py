@@ -32,29 +32,17 @@ def _hms_from_hours(h):
         return "00:00:00"
 
 
-# =========================
-# Helpers de performance
-# =========================
-@st.cache_data
-def _utr_mensal_cached(df_key, mes: int, ano: int, turno: str | None):
+# =========================================================
+# 🔄 Carga ÚNICA do DF por render + suporte a hard refresh
+# =========================================================
+def get_df_once():
     """
-    UTR mensal (ponderada no absoluto) = ofertadas_totais / horas_totais,
-    opcionalmente filtrando por turno. Cacheia por (df_key, mes, ano, turno).
+    Carrega o df uma única vez por render.
+    Se o usuário clicou em 'Atualizar dados', força baixar do Drive.
     """
-    dados = df[(df["mes"] == mes) & (df["ano"] == ano)]
-    if turno and turno != "Todos os turnos" and "periodo" in dados.columns:
-        dados = dados[dados["periodo"] == turno]
-
-    if dados.empty:
-        return 0.0
-
-    ofertadas = float(dados["numero_de_corridas_ofertadas"].sum())
-    if "segundos_abs" in dados.columns:
-        horas = dados["segundos_abs"].sum() / 3600.0
-    else:
-        horas = _horas_from_abs(dados)
-
-    return (ofertadas / horas) if horas > 0 else 0.0
+    prefer = st.session_state.pop("force_refresh", False)
+    ts = pd.Timestamp.now().timestamp() if prefer else None
+    return carregar_dados(prefer_drive=prefer, _ts=ts)
 
 
 # -------------------------------------------------------------------
@@ -157,9 +145,13 @@ with st.sidebar:
 modo = st.session_state.modo
 
 # -------------------------------------------------------------------
-# Dados
+# Dados (carga única por render)
 # -------------------------------------------------------------------
-df = carregar_dados()
+df = get_df_once()
+
+# Feedback pós-refresh (opcional)
+if st.session_state.pop("just_refreshed", False):
+    st.success("✅ Base atualizada a partir do Google Drive.")
 
 # Fallbacks robustos (caso o loader não traga prontos)
 if "mes_ano" not in df.columns:
@@ -382,6 +374,10 @@ if modo == "Indicadores Gerais":
         bargap=0.25, margin=dict(t=80, r=20, b=60, l=60), showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True)
+
+    mes_atual = pd.Timestamp.today().month
+    ano_atual = pd.Timestamp.today().year
+    df_mes_atual = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)]
 
     por_dia = (
         df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
@@ -756,25 +752,20 @@ if modo == "Início":
     # Card Atualizar dados
     with st.container():
         c1, c2 = st.columns([1, 2])
-# ... dentro do modo "Início", no card "Atualização de base"
-    with st.container():
-        c1, c2 = st.columns([1, 2])
         with c1:
             st.subheader("🗓️ Último dia com dados")
             st.metric(label="Data mais recente", value=ultimo_dia_txt)
         with c2:
             st.subheader("🔄 Atualização de base")
             st.caption("Este botão só aparece na tela inicial.")
-            if st.button("Atualizar dados agora", use_container_width=True):
-                # 1) limpa cache
+            if st.button("Atualizar dados agora", use_container_width=True, key="btn_refresh_drive"):
+                # Marca flag e rerenderiza. O download acontece no topo (get_df_once).
+                st.session_state.force_refresh = True
+                st.session_state.just_refreshed = True  # para feedback
                 st.cache_data.clear()
-                # 2) quebra cache do carregar_dados com um timestamp
-                ts = pd.Timestamp.now().timestamp()
-                # 3) força baixar do Drive e recarrega
-                _ = carregar_dados(prefer_drive=True, _ts=ts)
-                st.success("✅ Base atualizada a partir do Google Drive.")
                 st.rerun()
 
+    st.divider()
 
     # Resumo do mês atual
     hoje = pd.Timestamp.today()
@@ -805,3 +796,28 @@ if modo == "Início":
         st.metric("Entregadores ativos", f"{entreg_uniq}", help="Quantidade de pessoas diferentes que atuaram no mês")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+# =========================
+# Helpers de performance (cache)
+# =========================
+@st.cache_data
+def _utr_mensal_cached(df_key, mes: int, ano: int, turno: str | None):
+    """
+    UTR mensal (ponderada no absoluto) = ofertadas_totais / horas_totais,
+    opcionalmente filtrando por turno. Cacheia por (df_key, mes, ano, turno).
+    """
+    dados = df[(df["mes"] == mes) & (df["ano"] == ano)]
+    if turno and turno != "Todos os turnos" and "periodo" in dados.columns:
+        dados = dados[dados["periodo"] == turno]
+
+    if dados.empty:
+        return 0.0
+
+    ofertadas = float(dados["numero_de_corridas_ofertadas"].sum())
+    if "segundos_abs" in dados.columns:
+        horas = dados["segundos_abs"].sum() / 3600.0
+    else:
+        horas = _horas_from_abs(dados)
+
+    return (ofertadas / horas) if horas > 0 else 0.0
