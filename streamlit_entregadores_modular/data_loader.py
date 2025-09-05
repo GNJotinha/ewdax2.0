@@ -7,7 +7,7 @@ from utils import normalizar, tempo_para_segundos
 
 SHEET = "Base 2025"
 
-@st.cache_data
+@st.cache_data(show_spinner=False)  # 👈 evita ficar mostrando "Running..." toda hora
 def carregar_dados(prefer_drive: bool = False, _ts: float | None = None):
     """
     Carrega a base com 3 estratégias:
@@ -16,7 +16,7 @@ def carregar_dados(prefer_drive: bool = False, _ts: float | None = None):
       3) Google Drive
 
     Se prefer_drive=True, ignora (1) e (2) e baixa do Drive novamente.
-    O parâmetro _ts é só pra 'quebrar' o cache quando clicamos no botão.
+    _ts: só serve para 'quebrar' o cache quando pedirmos refresh.
     """
     destino = Path("Calendarios.xlsx")
 
@@ -24,7 +24,7 @@ def carregar_dados(prefer_drive: bool = False, _ts: float | None = None):
         _baixar_fresco_do_drive(destino)
         return _ler(destino)
 
-    # 1) Local primeiro
+    # 1) Local
     if destino.exists() and destino.stat().st_size > 0:
         return _ler(destino)
 
@@ -34,7 +34,7 @@ def carregar_dados(prefer_drive: bool = False, _ts: float | None = None):
         st.warning("⚠️ Usando cópia local de backup (/mnt/data/Calendarios.xlsx).")
         return _ler(backup)
 
-    # 3) Drive
+    # 3) Drive (padrão)
     _baixar_fresco_do_drive(destino)
     return _ler(destino)
 
@@ -43,22 +43,20 @@ def _baixar_fresco_do_drive(out: Path):
     file_id = st.secrets.get("CALENDARIO_FILE_ID", "1Dmmg1R-xmmC0tfi5-1GVS8KLqhZJUqm5")
     try:
         if out.exists():
-            out.unlink(missing_ok=True)  # remove o local pra não cair no passo (1)
+            out.unlink(missing_ok=True)  # remove local pra não cair no passo (1)
     except Exception:
         pass
 
     ok = _baixar_drive(file_id, out)
     if not ok:
-        st.error("❌ Falha ao baixar do Google Drive. Verifique o compartilhamento e o ID.")
+        st.error("❌ Falha ao baixar do Google Drive. Verifique compartilhamento e ID.")
         st.stop()
 
 def _baixar_drive(file_id: str, out: Path) -> bool:
     try:
-        # tenta pelo id direto
         gdown.download(id=file_id, output=str(out), quiet=False)
         if out.exists() and out.stat().st_size > 0:
             return True
-        # tenta pela URL (fuzzy)
         url = f"https://drive.google.com/uc?export=download&id={file_id}"
         gdown.download(url=url, output=str(out), quiet=False, fuzzy=True)
         return out.exists() and out.stat().st_size > 0
@@ -75,7 +73,7 @@ def _ler(path: Path) -> pd.DataFrame:
     df["pessoa_entregadora_normalizado"] = df["pessoa_entregadora"].apply(normalizar)
     df["mes_ano"] = df["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
 
-    # segundos_abs (blindado)
+    # segundos_abs blindado
     if "tempo_disponivel_absoluto" in df.columns:
         s = df["tempo_disponivel_absoluto"]
         try:
@@ -95,14 +93,13 @@ def _ler(path: Path) -> pd.DataFrame:
         df["segundos_abs"] = 0
 
     # normaliza numéricos
-    num_cols = [
+    for c in [
         "numero_de_corridas_ofertadas",
         "numero_de_corridas_aceitas",
         "numero_de_corridas_rejeitadas",
         "numero_de_corridas_completadas",
         "tempo_disponivel_escalado",
-    ]
-    for c in num_cols:
+    ]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
 
