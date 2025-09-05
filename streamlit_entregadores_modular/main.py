@@ -711,6 +711,31 @@ if modo == "Relação de Entregadores":
 if modo == "Início":
     st.title("📋 Painel de Entregadores")
 
+# =========================
+# Helpers de performance (cache)
+# =========================
+@st.cache_data
+def _utr_mensal_cached(df_key, mes: int, ano: int, turno: str | None):
+    """
+    UTR mensal (ponderada no absoluto) = ofertadas_totais / horas_totais,
+    opcionalmente filtrando por turno. Cacheia por (df_key, mes, ano, turno).
+    """
+    dados = df[(df["mes"] == mes) & (df["ano"] == ano)]
+    if turno and turno != "Todos os turnos" and "periodo" in dados.columns:
+        dados = dados[dados["periodo"] == turno]
+
+    if dados.empty:
+        return 0.0
+
+    ofertadas = float(dados["numero_de_corridas_ofertadas"].sum())
+    if "segundos_abs" in dados.columns:
+        horas = dados["segundos_abs"].sum() / 3600.0
+    else:
+        horas = _horas_from_abs(dados)
+
+    return (ofertadas / horas) if horas > 0 else 0.0
+
+    
     # Logo de fundo por nível
     nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
     logo_admin = st.secrets.get("LOGO_ADMIN_URL", "")
@@ -798,26 +823,4 @@ if modo == "Início":
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-# =========================
-# Helpers de performance (cache)
-# =========================
-@st.cache_data
-def _utr_mensal_cached(df_key, mes: int, ano: int, turno: str | None):
-    """
-    UTR mensal (ponderada no absoluto) = ofertadas_totais / horas_totais,
-    opcionalmente filtrando por turno. Cacheia por (df_key, mes, ano, turno).
-    """
-    dados = df[(df["mes"] == mes) & (df["ano"] == ano)]
-    if turno and turno != "Todos os turnos" and "periodo" in dados.columns:
-        dados = dados[dados["periodo"] == turno]
 
-    if dados.empty:
-        return 0.0
-
-    ofertadas = float(dados["numero_de_corridas_ofertadas"].sum())
-    if "segundos_abs" in dados.columns:
-        horas = dados["segundos_abs"].sum() / 3600.0
-    else:
-        horas = _horas_from_abs(dados)
-
-    return (ofertadas / horas) if horas > 0 else 0.0
