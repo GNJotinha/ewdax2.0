@@ -756,6 +756,9 @@ if modo == "Início":
     # Card Atualizar dados
     with st.container():
         c1, c2 = st.columns([1, 2])
+# ... dentro do modo "Início", no card "Atualização de base"
+    with st.container():
+        c1, c2 = st.columns([1, 2])
         with c1:
             st.subheader("🗓️ Último dia com dados")
             st.metric(label="Data mais recente", value=ultimo_dia_txt)
@@ -763,10 +766,15 @@ if modo == "Início":
             st.subheader("🔄 Atualização de base")
             st.caption("Este botão só aparece na tela inicial.")
             if st.button("Atualizar dados agora", use_container_width=True):
+                # 1) limpa cache
                 st.cache_data.clear()
+                # 2) quebra cache do carregar_dados com um timestamp
+                ts = pd.Timestamp.now().timestamp()
+                # 3) força baixar do Drive e recarrega
+                _ = carregar_dados(prefer_drive=True, _ts=ts)
+                st.success("✅ Base atualizada a partir do Google Drive.")
                 st.rerun()
 
-    st.divider()
 
     # Resumo do mês atual
     hoje = pd.Timestamp.today()
