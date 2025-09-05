@@ -3,37 +3,62 @@ import pandas as pd
 import streamlit as st
 import gdown
 from pathlib import Path
-from utils import normalizar, tempo_para_segundos  # <-- adicionei tempo_para_segundos
+from utils import normalizar, tempo_para_segundos
 
 SHEET = "Base 2025"
 
 @st.cache_data
-def carregar_dados():
+def carregar_dados(prefer_drive: bool = False, _ts: float | None = None):
+    """
+    Carrega a base com 3 estratégias:
+      1) Local
+      2) Backup (/mnt/data)
+      3) Google Drive
+
+    Se prefer_drive=True, ignora (1) e (2) e baixa do Drive novamente.
+    O parâmetro _ts é só pra 'quebrar' o cache quando clicamos no botão.
+    """
     destino = Path("Calendarios.xlsx")
 
-    # 1) Local primeiro (evita depender do Drive quando já existe)
+    if prefer_drive:
+        _baixar_fresco_do_drive(destino)
+        return _ler(destino)
+
+    # 1) Local primeiro
     if destino.exists() and destino.stat().st_size > 0:
         return _ler(destino)
 
-    # 2) Backup do ambiente (se você subir junto ao app)
+    # 2) Backup do ambiente
     backup = Path("/mnt/data/Calendarios.xlsx")
     if backup.exists() and backup.stat().st_size > 0:
         st.warning("⚠️ Usando cópia local de backup (/mnt/data/Calendarios.xlsx).")
         return _ler(backup)
 
-    # 3) Drive (robusto)
-    file_id = st.secrets.get("CALENDARIO_FILE_ID", "1Dmmg1R-xmmC0tfi5-1GVS8KLqhZJUqm5")
-    if not _baixar_drive(file_id, destino):
-        st.error("❌ Falha ao baixar do Google Drive. Verifique ID e compartilhamento (Qualquer pessoa com o link → Leitor).")
-        st.stop()
-
+    # 3) Drive
+    _baixar_fresco_do_drive(destino)
     return _ler(destino)
+
+def _baixar_fresco_do_drive(out: Path):
+    """Baixa SEMPRE do Drive, sobrescrevendo local, e valida tamanho."""
+    file_id = st.secrets.get("CALENDARIO_FILE_ID", "1Dmmg1R-xmmC0tfi5-1GVS8KLqhZJUqm5")
+    try:
+        if out.exists():
+            out.unlink(missing_ok=True)  # remove o local pra não cair no passo (1)
+    except Exception:
+        pass
+
+    ok = _baixar_drive(file_id, out)
+    if not ok:
+        st.error("❌ Falha ao baixar do Google Drive. Verifique o compartilhamento e o ID.")
+        st.stop()
 
 def _baixar_drive(file_id: str, out: Path) -> bool:
     try:
+        # tenta pelo id direto
         gdown.download(id=file_id, output=str(out), quiet=False)
         if out.exists() and out.stat().st_size > 0:
             return True
+        # tenta pela URL (fuzzy)
         url = f"https://drive.google.com/uc?export=download&id={file_id}"
         gdown.download(url=url, output=str(out), quiet=False, fuzzy=True)
         return out.exists() and out.stat().st_size > 0
@@ -50,32 +75,26 @@ def _ler(path: Path) -> pd.DataFrame:
     df["pessoa_entregadora_normalizado"] = df["pessoa_entregadora"].apply(normalizar)
     df["mes_ano"] = df["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
 
-    # ---------- SEGUNDOS ABS: versão à prova de porrada ----------
+    # segundos_abs (blindado)
     if "tempo_disponivel_absoluto" in df.columns:
         s = df["tempo_disponivel_absoluto"]
         try:
             if pd.api.types.is_timedelta64_dtype(s):
-                # já é timedelta
                 df["segundos_abs"] = s.dt.total_seconds().fillna(0).astype(int)
             elif pd.api.types.is_numeric_dtype(s):
-                # trate números como SEGUNDOS (não ns)
                 df["segundos_abs"] = pd.to_numeric(s, errors="coerce").fillna(0).astype(int)
             else:
-                # tente HH:MM:SS (ou similares)
                 td = pd.to_timedelta(s.astype(str).str.strip(), errors="coerce")
                 if td.notna().any():
                     df["segundos_abs"] = td.dt.total_seconds().fillna(0).astype(int)
                 else:
-                    # fallback linha a linha (utils)
                     df["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
         except Exception:
-            # último fallback se algo muito esquisito aparecer
             df["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
     else:
         df["segundos_abs"] = 0
-    # -------------------------------------------------------------
 
-    # normaliza numéricos principais (sem quebrar)
+    # normaliza numéricos
     num_cols = [
         "numero_de_corridas_ofertadas",
         "numero_de_corridas_aceitas",
