@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 
-from utils import normalizar, tempo_para_segundos
+from utils import normalizar, tempo_para_segundos  
 
 from relatorios import (
     gerar_dados,
@@ -20,7 +20,6 @@ from relatorios import (
 
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
-
 
 
 def _hms_from_hours(h):
@@ -331,8 +330,7 @@ if modo == "Indicadores Gerais":
     mensal = df.groupby("mes_ano", as_index=False)[col].sum()
     mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
 
-    if tipo_grafico in ["Corridas aceitas", "Corridas rejeitadas"]:
-        # % sobre OFERTADAS (mantém)
+    if tipo_grafico in ["Corridas aceitas", "Corridas rejeitadas", "Corridas completadas"]:
         mensal_ofert = (
             df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
               .rename(columns={"numero_de_corridas_ofertadas": "ofertadas_total"})
@@ -351,28 +349,8 @@ if modo == "Indicadores Gerais":
             axis=1
         )
 
-    elif tipo_grafico == "Corridas completadas":
-        # ✅ % sobre ACEITAS (alinhado com os relatórios)
-        mensal_aceit = (
-            df.groupby("mes_ano", as_index=False)["numero_de_corridas_aceitas"].sum()
-              .rename(columns={"numero_de_corridas_aceitas": "aceitas_total"})
-        )
-        mensal = mensal.merge(mensal_aceit, on="mes_ano", how="left")
-
-        def _pct_sobre_aceitas(completas, aceitas):
-            try:
-                completas = float(completas); aceitas = float(aceitas)
-                return f"{(completas/aceitas*100):.1f}%" if aceitas > 0 else "0.0%"
-            except Exception:
-                return "0.0%"
-
-        mensal["__label_text__"] = mensal.apply(
-            lambda r: f"{int(r[col])} ({_pct_sobre_aceitas(r[col], r.get('aceitas_total', 0))})",
-            axis=1
-        )
-
     elif tipo_grafico == "Corridas ofertadas":
-        # Rótulo com UTR médio (ofertadas/hora)
+        # Reaproveita horas_mensais (absoluto) pré-calculado
         mensal = mensal.merge(horas_mensais, on="mes_ano", how="left")
         mensal["UTR_medio"] = mensal.apply(
             lambda r: (float(r[col]) / float(r["horas"])) if (pd.notna(r["horas"]) and r["horas"] > 0) else 0.0,
@@ -404,12 +382,6 @@ if modo == "Indicadores Gerais":
         bargap=0.25, margin=dict(t=80, r=20, b=60, l=60), showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True)
-
-    # Captions deixando explícita a base do %
-    if tipo_grafico == "Corridas completadas":
-        st.caption("ℹ️ A porcentagem mostrada é **completadas ÷ aceitas** (alinhado aos relatórios).")
-    elif tipo_grafico in ["Corridas aceitas", "Corridas rejeitadas"]:
-        st.caption("ℹ️ A porcentagem mostrada é **sobre ofertadas**.")
 
     por_dia = (
         df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
@@ -502,7 +474,7 @@ if modo == "Relatório Customizado":
         dias_opcoes = sorted(df["data"].unique())
         dias_escolhidos = st.multiselect(
             "Selecione os dias desejados:",
-            dias_escolhidos if len(dias_escolhidos) else dias_opcoes,
+            dias_opcoes,
             format_func=lambda x: x.strftime("%d/%m/%Y")
         )
 
@@ -743,12 +715,6 @@ if modo == "Relação de Entregadores":
 if modo == "Início":
     st.title("📋 Painel de Entregadores")
 
-    from data_loader import carregar_dados
-
-    force_refresh = st.session_state.pop("__force_refresh__", False)
-    df = carregar_dados(force=force_refresh)
-
-
     # Logo de fundo por nível
     nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
     logo_admin = st.secrets.get("LOGO_ADMIN_URL", "")
@@ -797,7 +763,7 @@ if modo == "Início":
             st.subheader("🔄 Atualização de base")
             st.caption("Este botão só aparece na tela inicial.")
             if st.button("Atualizar dados agora", use_container_width=True):
-                st.session_state["__force_refresh__"] = True
+                st.cache_data.clear()
                 st.rerun()
 
     st.divider()
@@ -807,13 +773,13 @@ if modo == "Início":
     mes_atual, ano_atual = int(hoje.month), int(hoje.year)
     df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
 
-    ofertadas  = int(df_mes.get("numero_de_corridas_ofertadas", 0).sum())
-    aceitas    = int(df_mes.get("numero_de_corridas_aceitas", 0).sum())
-    rejeitadas = int(df_mes.get("numero_de_corridas_rejeitadas", 0).sum())
+    ofertadas = int(df_mes.get("numero_de_corridas_ofertadas", 0).sum())
+    aceitas   = int(df_mes.get("numero_de_corridas_aceitas", 0).sum())
+    rejeitadas= int(df_mes.get("numero_de_corridas_rejeitadas", 0).sum())
     entreg_uniq = int(df_mes.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().nunique())
 
-    acc_pct = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
-    rej_pct = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
+    acc_pct  = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
+    rej_pct  = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
 
     # ✅ UTR do mês (ofertadas por hora, absoluto) — cacheada
     utr_mes = round(_utr_mensal_cached(df_key, mes_atual, ano_atual, None), 2)
@@ -831,5 +797,3 @@ if modo == "Início":
         st.metric("Entregadores ativos", f"{entreg_uniq}", help="Quantidade de pessoas diferentes que atuaram no mês")
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-
