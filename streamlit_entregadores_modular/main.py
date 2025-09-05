@@ -149,6 +149,29 @@ modo = st.session_state.modo
 # -------------------------------------------------------------------
 df = get_df_once()
 
+@st.cache_data
+def _utr_mensal_cached(df_key, mes: int, ano: int, turno: str | None):
+    """
+    UTR mensal (ponderada no absoluto) = ofertadas_totais / horas_totais,
+    opcionalmente filtrando por turno. Cacheia por (df_key, mes, ano, turno).
+    """
+    # usa o df já carregado no topo
+    dados = df[(df["mes"] == mes) & (df["ano"] == ano)]
+    if turno and turno != "Todos os turnos" and "periodo" in dados.columns:
+        dados = dados[dados["periodo"] == turno]
+
+    if dados.empty:
+        return 0.0
+
+    ofertadas = float(dados["numero_de_corridas_ofertadas"].sum())
+    if "segundos_abs" in dados.columns:
+        horas = dados["segundos_abs"].sum() / 3600.0
+    else:
+        horas = _horas_from_abs(dados)
+
+    return (ofertadas / horas) if horas > 0 else 0.0
+
+
 # Feedback pós-refresh (opcional)
 if st.session_state.pop("just_refreshed", False):
     st.success("✅ Base atualizada a partir do Google Drive.")
