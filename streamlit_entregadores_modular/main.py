@@ -711,10 +711,6 @@ if modo == "Relação de Entregadores":
 if modo == "Início":
     st.title("📋 Painel de Entregadores")
 
-# =========================
-# Helpers de performance (cache)
-# =========================
-    
     # Logo de fundo por nível
     nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
     logo_admin = st.secrets.get("LOGO_ADMIN_URL", "")
@@ -765,7 +761,7 @@ if modo == "Início":
             if st.button("Atualizar dados agora", use_container_width=True, key="btn_refresh_drive"):
                 # Marca flag e rerenderiza. O download acontece no topo (get_df_once).
                 st.session_state.force_refresh = True
-                st.session_state.just_refreshed = True  # para feedback
+                st.session_state.just_refreshed = True  # para feedback visual
                 st.cache_data.clear()
                 st.rerun()
 
@@ -776,13 +772,13 @@ if modo == "Início":
     mes_atual, ano_atual = int(hoje.month), int(hoje.year)
     df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
 
-    ofertadas = int(df_mes.get("numero_de_corridas_ofertadas", 0).sum())
-    aceitas   = int(df_mes.get("numero_de_corridas_aceitas", 0).sum())
-    rejeitadas= int(df_mes.get("numero_de_corridas_rejeitadas", 0).sum())
+    ofertadas  = int(df_mes.get("numero_de_corridas_ofertadas", 0).sum())
+    aceitas    = int(df_mes.get("numero_de_corridas_aceitas", 0).sum())
+    rejeitadas = int(df_mes.get("numero_de_corridas_rejeitadas", 0).sum())
     entreg_uniq = int(df_mes.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().nunique())
 
-    acc_pct  = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
-    rej_pct  = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
+    acc_pct = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
+    rej_pct = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
 
     # ✅ UTR do mês (ofertadas por hora, absoluto) — cacheada
     utr_mes = round(_utr_mensal_cached(df_key, mes_atual, ano_atual, None), 2)
@@ -790,37 +786,16 @@ if modo == "Início":
     st.subheader(f"📦 Resumo do mês atual ({mes_atual:02d}/{ano_atual})")
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.metric("Corridas ofertadas (UTR)", f"{ofertadas:,}".replace(",", "."), help="Total de corridas ofertadas no mês. UTR ao lado.")
+        st.metric("Corridas ofertadas (UTR)", f"{ofertadas:,}".replace(",", "."))
         st.caption(f"UTR (ponderada): **{utr_mes:.2f}**")
     with m2:
-        st.metric("Corridas aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%", help="% sobre ofertadas")
+        st.metric("Corridas aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%")
     with m3:
-        st.metric("Rejeições", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%", help="% sobre ofertadas")
+        st.metric("Rejeições", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%")
     with m4:
-        st.metric("Entregadores ativos", f"{entreg_uniq}", help="Quantidade de pessoas diferentes que atuaram no mês")
+        st.metric("Entregadores ativos", f"{entreg_uniq}")
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-@st.cache_data
-def _utr_mensal_cached(df_key, mes: int, ano: int, turno: str | None):
-    """
-    UTR mensal (ponderada no absoluto) = ofertadas_totais / horas_totais,
-    opcionalmente filtrando por turno. Cacheia por (df_key, mes, ano, turno).
-    """
-    dados = df[(df["mes"] == mes) & (df["ano"] == ano)]
-    if turno and turno != "Todos os turnos" and "periodo" in dados.columns:
-        dados = dados[dados["periodo"] == turno]
-
-    if dados.empty:
-        return 0.0
-
-    ofertadas = float(dados["numero_de_corridas_ofertadas"].sum())
-    if "segundos_abs" in dados.columns:
-        horas = dados["segundos_abs"].sum() / 3600.0
-    else:
-        horas = _horas_from_abs(dados)
-
-    return (ofertadas / horas) if horas > 0 else 0.0
 
 
 
