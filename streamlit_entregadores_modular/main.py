@@ -32,6 +32,53 @@ def _hms_from_hours(h):
         return "00:00:00"
 
 
+# ========= NOVOS HELPERS P/ UTR =========
+
+def _utr_media_das_medias(rows: pd.DataFrame) -> float:
+    """
+    Média aritmética dos UTRs linha-a-linha (pessoa/turno/dia).
+    Não pondera por horas.
+    """
+    if rows.empty:
+        return 0.0
+    base = rows[rows["supply_hours"] > 0].copy()
+    if base.empty:
+        return 0.0
+    return (base["corridas_ofertadas"] / base["supply_hours"]).mean()
+
+
+def _serie_diaria_utr(base_plot: pd.DataFrame, metodo: str) -> pd.DataFrame:
+    """
+    Gera a série diária:
+      - Ponderada (global): ofertadas_dia_total / horas_dia_total
+      - Média das médias: média aritmética dos UTRs dos entregadores no dia
+    Retorna ['dia_num','utr_val'].
+    """
+    if base_plot.empty:
+        return pd.DataFrame(columns=["dia_num", "utr_val"])
+
+    df_d = base_plot.copy()
+    df_d["data"] = pd.to_datetime(df_d["data"])
+    df_d["dia_num"] = df_d["data"].dt.day
+
+    if metodo == "Média das médias":
+        df_d = df_d[df_d["supply_hours"] > 0].copy()
+        if df_d.empty:
+            return pd.DataFrame(columns=["dia_num", "utr_val"])
+        df_d["utr_linha"] = df_d["corridas_ofertadas"] / df_d["supply_hours"]
+        out = df_d.groupby("dia_num", as_index=False)["utr_linha"].mean()
+        return out.rename(columns={"utr_linha": "utr_val"}).sort_values("dia_num")
+
+    # Ponderada (global)
+    agg = (df_d.groupby("dia_num", as_index=False)
+                 .agg(ofertadas=("corridas_ofertadas", "sum"),
+                      horas=("supply_hours", "sum")))
+    agg["utr_val"] = agg.apply(
+        lambda r: (r["ofertadas"] / r["horas"]) if r["horas"] > 0 else 0.0, axis=1
+    )
+    return agg[["dia_num", "utr_val"]].sort_values("dia_num")
+
+
 # =========================================================
 # 🔄 Carga ÚNICA do DF por render + suporte a hard refresh
 # =========================================================
@@ -550,10 +597,10 @@ if modo == "Categorias de Entregadores":
         st.download_button("⬇️ Baixar CSV", data=csv_cat, file_name="categorias_entregadores.csv", mime="text/csv")
 
 # -------------------------------------------------------------------
-# UTR — PONDERADA no ABSOLUTO (dia e mês)
+# UTR — PONDERADA e MÉDIA DAS MÉDIAS
 # -------------------------------------------------------------------
 if modo == "UTR":
-    st.header("🧭 UTR – Corridas ofertadas por hora (ponderada no absoluto)")
+    st.header("🧭 UTR – Corridas ofertadas por hora")
 
     col1, col2 = st.columns(2)
     mes_sel = col1.selectbox("Mês", list(range(1, 13)))
@@ -572,35 +619,30 @@ if modo == "UTR":
         turnos_opts += sorted([t for t in base_full["periodo"].dropna().unique()])
     turno_sel = st.selectbox("Turno", options=turnos_opts, index=0)
 
+    metodo = st.radio(
+        "Método de agregação",
+        ["Ponderada (global)", "Média das médias"],
+        horizontal=True,
+        index=0,
+        help="Ponderada = soma ofertadas ÷ soma horas. Média das médias = média aritmética dos UTRs por pessoa/turno/dia."
+    )
+
     base_plot = base_full if turno_sel == "Todos os turnos" else base_full[base_full["periodo"] == turno_sel]
     if base_plot.empty:
         st.info("Sem dados para o turno selecionado.")
         st.stop()
 
-    # --- DIÁRIO PONDERADO (ofertadas do dia ÷ horas do dia, ambas no absoluto) ---
-    base_plot["data"] = pd.to_datetime(base_plot["data"])
-    serie = (
-        base_plot
-          .assign(dia_num=lambda d: d["data"].dt.day)
-          .groupby("dia_num", as_index=False)
-          .agg(ofertadas=("corridas_ofertadas", "sum"),
-               horas=("supply_hours", "sum"))
-    )
-    serie["utr_media"] = serie.apply(
-        lambda r: (r["ofertadas"] / r["horas"]) if r["horas"] > 0 else 0.0,
-        axis=1
-    )
-    serie = serie[["dia_num", "utr_media"]].sort_values("dia_num")
-
-    y_max = (serie["utr_media"].max() or 0) * 1.25
+    # Série diária conforme método
+    serie = _serie_diaria_utr(base_plot, metodo)
+    y_max = float(serie["utr_val"].max()) * 1.25 if not serie.empty else 1.0
 
     fig = px.bar(
         serie,
         x="dia_num",
-        y="utr_media",
-        text="utr_media",
-        title=f"UTR por dia – {mes_sel:02d}/{ano_sel} • {('Todos os turnos' if turno_sel=='Todos os turnos' else turno_sel)}",
-        labels={"dia_num": "Dia do mês", "utr_media": "UTR (ofertadas/hora)"},
+        y="utr_val",
+        text="utr_val",
+        title=f"UTR por dia – {mes_sel:02d}/{ano_sel} • {('Todos os turnos' if turno_sel=='Todos os turnos' else turno_sel)} • {metodo}",
+        labels={"dia_num": "Dia do mês", "utr_val": "UTR (ofertadas/hora)"},
         template="plotly_dark",
         color_discrete_sequence=["#00BFFF"],
     )
@@ -633,12 +675,17 @@ if modo == "UTR":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # ✅ MÉTRICA DO MÊS PONDERADA (absoluto) COERENTE COM A TELA INICIAL
-    ofertadas_totais = base_plot["corridas_ofertadas"].sum()
-    horas_totais     = base_plot["supply_hours"].sum()
-    utr_mes          = (ofertadas_totais / horas_totais) if horas_totais > 0 else 0.0
-    st.metric("Média UTR no mês (ponderada)", f"{utr_mes:.2f}")
+    # ✅ Métrica do mês conforme método
+    if metodo == "Ponderada (global)":
+        ofertadas_totais = base_plot["corridas_ofertadas"].sum()
+        horas_totais     = base_plot["supply_hours"].sum()
+        utr_mes          = (ofertadas_totais / horas_totais) if horas_totais > 0 else 0.0
+    else:
+        utr_mes = _utr_media_das_medias(base_plot)
 
+    st.metric(f"Média UTR no mês ({metodo.lower()})", f"{utr_mes:.2f}")
+
+    # Export sempre no detalhado (sem filtrar turno)
     st.caption("📄 O botão abaixo baixa o **CSV GERAL** (sem filtro de turno).")
     cols_csv = ["data","pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
     base_csv = base_full.copy()
@@ -803,14 +850,18 @@ if modo == "Início":
     acc_pct = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
     rej_pct = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
 
-    # ✅ UTR do mês (ofertadas por hora, absoluto) — cacheada
+    # ✅ UTR do mês (ponderada) — cacheada
     utr_mes = round(_utr_mensal_cached(df_key, mes_atual, ano_atual, None), 2)
+
+    # ✅ UTR do mês — média das médias (não ponderada)
+    base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
+    utr_medias = round(_utr_media_das_medias(base_home), 2)
 
     st.subheader(f"📦 Resumo do mês atual ({mes_atual:02d}/{ano_atual})")
     m1, m2, m3, m4 = st.columns(4)
     with m1:
         st.metric("Corridas ofertadas (UTR)", f"{ofertadas:,}".replace(",", "."))
-        st.caption(f"UTR (ponderada): **{utr_mes:.2f}**")
+        st.caption(f"UTR ponderada: **{utr_mes:.2f}**  •  média das médias: **{utr_medias:.2f}**")
     with m2:
         st.metric("Corridas aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%")
     with m3:
@@ -819,6 +870,3 @@ if modo == "Início":
         st.metric("Entregadores ativos", f"{entreg_uniq}")
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-
-
