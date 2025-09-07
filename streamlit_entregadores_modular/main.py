@@ -32,7 +32,7 @@ def _hms_from_hours(h):
         return "00:00:00"
 
 
-# ========= NOVOS HELPERS P/ UTR =========
+# ========= HELPERS P/ UTR =========
 
 def _utr_media_das_medias(rows: pd.DataFrame) -> float:
     """
@@ -77,6 +77,43 @@ def _serie_diaria_utr(base_plot: pd.DataFrame, metodo: str) -> pd.DataFrame:
         lambda r: (r["ofertadas"] / r["horas"]) if r["horas"] > 0 else 0.0, axis=1
     )
     return agg[["dia_num", "utr_val"]].sort_values("dia_num")
+
+
+def _utr_mensal_media_das_medias(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calcula, pra CADA mês, a 'média das médias' de UTR.
+    1) Agrupa no nível (pessoa, periodo, data) somando ofertadas e segundos.
+    2) Calcula UTR linha-a-linha (ofertadas/horas).
+    3) Tira a média ARITMÉTICA por mês (mes_ano).
+    Retorna: ['mes_ano','utr_mmm']
+    """
+    if df.empty:
+        return pd.DataFrame(columns=["mes_ano", "utr_mmm"])
+
+    dados = df.copy()
+    if "periodo" not in dados.columns:
+        dados = dados.assign(periodo="(sem turno)")
+
+    g = (
+        dados
+        .groupby(["pessoa_entregadora", "periodo", "data"], dropna=False)
+        .agg(
+            ofertadas=("numero_de_corridas_ofertadas", "sum"),
+            segundos=("segundos_abs", "sum")
+        )
+        .reset_index()
+    )
+    g["horas"] = g["segundos"] / 3600.0
+    g = g[g["horas"] > 0]
+    if g.empty:
+        return pd.DataFrame(columns=["mes_ano", "utr_mmm"])
+
+    g["UTR"] = g["ofertadas"] / g["horas"]
+    g["data"] = pd.to_datetime(g["data"], errors="coerce")
+    g["mes_ano"] = g["data"].dt.to_period("M").dt.to_timestamp()
+
+    out = g.groupby("mes_ano", as_index=False)["UTR"].mean().rename(columns={"UTR": "utr_mmm"})
+    return out
 
 
 # =========================================================
@@ -315,6 +352,7 @@ if modo == "Indicadores Gerais":
     ano_atual = pd.Timestamp.today().year
     df_mes_atual = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)]
 
+    # --- Horas realizadas (mantém igual)
     if tipo_grafico == "Horas realizadas":
         mensal_horas = (
             df.groupby("mes_ano", as_index=False)["segundos_abs"].sum()
@@ -377,8 +415,83 @@ if modo == "Indicadores Gerais":
             st.info("Sem dados no mês atual para plotar as horas diárias.")
         st.stop()
 
+    # --- Demais gráficos (com tratamento especial para Corridas ofertadas)
+    if tipo_grafico == "Corridas ofertadas":
+        metodo_utr = st.radio(
+            "Método do UTR (rótulo)",
+            ["Ponderada (global)", "Média das médias"],
+            horizontal=True,
+            index=0,
+            help="Ponderada = soma ofertadas ÷ soma horas por mês. Média das médias = média aritmética dos UTRs (pessoa/turno/dia) dentro do mês."
+        )
+
+        mensal = df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
+        mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
+
+        if metodo_utr == "Ponderada (global)":
+            mensal = mensal.merge(horas_mensais, on="mes_ano", how="left")
+            mensal["UTR_calc"] = mensal.apply(
+                lambda r: (float(r["numero_de_corridas_ofertadas"]) / float(r["horas"]))
+                if (pd.notna(r["horas"]) and float(r["horas"]) > 0) else 0.0,
+                axis=1
+            )
+        else:
+            utr_mmm = _utr_mensal_media_das_medias(df)  # ['mes_ano','utr_mmm']
+            mensal = mensal.merge(utr_mmm, on="mes_ano", how="left")
+            mensal["UTR_calc"] = mensal["utr_mmm"].fillna(0.0)
+
+        mensal["__label_text__"] = mensal.apply(
+            lambda r: f"{int(r['numero_de_corridas_ofertadas'])}\nUTR {float(r['UTR_calc']):.2f}",
+            axis=1
+        )
+
+        fig = px.bar(
+            mensal,
+            x="mes_rotulo",
+            y="numero_de_corridas_ofertadas",
+            text="__label_text__",
+            title=f"Corridas ofertadas por mês • {metodo_utr}",
+            labels={"numero_de_corridas_ofertadas": "Corridas", "mes_rotulo": "Mês/Ano"},
+            template="plotly_dark",
+            color_discrete_sequence=["#00BFFF"]
+        )
+        fig.update_traces(
+            texttemplate="%{text}",
+            textposition="outside",
+            textfont=dict(size=16, color="white"),
+            marker_line_color="rgba(255,255,255,0.25)",
+            marker_line_width=0.5,
+        )
+        fig.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="white"), title_font=dict(size=22),
+            xaxis=dict(showgrid=False),
+            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
+            bargap=0.25, margin=dict(t=80, r=20, b=60, l=60), showlegend=False,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # diário (quantidade de ofertadas no mês atual – mantém igual)
+        por_dia = (
+            df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
+                        .groupby("dia", as_index=False)["numero_de_corridas_ofertadas"].sum()
+                        .sort_values("dia")
+        )
+        fig_dia = px.line(
+            por_dia, x="dia", y="numero_de_corridas_ofertadas",
+            title="📈 Corridas ofertadas por dia (mês atual)",
+            labels={"dia": "Dia", "numero_de_corridas_ofertadas": "Corridas"},
+            template="plotly_dark"
+        )
+        fig_dia.update_traces(line_shape="spline", mode="lines+markers")
+        total_mes = int(por_dia["numero_de_corridas_ofertadas"].sum())
+        st.metric("🚗 Corridas ofertadas no mês", total_mes)
+        st.plotly_chart(fig_dia, use_container_width=True)
+
+        st.stop()
+
+    # --- Genérico para aceitas / rejeitadas / completadas (com % no rótulo)
     coluna_map = {
-        "Corridas ofertadas": ("numero_de_corridas_ofertadas", "Corridas ofertadas por mês", "Corridas"),
         "Corridas aceitas": ("numero_de_corridas_aceitas", "Corridas aceitas por mês", "Corridas Aceitas"),
         "Corridas rejeitadas": ("numero_de_corridas_rejeitadas", "Corridas rejeitadas por mês", "Corridas Rejeitadas"),
         "Corridas completadas": ("numero_de_corridas_completadas", "Corridas completadas por mês", "Corridas Completadas"),
@@ -388,42 +501,26 @@ if modo == "Indicadores Gerais":
         st.stop()
 
     col, titulo, label = coluna_map[tipo_grafico]
-
     mensal = df.groupby("mes_ano", as_index=False)[col].sum()
     mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
 
-    if tipo_grafico in ["Corridas aceitas", "Corridas rejeitadas", "Corridas completadas"]:
-        mensal_ofert = (
-            df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
-              .rename(columns={"numero_de_corridas_ofertadas": "ofertadas_total"})
-        )
-        mensal = mensal.merge(mensal_ofert, on="mes_ano", how="left")
+    mensal_ofert = (
+        df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
+          .rename(columns={"numero_de_corridas_ofertadas": "ofertadas_total"})
+    )
+    mensal = mensal.merge(mensal_ofert, on="mes_ano", how="left")
 
-        def _pct(v, base):
-            try:
-                v = float(v); base = float(base)
-                return f"{(v/base*100):.1f}%" if base > 0 else "0.0%"
-            except Exception:
-                return "0.0%"
+    def _pct(v, base):
+        try:
+            v = float(v); base = float(base)
+            return f"{(v/base*100):.1f}%" if base > 0 else "0.0%"
+        except Exception:
+            return "0.0%"
 
-        mensal["__label_text__"] = mensal.apply(
-            lambda r: f"{int(r[col])} ({_pct(r[col], r.get('ofertadas_total', 0))})",
-            axis=1
-        )
-
-    elif tipo_grafico == "Corridas ofertadas":
-        # Reaproveita horas_mensais (absoluto) pré-calculado
-        mensal = mensal.merge(horas_mensais, on="mes_ano", how="left")
-        mensal["UTR_medio"] = mensal.apply(
-            lambda r: (float(r[col]) / float(r["horas"])) if (pd.notna(r["horas"]) and r["horas"] > 0) else 0.0,
-            axis=1
-        )
-        mensal["__label_text__"] = mensal.apply(
-            lambda r: f"{int(r[col])}\nUTR {float(r['UTR_medio']):.2f}",
-            axis=1
-        )
-    else:
-        mensal["__label_text__"] = mensal[col].fillna(0).astype(int).astype(str)
+    mensal["__label_text__"] = mensal.apply(
+        lambda r: f"{int(r[col])} ({_pct(r[col], r.get('ofertadas_total', 0))})",
+        axis=1
+    )
 
     fig = px.bar(
         mensal, x="mes_rotulo", y=col, text="__label_text__", title=titulo,
@@ -445,10 +542,7 @@ if modo == "Indicadores Gerais":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    mes_atual = pd.Timestamp.today().month
-    ano_atual = pd.Timestamp.today().year
-    df_mes_atual = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)]
-
+    # diário do mês atual (quantidade)
     por_dia = (
         df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
                     .groupby("dia", as_index=False)[col].sum()
