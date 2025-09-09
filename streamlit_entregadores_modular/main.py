@@ -920,7 +920,7 @@ if modo == "Início":
             st.subheader("Dados mais recentes")
             st.metric(label="", value=ultimo_dia_txt)
         with c2:
-            st.subheader("Atualização de base)
+            st.subheader("Atualização de base")
             if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_drive"):
                 # Marca flag e rerenderiza. O download acontece no topo (get_df_once).
                 st.session_state.force_refresh = True
