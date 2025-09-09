@@ -27,79 +27,46 @@ st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 
 st.markdown("""
 <style>
-  :root{
-    --bg:#080c12; --panel:#0e141c; --panel2:#0b1017;
-    --text:#d6e3f0; --muted:#8aa0b5;
-    --brand:#2563eb; --brand2:#3b82f6; /* azul */
-    --border:rgba(255,255,255,.09);
-    --card-r:12px; --shadow:0 8px 28px rgba(0,0,0,.35);
-  }
+  /* ==== evitar cortes em métricas, datas e badges ==== */
 
-  html, body, .stApp{ background:var(--bg); color:var(--text); }
-
-  /* Sidebar */
-  section[data-testid="stSidebar"]{
-    background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
-    border-right:1px solid var(--border);
-  }
-
-  /* Botões */
-  .stButton>button{
-    border-radius:12px; font-weight:700; border:none; padding:.6rem 1rem;
-    background:linear-gradient(180deg,var(--brand),var(--brand2)); color:#fff; box-shadow:var(--shadow);
-  }
-  .stButton>button:hover{ filter:brightness(1.06); }
-
-  /* Cards */
-  .card{
-    background:linear-gradient(180deg, rgba(37,99,235,.05), rgba(37,99,235,.02));
-    border:1px solid var(--border); border-radius:var(--card-r); padding:16px; box-shadow:var(--shadow);
-  }
-
-  /* ===== Fontes em azul ===== */
-  h1, h2, h3, label, .stMarkdown, .st-emotion-cache-10trblm {
-    color: var(--brand2) !important;
-  }
-
-  /* Inputs dark */
-  .stSelectbox, .stMultiSelect, .stTextInput, .stDateInput{ background:var(--panel); color:var(--text) }
-  .stTextInput input, .stSelectbox div[data-baseweb="select"] > div,
-  .stDateInput input {
-    border:1px solid var(--border) !important;
-  }
-  .stTextInput input:focus, .stDateInput input:focus,
-  .stSelectbox div[data-baseweb="select"]:focus-within {
-    outline: 2px solid rgba(59,130,246,.45) !important;
-    box-shadow: 0 0 0 3px rgba(59,130,246,.18) !important;
-    border-color: rgba(59,130,246,.55) !important;
-  }
-
-  /* Métricas: valor azul, label claro */
-  div[data-testid="stMetric"]{
-    background:var(--panel); border:1px solid var(--border);
-    border-radius:14px; padding:14px 16px;
-  }
+  /* 1) Valor das métricas: permite quebrar linha e remove ellipsis */
   div[data-testid="stMetric"] [data-testid="stMetricValue"]{
-    color:var(--brand2) !important; font-weight:800;
-  }
-  div[data-testid="stMetric"] [data-testid="stMetricLabel"]{
-    color:var(--muted) !important;
-  }
-  [data-testid="stMetricDelta"], [data-testid="stMetricDelta"] svg {
-    color: var(--brand2) !important; fill: var(--brand2) !important;
+    white-space: normal !important;   /* permite 2 linhas se precisar */
+    overflow: visible !important;
+    text-overflow: clip !important;
+    line-height: 1.15 !important;
+    font-size: clamp(18px, 2.4vw, 36px) !important; /* responsivo p/ não estourar */
   }
 
-  /* Badge boas-vindas em verde */
-  .sidebar-welcome{
-    background:rgba(16,185,129,.18); /* verde suave */
-    border:1px solid rgba(16,185,129,.35);
-    color:#a7f3d0; /* texto verde-claro */
-    padding:.8rem 1rem;
-    border-radius:12px;
-    font-weight:600;
+  /* 2) Container da métrica: deixa espaço e evita clip interno */
+  div[data-testid="stMetric"]{
+    min-width: 260px;                 /* mais espaço p/ datas grandes */
+    overflow: visible !important;
+  }
+  div[data-testid="stMetric"] > div{
+    overflow: visible !important;
+  }
+
+  /* 3) “pílula” de delta (55.3%, 44.7%): evita corte */
+  [data-testid="stMetricDelta"]{
+    display: inline-flex !important;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    overflow: visible !important;
+    white-space: nowrap !important;
+  }
+
+  /* 4) Botões e markdown sem ellipsis à toa */
+  .stButton>button,
+  [data-testid="stMarkdownContainer"] p{
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
   }
 </style>
 """, unsafe_allow_html=True)
+
 
 
 
