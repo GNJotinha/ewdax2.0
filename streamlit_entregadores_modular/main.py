@@ -192,9 +192,6 @@ if not st.session_state.logado:
 # Sidebar
 # ===============================
 with st.sidebar:
-    st.markdown("### 🎨 Tema")
-    st.caption("Finance Blue (Dark)")
-
     usuario_atual = st.session_state.get("usuario", "")
     if usuario_atual:
         st.markdown(f"<div class='sidebar-welcome'>Bem-vindo, {usuario_atual}!</div>", unsafe_allow_html=True)
