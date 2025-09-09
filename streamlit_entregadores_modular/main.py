@@ -27,55 +27,80 @@ st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 
 st.markdown("""
 <style>
-  /* ===== FINETUNING Finance Blue ===== */
+  :root{
+    --bg:#080c12; --panel:#0e141c; --panel2:#0b1017;
+    --text:#d6e3f0; --muted:#8aa0b5;
+    --brand:#2563eb; --brand2:#3b82f6; /* azul */
+    --border:rgba(255,255,255,.09);
+    --card-r:12px; --shadow:0 8px 28px rgba(0,0,0,.35);
+  }
 
-  /* Cabeçalhos e subtítulos bem azuis */
-  h1,h2,h3{ color:var(--brand2) !important; }
-  [data-testid="stHeader"] h1 { color:var(--brand2) !important; }
+  html, body, .stApp{ background:var(--bg); color:var(--text); }
 
-  /* Campos/inputs – foco e labels */
-  label, .st-emotion-cache-1wbqy5l, .st-emotion-cache-16idsys { color:var(--text) !important; }
+  /* Sidebar */
+  section[data-testid="stSidebar"]{
+    background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+    border-right:1px solid var(--border);
+  }
+
+  /* Botões */
+  .stButton>button{
+    border-radius:12px; font-weight:700; border:none; padding:.6rem 1rem;
+    background:linear-gradient(180deg,var(--brand),var(--brand2)); color:#fff; box-shadow:var(--shadow);
+  }
+  .stButton>button:hover{ filter:brightness(1.06); }
+
+  /* Cards */
+  .card{
+    background:linear-gradient(180deg, rgba(37,99,235,.05), rgba(37,99,235,.02));
+    border:1px solid var(--border); border-radius:var(--card-r); padding:16px; box-shadow:var(--shadow);
+  }
+
+  /* ===== Fontes em azul ===== */
+  h1, h2, h3, label, .stMarkdown, .st-emotion-cache-10trblm {
+    color: var(--brand2) !important;
+  }
+
+  /* Inputs dark */
+  .stSelectbox, .stMultiSelect, .stTextInput, .stDateInput{ background:var(--panel); color:var(--text) }
   .stTextInput input, .stSelectbox div[data-baseweb="select"] > div,
   .stDateInput input {
     border:1px solid var(--border) !important;
   }
   .stTextInput input:focus, .stDateInput input:focus,
   .stSelectbox div[data-baseweb="select"]:focus-within {
-    outline: 2px solid rgba(59,130,246,.45) !important; /* azul */
+    outline: 2px solid rgba(59,130,246,.45) !important;
     box-shadow: 0 0 0 3px rgba(59,130,246,.18) !important;
     border-color: rgba(59,130,246,.55) !important;
   }
 
-  /* Expander (menus da sidebar) mais integrados ao tema */
-  details[data-testid="stExpander"] > summary {
-    color: var(--text);
+  /* Métricas: valor azul, label claro */
+  div[data-testid="stMetric"]{
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:14px; padding:14px 16px;
   }
-  details[data-testid="stExpander"]:hover > summary {
-    color: var(--brand2);
+  div[data-testid="stMetric"] [data-testid="stMetricValue"]{
+    color:var(--brand2) !important; font-weight:800;
   }
-  details[data-testid="stExpander"] {
-    border: 1px solid var(--border);
-    border-radius: 10px;
+  div[data-testid="stMetric"] [data-testid="stMetricLabel"]{
+    color:var(--muted) !important;
   }
-
-  /* Métricas: setinha/percentual sem verde – usa azul */
-  [data-testid="stMetricDelta"] { color: var(--brand2) !important; }
-  [data-testid="stMetricDelta"] svg { fill: var(--brand2) !important; }
-
-  /* Tabs (se usar) e badges */
-  .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
-    border-bottom: 2px solid var(--brand2);
-    color: var(--brand2);
+  [data-testid="stMetricDelta"], [data-testid="stMetricDelta"] svg {
+    color: var(--brand2) !important; fill: var(--brand2) !important;
   }
 
-  /* Botão primário em toda a app (inclui “Atualizar dados”) já está azul,
-     mas reforçamos foco/active pra ficar “produto”. */
-  .stButton>button:focus, .stButton>button:active{
-    outline: 2px solid rgba(59,130,246,.45) !important;
-    box-shadow: 0 0 0 3px rgba(59,130,246,.18) !important;
+  /* Badge boas-vindas em verde */
+  .sidebar-welcome{
+    background:rgba(16,185,129,.18); /* verde suave */
+    border:1px solid rgba(16,185,129,.35);
+    color:#a7f3d0; /* texto verde-claro */
+    padding:.8rem 1rem;
+    border-radius:12px;
+    font-weight:600;
   }
 </style>
 """, unsafe_allow_html=True)
+
 
 
 PLOTLY_TEMPLATE = "plotly_dark"  # fixo p/ combinar com o tema
