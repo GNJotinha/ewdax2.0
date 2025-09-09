@@ -50,8 +50,8 @@ def _utr_media_das_medias(rows: pd.DataFrame) -> float:
 def _serie_diaria_utr(base_plot: pd.DataFrame, metodo: str) -> pd.DataFrame:
     """
     Gera a série diária:
-      - Ponderada (global): ofertadas_dia_total / horas_dia_total
-      - Média das médias: média aritmética dos UTRs dos entregadores no dia
+      - Tempo absoluto (ponderada): ofertadas_dia_total / horas_dia_total
+      - Médias (média das médias): média aritmética dos UTRs dos entregadores no dia
     Retorna ['dia_num','utr_val'].
     """
     if base_plot.empty:
@@ -69,7 +69,7 @@ def _serie_diaria_utr(base_plot: pd.DataFrame, metodo: str) -> pd.DataFrame:
         out = df_d.groupby("dia_num", as_index=False)["utr_linha"].mean()
         return out.rename(columns={"utr_linha": "utr_val"}).sort_values("dia_num")
 
-    # Ponderada (global) / Tempo absoluto
+    # Tempo absoluto (ponderada / global)
     agg = (df_d.groupby("dia_num", as_index=False)
                  .agg(ofertadas=("corridas_ofertadas", "sum"),
                       horas=("supply_hours", "sum")))
@@ -135,43 +135,43 @@ def get_df_once():
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 
 # -------------------------------------------------------------------
-# THEME ENGINE (6 temas profissionais, incluindo Finance Terminal Azul)
+# THEME ENGINE (6 temas, incluindo Finance Terminal (Blue)) — usando .format
 # -------------------------------------------------------------------
 BASE_CSS = """
 <style>
-  :root{
-    --bg: %(bg)s; --panel: %(panel)s; --panel2: %(panel2)s;
-    --text: %(text)s; --muted: %(muted)s; --brand: %(brand)s; --brand2: %(brand2)s;
-    --border: %(border)s; --card-r: %(card_r)s; --shadow: %(shadow)s;
-    --heading: %(heading)s; --cardbg: %(card_bg)s;
-  }
-  html, body, .stApp { background: var(--bg); color: var(--text); }
-  section[data-testid="stSidebar"]{
+  :root{{
+    --bg: {bg}; --panel: {panel}; --panel2: {panel2};
+    --text: {text}; --muted: {muted}; --brand: {brand}; --brand2: {brand2};
+    --border: {border}; --card-r: {card_r}; --shadow: {shadow};
+    --heading: {heading}; --cardbg: {card_bg};
+  }}
+  html, body, .stApp {{ background: var(--bg); color: var(--text); }}
+  section[data-testid="stSidebar"]{{
     background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
     border-right: 1px solid var(--border);
-  }
-  section[data-testid="stSidebar"] .stButton>button{
+  }}
+  section[data-testid="stSidebar"] .stButton>button{{
     border-radius: 12px; background: transparent; color: var(--text);
     border: 1px solid var(--border); padding: .5rem .75rem;
-  }
-  section[data-testid="stSidebar"] .stButton>button:hover{
+  }}
+  section[data-testid="stSidebar"] .stButton>button:hover{{
     border-color: var(--brand2); box-shadow: inset 0 0 0 1px var(--brand2);
-  }
-  .stButton>button{
+  }}
+  .stButton>button{{
     border-radius: 12px; font-weight: 700; border: none; padding: .6rem 1rem;
     background: linear-gradient(180deg, var(--brand), var(--brand2)); color: #fff; box-shadow: var(--shadow);
-  }
-  .stButton>button:hover{ filter: brightness(1.05); }
-  div[data-testid="stMetric"]{
+  }}
+  .stButton>button:hover{{ filter: brightness(1.05); }}
+  div[data-testid="stMetric"]{{
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 14px; padding: 14px 16px;
-  }
-  .card{
+  }}
+  .card{{
     background: var(--cardbg); border: 1px solid var(--border);
     border-radius: var(--card-r); padding: 16px; box-shadow: var(--shadow);
-  }
-  h1,h2,h3{ color: var(--heading); letter-spacing:.2px }
-  .stSelectbox, .stMultiSelect, .stTextInput, .stDateInput{ background: var(--panel); color: var(--text) }
+  }}
+  h1,h2,h3{{ color: var(--heading); letter-spacing:.2px }}
+  .stSelectbox, .stMultiSelect, .stTextInput, .stDateInput{{ background: var(--panel); color: var(--text) }}
 </style>
 """
 
@@ -218,12 +218,12 @@ THEMES = {
             card_bg="#ffffff", heading="#0f172a"
         )
     },
-    # 5) Finance Terminal (AZUL) — substitui o verde por azul
+    # 5) Finance Terminal (Blue) — azul no lugar do verde
     "Finance Terminal (Blue)": {
         "plotly": "plotly_dark",
         "tokens": dict(
             bg="#080c12", panel="#0e141c", panel2="#0b1017",
-            text="#d6e3f0", muted="#8aa0b5", brand="#2563eb", brand2="#3b82f6",  # azul no lugar do verde
+            text="#d6e3f0", muted="#8aa0b5", brand="#2563eb", brand2="#3b82f6",
             border="rgba(255,255,255,.09)", card_r="12px", shadow="0 8px 28px rgba(0,0,0,.35)",
             card_bg="linear-gradient(180deg, rgba(37,99,235,.05), rgba(37,99,235,.02))",
             heading="#9fb7ff"
@@ -243,7 +243,8 @@ THEMES = {
 
 def apply_theme(name: str):
     t = THEMES.get(name, THEMES["Executive Slate (Dark)"])
-    st.markdown(BASE_CSS % t["tokens"], unsafe_allow_html=True)
+    css = BASE_CSS.format(**t["tokens"])
+    st.markdown(css, unsafe_allow_html=True)
     st.session_state._plotly_template = t["plotly"]
 
 if "theme_name" not in st.session_state:
