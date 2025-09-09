@@ -61,7 +61,7 @@ def _serie_diaria_utr(base_plot: pd.DataFrame, metodo: str) -> pd.DataFrame:
     df_d["data"] = pd.to_datetime(df_d["data"])
     df_d["dia_num"] = df_d["data"].dt.day
 
-    if metodo == "Média das médias":
+    if metodo == "Médias" or metodo == "Média das médias":
         df_d = df_d[df_d["supply_hours"] > 0].copy()
         if df_d.empty:
             return pd.DataFrame(columns=["dia_num", "utr_val"])
@@ -69,7 +69,7 @@ def _serie_diaria_utr(base_plot: pd.DataFrame, metodo: str) -> pd.DataFrame:
         out = df_d.groupby("dia_num", as_index=False)["utr_linha"].mean()
         return out.rename(columns={"utr_linha": "utr_val"}).sort_values("dia_num")
 
-    # Ponderada (global)
+    # Ponderada (global) / Tempo absoluto
     agg = (df_d.groupby("dia_num", as_index=False)
                  .agg(ofertadas=("corridas_ofertadas", "sum"),
                       horas=("supply_hours", "sum")))
@@ -135,31 +135,130 @@ def get_df_once():
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 
 # -------------------------------------------------------------------
-# Estilo
+# THEME ENGINE (6 temas profissionais, incluindo Finance Terminal Azul)
 # -------------------------------------------------------------------
-st.markdown(
-    """
-    <style>
-        body { background-color: #0e1117; color: #c9d1d9; }
-        .stButton>button {
-            background-color: #1f6feb;
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-weight: bold;
-        }
-        .stButton>button:hover { background-color: #388bfd; }
-        .stSidebar { background-color: #161b22; }
-        h1, h2, h3 { color: #58a6ff; }
-        .stSelectbox, .stMultiSelect, .stTextInput {
-            background-color: #21262d;
-            color: #c9d1d9;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+BASE_CSS = """
+<style>
+  :root{
+    --bg: %(bg)s; --panel: %(panel)s; --panel2: %(panel2)s;
+    --text: %(text)s; --muted: %(muted)s; --brand: %(brand)s; --brand2: %(brand2)s;
+    --border: %(border)s; --card-r: %(card_r)s; --shadow: %(shadow)s;
+    --heading: %(heading)s; --cardbg: %(card_bg)s;
+  }
+  html, body, .stApp { background: var(--bg); color: var(--text); }
+  section[data-testid="stSidebar"]{
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
+    border-right: 1px solid var(--border);
+  }
+  section[data-testid="stSidebar"] .stButton>button{
+    border-radius: 12px; background: transparent; color: var(--text);
+    border: 1px solid var(--border); padding: .5rem .75rem;
+  }
+  section[data-testid="stSidebar"] .stButton>button:hover{
+    border-color: var(--brand2); box-shadow: inset 0 0 0 1px var(--brand2);
+  }
+  .stButton>button{
+    border-radius: 12px; font-weight: 700; border: none; padding: .6rem 1rem;
+    background: linear-gradient(180deg, var(--brand), var(--brand2)); color: #fff; box-shadow: var(--shadow);
+  }
+  .stButton>button:hover{ filter: brightness(1.05); }
+  div[data-testid="stMetric"]{
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px 16px;
+  }
+  .card{
+    background: var(--cardbg); border: 1px solid var(--border);
+    border-radius: var(--card-r); padding: 16px; box-shadow: var(--shadow);
+  }
+  h1,h2,h3{ color: var(--heading); letter-spacing:.2px }
+  .stSelectbox, .stMultiSelect, .stTextInput, .stDateInput{ background: var(--panel); color: var(--text) }
+</style>
+"""
+
+THEMES = {
+    # 1) Executive Slate (Dark)
+    "Executive Slate (Dark)": {
+        "plotly": "plotly_dark",
+        "tokens": dict(
+            bg="#0c1117", panel="#121826", panel2="#0f1522",
+            text="#d7e1f8", muted="#9fb0cc", brand="#2563eb", brand2="#3b82f6",
+            border="rgba(255,255,255,.08)", card_r="16px", shadow="0 6px 24px rgba(0,0,0,.25)",
+            card_bg="linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01))",
+            heading="#a5b9ff"
+        )
+    },
+    # 2) Executive Slate (Light)
+    "Executive Slate (Light)": {
+        "plotly": "plotly_white",
+        "tokens": dict(
+            bg="#f6f8fb", panel="#ffffff", panel2="#f3f6fb",
+            text="#0f172a", muted="#475569", brand="#2563eb", brand2="#3b82f6",
+            border="rgba(0,0,0,.08)", card_r="14px", shadow="0 4px 18px rgba(0,0,0,.10)",
+            card_bg="#ffffff", heading="#1e293b"
+        )
+    },
+    # 3) Navy Enterprise
+    "Navy Enterprise": {
+        "plotly": "plotly_dark",
+        "tokens": dict(
+            bg="#0b1020", panel="#121a2c", panel2="#0f172a",
+            text="#dbe7ff", muted="#9fb4d9", brand="#1f6feb", brand2="#57a6ff",
+            border="rgba(255,255,255,.07)", card_r="16px", shadow="0 6px 24px rgba(0,0,0,.28)",
+            card_bg="linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02))",
+            heading="#9cc1ff"
+        )
+    },
+    # 4) Quartz Neutral (Light)
+    "Quartz Neutral (Light)": {
+        "plotly": "plotly_white",
+        "tokens": dict(
+            bg="#fafbfc", panel="#ffffff", panel2="#f5f7fa",
+            text="#111827", muted="#6b7280", brand="#334155", brand2="#475569",
+            border="rgba(0,0,0,.07)", card_r="12px", shadow="0 3px 12px rgba(0,0,0,.08)",
+            card_bg="#ffffff", heading="#0f172a"
+        )
+    },
+    # 5) Finance Terminal (AZUL) — substitui o verde por azul
+    "Finance Terminal (Blue)": {
+        "plotly": "plotly_dark",
+        "tokens": dict(
+            bg="#080c12", panel="#0e141c", panel2="#0b1017",
+            text="#d6e3f0", muted="#8aa0b5", brand="#2563eb", brand2="#3b82f6",  # azul no lugar do verde
+            border="rgba(255,255,255,.09)", card_r="12px", shadow="0 8px 28px rgba(0,0,0,.35)",
+            card_bg="linear-gradient(180deg, rgba(37,99,235,.05), rgba(37,99,235,.02))",
+            heading="#9fb7ff"
+        )
+    },
+    # 6) MedTech Clean
+    "MedTech Clean": {
+        "plotly": "plotly_white",
+        "tokens": dict(
+            bg="#f7fbfd", panel="#ffffff", panel2="#f2f7fb",
+            text="#0b1320", muted="#516277", brand="#0ea5e9", brand2="#22d3ee",
+            border="rgba(0,0,0,.08)", card_r="14px", shadow="0 4px 18px rgba(0,0,0,.10)",
+            card_bg="#ffffff", heading="#0b1320"
+        )
+    },
+}
+
+def apply_theme(name: str):
+    t = THEMES.get(name, THEMES["Executive Slate (Dark)"])
+    st.markdown(BASE_CSS % t["tokens"], unsafe_allow_html=True)
+    st.session_state._plotly_template = t["plotly"]
+
+if "theme_name" not in st.session_state:
+    st.session_state.theme_name = "Executive Slate (Dark)"
+
+with st.sidebar:
+    st.markdown("### 🎨 Tema")
+    st.session_state.theme_name = st.selectbox(
+        "Visual",
+        list(THEMES.keys()),
+        index=list(THEMES.keys()).index(st.session_state.theme_name),
+        help="Escolha o tema do painel"
+    )
+
+apply_theme(st.session_state.theme_name)
 
 # -------------------------------------------------------------------
 # Autenticação
@@ -210,15 +309,15 @@ if "open_cat" not in st.session_state:
     st.session_state.open_cat = None
 
 with st.sidebar:
-    st.markdown("Navegação")
+    st.markdown("### 🧭 Navegação")
 
-    if st.button("Início", use_container_width=True):
+    if st.button("🏠 Início", use_container_width=True):
         st.session_state.modo = "Início"
         st.session_state.open_cat = None
         st.rerun()
 
     for cat, opts in MENU.items():
-        expanded = (st.session_state.open_cat == cat)
+        expanded = (st.session_state.open_cat == cat) or (st.session_state.modo in opts)
         with st.expander(cat, expanded=expanded):
             for opt in opts:
                 if st.button(opt, key=f"btn_{cat}_{opt}", use_container_width=True):
@@ -352,7 +451,7 @@ if modo == "Indicadores Gerais":
     ano_atual = pd.Timestamp.today().year
     df_mes_atual = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)]
 
-    # --- Horas realizadas (mantém igual)
+    # --- Horas realizadas
     if tipo_grafico == "Horas realizadas":
         mensal_horas = (
             df.groupby("mes_ano", as_index=False)["segundos_abs"].sum()
@@ -367,19 +466,19 @@ if modo == "Indicadores Gerais":
             text="horas",
             title="Horas realizadas por mês",
             labels={"mes_rotulo": "Mês/Ano", "horas": "Horas"},
-            template="plotly_dark",
+            template=st.session_state.get("_plotly_template", "plotly_dark"),
             color_discrete_sequence=["#00BFFF"],
         )
         fig_mensal.update_traces(
             texttemplate="<b>%{text:.1f}h</b>",
             textposition="outside",
-            textfont=dict(size=16, color="white"),
+            textfont=dict(size=16),
             marker_line_color="rgba(255,255,255,0.25)",
             marker_line_width=0.5,
         )
         fig_mensal.update_layout(
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="white"), title_font=dict(size=22),
+            title_font=dict(size=22),
             xaxis=dict(showgrid=False, tickfont=dict(size=14)),
             yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)", tickfont=dict(size=14)),
             bargap=0.25, margin=dict(t=70, r=20, b=60, l=60), showlegend=False,
@@ -397,13 +496,13 @@ if modo == "Indicadores Gerais":
                 por_dia_h, x="dia", y="horas",
                 title="📈 Horas realizadas por dia (mês atual)",
                 labels={"dia": "Dia", "horas": "Horas"},
-                template="plotly_dark",
+                template=st.session_state.get("_plotly_template", "plotly_dark"),
             )
             fig_linha.update_traces(mode="lines", line_shape="spline",
                                     hovertemplate="Dia %{x}<br>%{y:.2f}h<extra></extra>")
             fig_linha.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="white"), title_font=dict(size=22),
+                title_font=dict(size=22),
                 xaxis=dict(showgrid=False, tickmode="linear", dtick=1),
                 yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
                 margin=dict(t=60, r=20, b=60, l=60),
@@ -415,20 +514,20 @@ if modo == "Indicadores Gerais":
             st.info("Sem dados no mês atual para plotar as horas diárias.")
         st.stop()
 
-    # --- Demais gráficos (com tratamento especial para Corridas ofertadas)
+    # --- Corridas ofertadas (com UTR embutido)
     if tipo_grafico == "Corridas ofertadas":
         metodo_utr = st.radio(
             "Método",
-            ["Absoluto)", "Médias"],
+            ["Tempo absoluto", "Médias"],
             horizontal=True,
             index=0,
-            help="Tempo absoluto = soma ofertadas / soma absoluto. Médias = soma das médias de cada entregador e divide pela quantia."
+            help="Tempo absoluto = soma ofertadas / soma de horas. Médias = média aritmética dos UTRs (por entregador/dia)."
         )
 
         mensal = df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
         mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
 
-        if metodo_utr == "Ponderada (global)":
+        if metodo_utr == "Tempo absoluto":
             mensal = mensal.merge(horas_mensais, on="mes_ano", how="left")
             mensal["UTR_calc"] = mensal.apply(
                 lambda r: (float(r["numero_de_corridas_ofertadas"]) / float(r["horas"]))
@@ -452,26 +551,26 @@ if modo == "Indicadores Gerais":
             text="__label_text__",
             title=f"Corridas ofertadas por mês • {metodo_utr}",
             labels={"numero_de_corridas_ofertadas": "Corridas", "mes_rotulo": "Mês/Ano"},
-            template="plotly_dark",
+            template=st.session_state.get("_plotly_template", "plotly_dark"),
             color_discrete_sequence=["#00BFFF"]
         )
         fig.update_traces(
             texttemplate="%{text}",
             textposition="outside",
-            textfont=dict(size=16, color="white"),
+            textfont=dict(size=16),
             marker_line_color="rgba(255,255,255,0.25)",
             marker_line_width=0.5,
         )
         fig.update_layout(
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="white"), title_font=dict(size=22),
+            title_font=dict(size=22),
             xaxis=dict(showgrid=False),
             yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
             bargap=0.25, margin=dict(t=80, r=20, b=60, l=60), showlegend=False,
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # diário (quantidade de ofertadas no mês atual – mantém igual)
+        # diário (quantidade de ofertadas no mês atual)
         por_dia = (
             df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
                         .groupby("dia", as_index=False)["numero_de_corridas_ofertadas"].sum()
@@ -481,7 +580,7 @@ if modo == "Indicadores Gerais":
             por_dia, x="dia", y="numero_de_corridas_ofertadas",
             title="📈 Corridas ofertadas por dia (mês atual)",
             labels={"dia": "Dia", "numero_de_corridas_ofertadas": "Corridas"},
-            template="plotly_dark"
+            template=st.session_state.get("_plotly_template", "plotly_dark")
         )
         fig_dia.update_traces(line_shape="spline", mode="lines+markers")
         total_mes = int(por_dia["numero_de_corridas_ofertadas"].sum())
@@ -525,18 +624,19 @@ if modo == "Indicadores Gerais":
     fig = px.bar(
         mensal, x="mes_rotulo", y=col, text="__label_text__", title=titulo,
         labels={col: label, "mes_rotulo": "Mês/Ano"},
-        template="plotly_dark", color_discrete_sequence=["#00BFFF"]
+        template=st.session_state.get("_plotly_template", "plotly_dark"),
+        color_discrete_sequence=["#00BFFF"]
     )
     fig.update_traces(
         texttemplate="%{text}",
         textposition="outside",
-        textfont=dict(size=16, color="white"),
+        textfont=dict(size=16),
         marker_line_color="rgba(255,255,255,0.25)",
         marker_line_width=0.5,
     )
     fig.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="white"), title_font=dict(size=22),
+        title_font=dict(size=22),
         xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
         bargap=0.25, margin=dict(t=80, r=20, b=60, l=60), showlegend=False,
     )
@@ -552,7 +652,7 @@ if modo == "Indicadores Gerais":
         por_dia, x="dia", y=col,
         title=f"📈 {label} por dia (mês atual)",
         labels={"dia": "Dia", col: label},
-        template="plotly_dark"
+        template=st.session_state.get("_plotly_template", "plotly_dark")
     )
     fig_dia.update_traces(line_shape="spline", mode="lines+markers")
     total_mes = int(por_dia[col].sum())
@@ -718,7 +818,7 @@ if modo == "UTR":
         ["Tempo absoluto", "Médias"],
         horizontal=True,
         index=0,
-        help="Tempo absoluto = soma ofertadas / soma absoluto. Médias = soma das médias de cada entregador e divide pela quantia."        
+        help="Tempo absoluto = soma ofertadas / soma de horas. Médias = média aritmética dos UTRs (por entregador/dia)."        
     )
 
     base_plot = base_full if turno_sel == "Todos os turnos" else base_full[base_full["periodo"] == turno_sel]
@@ -737,13 +837,13 @@ if modo == "UTR":
         text="utr_val",
         title=f"UTR por dia – {mes_sel:02d}/{ano_sel} • {('Todos os turnos' if turno_sel=='Todos os turnos' else turno_sel)} • {metodo}",
         labels={"dia_num": "Dia do mês", "utr_val": "UTR (ofertadas/hora)"},
-        template="plotly_dark",
+        template=st.session_state.get("_plotly_template", "plotly_dark"),
         color_discrete_sequence=["#00BFFF"],
     )
     fig.update_traces(
         texttemplate="<b>%{text:.2f}</b>",
         textposition="outside",
-        textfont=dict(size=18, color="white"),
+        textfont=dict(size=18),
         marker_line_color="rgba(255,255,255,0.25)",
         marker_line_width=0.5,
     )
@@ -762,7 +862,6 @@ if modo == "UTR":
         uniformtext_minsize=14, uniformtext_mode="show",
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="white"),
         title_font=dict(size=22),
         showlegend=False,
         margin=dict(t=70, r=20, b=60, l=60),
@@ -770,7 +869,7 @@ if modo == "UTR":
     st.plotly_chart(fig, use_container_width=True)
 
     # ✅ Métrica do mês conforme método
-    if metodo == "Ponderada (global)":
+    if metodo == "Tempo absoluto":
         ofertadas_totais = base_plot["corridas_ofertadas"].sum()
         horas_totais     = base_plot["supply_hours"].sum()
         utr_mes          = (ofertadas_totais / horas_totais) if horas_totais > 0 else 0.0
@@ -914,19 +1013,20 @@ if modo == "Início":
         ultimo_dia_txt = "—"
 
     # Card Atualizar dados
-    with st.container():
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            st.subheader("Dados mais recentes")
-            st.metric(label="", value=ultimo_dia_txt)
-        with c2:
-            st.subheader("Atualização de base")
-            if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_drive"):
-                # Marca flag e rerenderiza. O download acontece no topo (get_df_once).
-                st.session_state.force_refresh = True
-                st.session_state.just_refreshed = True  # para feedback visual
-                st.cache_data.clear()
-                st.rerun()
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    c1, c2 = st.columns([1, 2], gap="large")
+    with c1:
+        st.subheader("Dados mais recentes")
+        st.metric(label="", value=ultimo_dia_txt)
+    with c2:
+        st.subheader("Atualização de base")
+        if st.button("🔄 Atualizar dados", use_container_width=True, key="btn_refresh_drive"):
+            # Marca flag e rerenderiza. O download acontece no topo (get_df_once).
+            st.session_state.force_refresh = True
+            st.session_state.just_refreshed = True  # para feedback visual
+            st.cache_data.clear()
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
 
@@ -950,17 +1050,19 @@ if modo == "Início":
     base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
     utr_medias = round(_utr_media_das_medias(base_home), 2)
 
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader(f"📦 Resumo do mês atual ({mes_atual:02d}/{ano_atual})")
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.metric("Ofertadas - UTR", f"{ofertadas:,}".replace(",", "."))
+        st.metric("Ofertadas • UTR", f"{ofertadas:,}".replace(",", "."))
         st.caption(f"Absoluto: **{utr_mes:.2f}**")
         st.caption(f"Médias: **{utr_medias:.2f}**")
     with m2:
         st.metric("Aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%")
     with m3:
-        st.metric("Reijeitadas", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%")
+        st.metric("Rejeitadas", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%")  # ✅ corrigido
     with m4:
         st.metric("Entregadores ativos", f"{entreg_uniq}")
+    st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
