@@ -917,12 +917,11 @@ if modo == "Início":
     with st.container():
         c1, c2 = st.columns([1, 2])
         with c1:
-            st.subheader("🗓️ Último dia com dados")
-            st.metric(label="Data mais recente", value=ultimo_dia_txt)
+            st.subheader("Dados mais recentes")
+            st.metric(label="", value=ultimo_dia_txt)
         with c2:
-            st.subheader("🔄 Atualização de base")
-            st.caption("Este botão só aparece na tela inicial.")
-            if st.button("Atualizar dados agora", use_container_width=True, key="btn_refresh_drive"):
+            st.subheader("Atualização de base)
+            if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_drive"):
                 # Marca flag e rerenderiza. O download acontece no topo (get_df_once).
                 st.session_state.force_refresh = True
                 st.session_state.just_refreshed = True  # para feedback visual
@@ -954,12 +953,12 @@ if modo == "Início":
     st.subheader(f"📦 Resumo do mês atual ({mes_atual:02d}/{ano_atual})")
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.metric("Corridas ofertadas (UTR)", f"{ofertadas:,}".replace(",", "."))
-        st.caption(f"UTR absoluto: **{utr_mes:.2f}**  •  Médias: **{utr_medias:.2f}**")
+        st.metric("Ofertadas - UTR", f"{ofertadas:,}".replace(",", "."))
+        st.caption(f"Absoluto: **{utr_mes:.2f}**  •  Médias: **{utr_medias:.2f}**")
     with m2:
-        st.metric("Corridas aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%")
+        st.metric("Aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%")
     with m3:
-        st.metric("Rejeições", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%")
+        st.metric("Reijeitadas", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%")
     with m4:
         st.metric("Entregadores ativos", f"{entreg_uniq}")
 
