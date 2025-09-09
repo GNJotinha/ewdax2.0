@@ -660,7 +660,7 @@ if modo == "Relatório Customizado":
             df_filt = df_filt[df_filt["data"].isin(dias_escolhidos)]
 
         texto = gerar_dados(entregador, None, None, df_filt)
-        st.text_area("Resultado:", value or texto ou "❌ Nenhum dado encontrado", height=400)
+        st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
 
 # -------------------------------------------------------------------
 # Categorias de Entregadores
