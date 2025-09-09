@@ -417,12 +417,13 @@ if modo == "Indicadores Gerais":
 
     # --- Demais gráficos (com tratamento especial para Corridas ofertadas)
     if tipo_grafico == "Corridas ofertadas":
+        # ✅ RÓTULOS PADRONIZADOS
         metodo_utr = st.radio(
             "Método",
-            ["Absoluto)", "Médias"],
+            ["Ponderada (global)", "Média das médias"],
             horizontal=True,
             index=0,
-            help="Tempo absoluto = soma ofertadas / soma absoluto. Médias = soma das médias de cada entregador e divide pela quantia."
+            help="Ponderada (global) = soma de ofertadas ÷ soma de horas. Média das médias = média simples dos UTRs por entregador/dia."
         )
 
         mensal = df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
@@ -713,12 +714,13 @@ if modo == "UTR":
         turnos_opts += sorted([t for t in base_full["periodo"].dropna().unique()])
     turno_sel = st.selectbox("Turno", options=turnos_opts, index=0)
 
+    # ✅ RÓTULOS PADRONIZADOS
     metodo = st.radio(
         "Método",
-        ["Tempo absoluto", "Médias"],
+        ["Ponderada (global)", "Média das médias"],
         horizontal=True,
         index=0,
-        help="Tempo absoluto = soma ofertadas / soma absoluto. Médias = soma das médias de cada entregador e divide pela quantia."        
+        help="Ponderada (global) = soma de ofertadas ÷ soma de horas. Média das médias = média simples dos UTRs por entregador/dia."
     )
 
     base_plot = base_full if turno_sel == "Todos os turnos" else base_full[base_full["periodo"] == turno_sel]
@@ -959,7 +961,7 @@ if modo == "Início":
     with m2:
         st.metric("Aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%")
     with m3:
-        st.metric("Reijeitadas", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%")
+        st.metric("Rejeitadas", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%")
     with m4:
         st.metric("Entregadores ativos", f"{entreg_uniq}")
 
