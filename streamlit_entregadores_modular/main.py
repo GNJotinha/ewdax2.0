@@ -1,4 +1,4 @@
-# main.py — Finance Blue (dark) único
+# main.py
 
 import streamlit as st
 import pandas as pd
@@ -6,6 +6,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 
 from utils import tempo_para_segundos  # fallback (se precisar)
+
 from relatorios import (
     gerar_dados,
     gerar_simplicado,
@@ -16,66 +17,11 @@ from relatorios import (
     utr_pivot_por_entregador,
     _horas_from_abs,
 )
+
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 
 
-# ===============================
-# THEME: Finance Blue (fixo)
-# ===============================
-st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
-
-st.markdown("""
-<style>
-  /* ==== evitar cortes em métricas, datas e badges ==== */
-
-  /* 1) Valor das métricas: permite quebrar linha e remove ellipsis */
-  div[data-testid="stMetric"] [data-testid="stMetricValue"]{
-    white-space: normal !important;   /* permite 2 linhas se precisar */
-    overflow: visible !important;
-    text-overflow: clip !important;
-    line-height: 1.15 !important;
-    font-size: clamp(18px, 2.4vw, 36px) !important; /* responsivo p/ não estourar */
-  }
-
-  /* 2) Container da métrica: deixa espaço e evita clip interno */
-  div[data-testid="stMetric"]{
-    min-width: 260px;                 /* mais espaço p/ datas grandes */
-    overflow: visible !important;
-  }
-  div[data-testid="stMetric"] > div{
-    overflow: visible !important;
-  }
-
-  /* 3) “pílula” de delta (55.3%, 44.7%): evita corte */
-  [data-testid="stMetricDelta"]{
-    display: inline-flex !important;
-    align-items: center;
-    padding: 2px 8px;
-    border-radius: 999px;
-    overflow: visible !important;
-    white-space: nowrap !important;
-  }
-
-  /* 4) Botões e markdown sem ellipsis à toa */
-  .stButton>button,
-  [data-testid="stMarkdownContainer"] p{
-    white-space: normal !important;
-    overflow: visible !important;
-    text-overflow: clip !important;
-  }
-</style>
-""", unsafe_allow_html=True)
-
-
-
-
-PLOTLY_TEMPLATE = "plotly_dark"  # fixo p/ combinar com o tema
-
-
-# ===============================
-# Helpers
-# ===============================
 def _hms_from_hours(h):
     try:
         total_seconds = int(round(float(h) * 3600))
@@ -86,8 +32,13 @@ def _hms_from_hours(h):
         return "00:00:00"
 
 
+# ========= HELPERS P/ UTR =========
+
 def _utr_media_das_medias(rows: pd.DataFrame) -> float:
-    """Média aritmética dos UTRs linha-a-linha (pessoa/turno/dia)."""
+    """
+    Média aritmética dos UTRs linha-a-linha (pessoa/turno/dia).
+    Não pondera por horas.
+    """
     if rows.empty:
         return 0.0
     base = rows[rows["supply_hours"] > 0].copy()
@@ -97,7 +48,12 @@ def _utr_media_das_medias(rows: pd.DataFrame) -> float:
 
 
 def _serie_diaria_utr(base_plot: pd.DataFrame, metodo: str) -> pd.DataFrame:
-    """Série diária de UTR conforme método escolhido."""
+    """
+    Gera a série diária:
+      - Ponderada (global): ofertadas_dia_total / horas_dia_total
+      - Média das médias: média aritmética dos UTRs dos entregadores no dia
+    Retorna ['dia_num','utr_val'].
+    """
     if base_plot.empty:
         return pd.DataFrame(columns=["dia_num", "utr_val"])
 
@@ -105,7 +61,7 @@ def _serie_diaria_utr(base_plot: pd.DataFrame, metodo: str) -> pd.DataFrame:
     df_d["data"] = pd.to_datetime(df_d["data"])
     df_d["dia_num"] = df_d["data"].dt.day
 
-    if metodo == "Médias":
+    if metodo == "Média das médias":
         df_d = df_d[df_d["supply_hours"] > 0].copy()
         if df_d.empty:
             return pd.DataFrame(columns=["dia_num", "utr_val"])
@@ -113,7 +69,7 @@ def _serie_diaria_utr(base_plot: pd.DataFrame, metodo: str) -> pd.DataFrame:
         out = df_d.groupby("dia_num", as_index=False)["utr_linha"].mean()
         return out.rename(columns={"utr_linha": "utr_val"}).sort_values("dia_num")
 
-    # Tempo absoluto (ponderada/global)
+    # Ponderada (global)
     agg = (df_d.groupby("dia_num", as_index=False)
                  .agg(ofertadas=("corridas_ofertadas", "sum"),
                       horas=("supply_hours", "sum")))
@@ -124,7 +80,13 @@ def _serie_diaria_utr(base_plot: pd.DataFrame, metodo: str) -> pd.DataFrame:
 
 
 def _utr_mensal_media_das_medias(df: pd.DataFrame) -> pd.DataFrame:
-    """'Média das médias' de UTR por mês."""
+    """
+    Calcula, pra CADA mês, a 'média das médias' de UTR.
+    1) Agrupa no nível (pessoa, periodo, data) somando ofertadas e segundos.
+    2) Calcula UTR linha-a-linha (ofertadas/horas).
+    3) Tira a média ARITMÉTICA por mês (mes_ano).
+    Retorna: ['mes_ano','utr_mmm']
+    """
     if df.empty:
         return pd.DataFrame(columns=["mes_ano", "utr_mmm"])
 
@@ -138,7 +100,8 @@ def _utr_mensal_media_das_medias(df: pd.DataFrame) -> pd.DataFrame:
         .agg(
             ofertadas=("numero_de_corridas_ofertadas", "sum"),
             segundos=("segundos_abs", "sum")
-        ).reset_index()
+        )
+        .reset_index()
     )
     g["horas"] = g["segundos"] / 3600.0
     g = g[g["horas"] > 0]
@@ -153,16 +116,54 @@ def _utr_mensal_media_das_medias(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+# =========================================================
+# 🔄 Carga ÚNICA do DF por render + suporte a hard refresh
+# =========================================================
 def get_df_once():
-    """Carrega dados (com hard refresh quando solicitado)."""
+    """
+    Carrega o df uma única vez por render.
+    Se o usuário clicou em 'Atualizar dados', força baixar do Drive.
+    """
     prefer = st.session_state.pop("force_refresh", False)
     ts = pd.Timestamp.now().timestamp() if prefer else None
     return carregar_dados(prefer_drive=prefer, _ts=ts)
 
 
-# ===============================
+# -------------------------------------------------------------------
+# Config da página
+# -------------------------------------------------------------------
+st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
+
+# -------------------------------------------------------------------
+# Estilo
+# -------------------------------------------------------------------
+st.markdown(
+    """
+    <style>
+        body { background-color: #0e1117; color: #c9d1d9; }
+        .stButton>button {
+            background-color: #1f6feb;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+        }
+        .stButton>button:hover { background-color: #388bfd; }
+        .stSidebar { background-color: #161b22; }
+        h1, h2, h3 { color: #58a6ff; }
+        .stSelectbox, .stMultiSelect, .stTextInput {
+            background-color: #21262d;
+            color: #c9d1d9;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# -------------------------------------------------------------------
 # Autenticação
-# ===============================
+# -------------------------------------------------------------------
 if "logado" not in st.session_state:
     st.session_state.logado = False
     st.session_state.usuario = ""
@@ -180,15 +181,11 @@ if not st.session_state.logado:
             st.error("Usuário ou senha incorretos")
     st.stop()
 
-# ===============================
-# Sidebar
-# ===============================
-with st.sidebar:
-    usuario_atual = st.session_state.get("usuario", "")
-    if usuario_atual:
-        st.markdown(f"<div class='sidebar-welcome'>Bem-vindo, {usuario_atual}!</div>", unsafe_allow_html=True)
+st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
-    st.markdown("### 🧭 Navegação")
+# -------------------------------------------------------------------
+# Menu
+# -------------------------------------------------------------------
 
 MENU = {
     "Desempenho do Entregador": [
@@ -213,13 +210,15 @@ if "open_cat" not in st.session_state:
     st.session_state.open_cat = None
 
 with st.sidebar:
-    if st.button("🏠 Início", use_container_width=True):
+    st.markdown("Navegação")
+
+    if st.button("Início", use_container_width=True):
         st.session_state.modo = "Início"
         st.session_state.open_cat = None
         st.rerun()
 
     for cat, opts in MENU.items():
-        expanded = (st.session_state.open_cat == cat) or (st.session_state.modo in opts)
+        expanded = (st.session_state.open_cat == cat)
         with st.expander(cat, expanded=expanded):
             for opt in opts:
                 if st.button(opt, key=f"btn_{cat}_{opt}", use_container_width=True):
@@ -229,16 +228,39 @@ with st.sidebar:
 
 modo = st.session_state.modo
 
-# ===============================
-# Dados
-# ===============================
+# -------------------------------------------------------------------
+# Dados (carga única por render)
+# -------------------------------------------------------------------
 df = get_df_once()
 
-# feedback pós-refresh
+@st.cache_data
+def _utr_mensal_cached(df_key, mes: int, ano: int, turno: str | None):
+    """
+    UTR mensal (ponderada no absoluto) = ofertadas_totais / horas_totais,
+    opcionalmente filtrando por turno. Cacheia por (df_key, mes, ano, turno).
+    """
+    # usa o df já carregado no topo
+    dados = df[(df["mes"] == mes) & (df["ano"] == ano)]
+    if turno and turno != "Todos os turnos" and "periodo" in dados.columns:
+        dados = dados[dados["periodo"] == turno]
+
+    if dados.empty:
+        return 0.0
+
+    ofertadas = float(dados["numero_de_corridas_ofertadas"].sum())
+    if "segundos_abs" in dados.columns:
+        horas = dados["segundos_abs"].sum() / 3600.0
+    else:
+        horas = _horas_from_abs(dados)
+
+    return (ofertadas / horas) if horas > 0 else 0.0
+
+
+# Feedback pós-refresh (opcional)
 if st.session_state.pop("just_refreshed", False):
     st.success("✅ Base atualizada a partir do Google Drive.")
 
-# fallbacks: mes_ano e segundos_abs
+# Fallbacks robustos (caso o loader não traga prontos)
 if "mes_ano" not in df.columns:
     base_dt = pd.to_datetime(df.get("data_do_periodo", df.get("data")), errors="coerce")
     df["mes_ano"] = base_dt.dt.to_period("M").dt.to_timestamp()
@@ -263,8 +285,10 @@ if "segundos_abs" not in df.columns:
     else:
         df["segundos_abs"] = 0
 
+# chave leve do dataset para cache (muda quando entram linhas novas ou última data muda)
 df_key = (df.shape, pd.to_datetime(df["data"]).max())
 
+# horas por mês pré-agregadas (reuso nos gráficos)
 horas_mensais = (
     df.groupby("mes_ano", as_index=False)["segundos_abs"]
       .sum()
@@ -274,30 +298,17 @@ horas_mensais = (
 
 entregadores = get_entregadores(df)
 
-
-@st.cache_data
-def _utr_mensal_cached(df_key, mes: int, ano: int, turno: str | None):
-    """UTR mensal ponderada (ofertadas_tot / horas_tot)."""
-    dados = df[(df["mes"] == mes) & (df["ano"] == ano)]
-    if turno and turno != "Todos os turnos" and "periodo" in dados.columns:
-        dados = dados[dados["periodo"] == turno]
-    if dados.empty:
-        return 0.0
-    ofertadas = float(dados["numero_de_corridas_ofertadas"].sum())
-    horas = (dados["segundos_abs"].sum() / 3600.0) if "segundos_abs" in dados.columns else _horas_from_abs(dados)
-    return (ofertadas / horas) if horas > 0 else 0.0
-
-
-# ===============================
-# Modos / Telas
-# ===============================
-
-# VER GERAL / SIMPLIFICADA
+# -------------------------------------------------------------------
+# Ver geral / Simplificada
+# -------------------------------------------------------------------
 if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
     with st.form("formulario"):
         entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
-        nome = st.selectbox("🔎 Selecione o entregador:", [None] + entregadores_lista,
-                            format_func=lambda x: "" if x is None else x)
+        nome = st.selectbox(
+            "🔎 Selecione o entregador:",
+            [None] + entregadores_lista,
+            format_func=lambda x: "" if x is None else x
+        )
 
         if modo == "Simplificada (WhatsApp)":
             col1, col2 = st.columns(2)
@@ -318,22 +329,30 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
                 t2 = gerar_simplicado(nome, mes2, ano2, df)
                 st.text_area("Resultado:", value="\n\n".join([t for t in [t1, t2] if t]), height=600)
 
-
-# INDICADORES GERAIS
+# -------------------------------------------------------------------
+# 📊 Indicadores Gerais (com % e UTR alinhado)
+# -------------------------------------------------------------------
 if modo == "Indicadores Gerais":
     st.subheader("🔎 Escolha o indicador que deseja visualizar:")
 
     tipo_grafico = st.radio(
         "Tipo de gráfico:",
-        ["Corridas ofertadas", "Corridas aceitas", "Corridas rejeitadas", "Corridas completadas", "Horas realizadas"],
-        index=0, horizontal=True,
+        [
+            "Corridas ofertadas",
+            "Corridas aceitas",
+            "Corridas rejeitadas",
+            "Corridas completadas",
+            "Horas realizadas",
+        ],
+        index=0,
+        horizontal=True,
     )
 
     mes_atual = pd.Timestamp.today().month
     ano_atual = pd.Timestamp.today().year
     df_mes_atual = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)]
 
-    # Horas realizadas
+    # --- Horas realizadas (mantém igual)
     if tipo_grafico == "Horas realizadas":
         mensal_horas = (
             df.groupby("mes_ano", as_index=False)["segundos_abs"].sum()
@@ -342,18 +361,26 @@ if modo == "Indicadores Gerais":
         mensal_horas["mes_rotulo"] = mensal_horas["mes_ano"].dt.strftime("%b/%y")
 
         fig_mensal = px.bar(
-            mensal_horas, x="mes_rotulo", y="horas", text="horas",
+            mensal_horas,
+            x="mes_rotulo",
+            y="horas",
+            text="horas",
             title="Horas realizadas por mês",
             labels={"mes_rotulo": "Mês/Ano", "horas": "Horas"},
-            template=PLOTLY_TEMPLATE, color_discrete_sequence=["#3b82f6"],
+            template="plotly_dark",
+            color_discrete_sequence=["#00BFFF"],
         )
         fig_mensal.update_traces(
-            texttemplate="<b>%{text:.1f}h</b>", textposition="outside", textfont=dict(size=16),
-            marker_line_color="rgba(255,255,255,0.25)", marker_line_width=0.5,
+            texttemplate="<b>%{text:.1f}h</b>",
+            textposition="outside",
+            textfont=dict(size=16, color="white"),
+            marker_line_color="rgba(255,255,255,0.25)",
+            marker_line_width=0.5,
         )
         fig_mensal.update_layout(
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            title_font=dict(size=22), xaxis=dict(showgrid=False, tickfont=dict(size=14)),
+            font=dict(color="white"), title_font=dict(size=22),
+            xaxis=dict(showgrid=False, tickfont=dict(size=14)),
             yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)", tickfont=dict(size=14)),
             bargap=0.25, margin=dict(t=70, r=20, b=60, l=60), showlegend=False,
         )
@@ -370,13 +397,13 @@ if modo == "Indicadores Gerais":
                 por_dia_h, x="dia", y="horas",
                 title="📈 Horas realizadas por dia (mês atual)",
                 labels={"dia": "Dia", "horas": "Horas"},
-                template=PLOTLY_TEMPLATE,
+                template="plotly_dark",
             )
             fig_linha.update_traces(mode="lines", line_shape="spline",
                                     hovertemplate="Dia %{x}<br>%{y:.2f}h<extra></extra>")
             fig_linha.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                title_font=dict(size=22),
+                font=dict(color="white"), title_font=dict(size=22),
                 xaxis=dict(showgrid=False, tickmode="linear", dtick=1),
                 yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
                 margin=dict(t=60, r=20, b=60, l=60),
@@ -388,17 +415,20 @@ if modo == "Indicadores Gerais":
             st.info("Sem dados no mês atual para plotar as horas diárias.")
         st.stop()
 
-    # Corridas ofertadas (com UTR embutido)
+    # --- Demais gráficos (com tratamento especial para Corridas ofertadas)
     if tipo_grafico == "Corridas ofertadas":
         metodo_utr = st.radio(
-            "Método", ["Tempo absoluto", "Médias"], horizontal=True, index=0,
-            help="Tempo absoluto = soma ofertadas / soma de horas. Médias = média aritmética dos UTRs (por entregador/dia)."
+            "Método",
+            ["Absoluto)", "Médias"],
+            horizontal=True,
+            index=0,
+            help="Tempo absoluto = soma ofertadas / soma absoluto. Médias = soma das médias de cada entregador e divide pela quantia."
         )
 
         mensal = df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
         mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
 
-        if metodo_utr == "Tempo absoluto":
+        if metodo_utr == "Ponderada (global)":
             mensal = mensal.merge(horas_mensais, on="mes_ano", how="left")
             mensal["UTR_calc"] = mensal.apply(
                 lambda r: (float(r["numero_de_corridas_ofertadas"]) / float(r["horas"]))
@@ -406,32 +436,42 @@ if modo == "Indicadores Gerais":
                 axis=1
             )
         else:
-            utr_mmm = _utr_mensal_media_das_medias(df)
+            utr_mmm = _utr_mensal_media_das_medias(df)  # ['mes_ano','utr_mmm']
             mensal = mensal.merge(utr_mmm, on="mes_ano", how="left")
             mensal["UTR_calc"] = mensal["utr_mmm"].fillna(0.0)
 
         mensal["__label_text__"] = mensal.apply(
-            lambda r: f"{int(r['numero_de_corridas_ofertadas'])}\\nUTR {float(r['UTR_calc']):.2f}", axis=1
+            lambda r: f"{int(r['numero_de_corridas_ofertadas'])}\nUTR {float(r['UTR_calc']):.2f}",
+            axis=1
         )
 
         fig = px.bar(
-            mensal, x="mes_rotulo", y="numero_de_corridas_ofertadas", text="__label_text__",
+            mensal,
+            x="mes_rotulo",
+            y="numero_de_corridas_ofertadas",
+            text="__label_text__",
             title=f"Corridas ofertadas por mês • {metodo_utr}",
             labels={"numero_de_corridas_ofertadas": "Corridas", "mes_rotulo": "Mês/Ano"},
-            template=PLOTLY_TEMPLATE, color_discrete_sequence=["#3b82f6"]
+            template="plotly_dark",
+            color_discrete_sequence=["#00BFFF"]
         )
         fig.update_traces(
-            texttemplate="%{text}", textposition="outside", textfont=dict(size=16),
-            marker_line_color="rgba(255,255,255,0.25)", marker_line_width=0.5,
+            texttemplate="%{text}",
+            textposition="outside",
+            textfont=dict(size=16, color="white"),
+            marker_line_color="rgba(255,255,255,0.25)",
+            marker_line_width=0.5,
         )
         fig.update_layout(
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            title_font=dict(size=22), xaxis=dict(showgrid=False),
+            font=dict(color="white"), title_font=dict(size=22),
+            xaxis=dict(showgrid=False),
             yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
             bargap=0.25, margin=dict(t=80, r=20, b=60, l=60), showlegend=False,
         )
         st.plotly_chart(fig, use_container_width=True)
 
+        # diário (quantidade de ofertadas no mês atual – mantém igual)
         por_dia = (
             df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
                         .groupby("dia", as_index=False)["numero_de_corridas_ofertadas"].sum()
@@ -441,79 +481,90 @@ if modo == "Indicadores Gerais":
             por_dia, x="dia", y="numero_de_corridas_ofertadas",
             title="📈 Corridas ofertadas por dia (mês atual)",
             labels={"dia": "Dia", "numero_de_corridas_ofertadas": "Corridas"},
-            template=PLOTLY_TEMPLATE
+            template="plotly_dark"
         )
         fig_dia.update_traces(line_shape="spline", mode="lines+markers")
         total_mes = int(por_dia["numero_de_corridas_ofertadas"].sum())
         st.metric("🚗 Corridas ofertadas no mês", total_mes)
         st.plotly_chart(fig_dia, use_container_width=True)
+
         st.stop()
 
-    # Demais: aceitas / rejeitadas / completadas
+    # --- Genérico para aceitas / rejeitadas / completadas (com % no rótulo)
     coluna_map = {
         "Corridas aceitas": ("numero_de_corridas_aceitas", "Corridas aceitas por mês", "Corridas Aceitas"),
         "Corridas rejeitadas": ("numero_de_corridas_rejeitadas", "Corridas rejeitadas por mês", "Corridas Rejeitadas"),
         "Corridas completadas": ("numero_de_corridas_completadas", "Corridas completadas por mês", "Corridas Completadas"),
     }
-    if tipo_grafico in coluna_map:
-        col, titulo, label = coluna_map[tipo_grafico]
-        mensal = df.groupby("mes_ano", as_index=False)[col].sum()
-        mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
+    if tipo_grafico not in coluna_map:
+        st.warning("Tipo de gráfico inválido.")
+        st.stop()
 
-        mensal_ofert = (
-            df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
-              .rename(columns={"numero_de_corridas_ofertadas": "ofertadas_total"})
-        )
-        mensal = mensal.merge(mensal_ofert, on="mes_ano", how="left")
+    col, titulo, label = coluna_map[tipo_grafico]
+    mensal = df.groupby("mes_ano", as_index=False)[col].sum()
+    mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
 
-        def _pct(v, base):
-            try:
-                v = float(v); base = float(base)
-                return f"{(v/base*100):.1f}%" if base > 0 else "0.0%"
-            except Exception:
-                return "0.0%"
+    mensal_ofert = (
+        df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
+          .rename(columns={"numero_de_corridas_ofertadas": "ofertadas_total"})
+    )
+    mensal = mensal.merge(mensal_ofert, on="mes_ano", how="left")
 
-        mensal["__label_text__"] = mensal.apply(
-            lambda r: f"{int(r[col])} ({_pct(r[col], r.get('ofertadas_total', 0))})", axis=1
-        )
+    def _pct(v, base):
+        try:
+            v = float(v); base = float(base)
+            return f"{(v/base*100):.1f}%" if base > 0 else "0.0%"
+        except Exception:
+            return "0.0%"
 
-        fig = px.bar(
-            mensal, x="mes_rotulo", y=col, text="__label_text__", title=titulo,
-            labels={col: label, "mes_rotulo": "Mês/Ano"},
-            template=PLOTLY_TEMPLATE, color_discrete_sequence=["#3b82f6"]
-        )
-        fig.update_traces(
-            texttemplate="%{text}", textposition="outside", textfont=dict(size=16),
-            marker_line_color="rgba(255,255,255,0.25)", marker_line_width=0.5,
-        )
-        fig.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            title_font=dict(size=22), xaxis=dict(showgrid=False),
-            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
-            bargap=0.25, margin=dict(t=80, r=20, b=60, l=60), showlegend=False,
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    mensal["__label_text__"] = mensal.apply(
+        lambda r: f"{int(r[col])} ({_pct(r[col], r.get('ofertadas_total', 0))})",
+        axis=1
+    )
 
-        por_dia = (
-            df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-                        .groupby("dia", as_index=False)[col].sum()
-                        .sort_values("dia")
-        )
-        fig_dia = px.line(
-            por_dia, x="dia", y=col,
-            title=f"📈 {label} por dia (mês atual)",
-            labels={"dia": "Dia", col: label},
-            template=PLOTLY_TEMPLATE
-        )
-        fig_dia.update_traces(line_shape="spline", mode="lines+markers")
-        total_mes = int(por_dia[col].sum())
-        st.metric(f"🚗 {label} no mês", total_mes)
-        st.plotly_chart(fig_dia, use_container_width=True)
+    fig = px.bar(
+        mensal, x="mes_rotulo", y=col, text="__label_text__", title=titulo,
+        labels={col: label, "mes_rotulo": "Mês/Ano"},
+        template="plotly_dark", color_discrete_sequence=["#00BFFF"]
+    )
+    fig.update_traces(
+        texttemplate="%{text}",
+        textposition="outside",
+        textfont=dict(size=16, color="white"),
+        marker_line_color="rgba(255,255,255,0.25)",
+        marker_line_width=0.5,
+    )
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white"), title_font=dict(size=22),
+        xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
+        bargap=0.25, margin=dict(t=80, r=20, b=60, l=60), showlegend=False,
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
+    # diário do mês atual (quantidade)
+    por_dia = (
+        df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
+                    .groupby("dia", as_index=False)[col].sum()
+                    .sort_values("dia")
+    )
+    fig_dia = px.line(
+        por_dia, x="dia", y=col,
+        title=f"📈 {label} por dia (mês atual)",
+        labels={"dia": "Dia", col: label},
+        template="plotly_dark"
+    )
+    fig_dia.update_traces(line_shape="spline", mode="lines+markers")
+    total_mes = int(por_dia[col].sum())
+    st.metric(f"🚗 {label} no mês", total_mes)
+    st.plotly_chart(fig_dia, use_container_width=True)
 
-# ALERTAS DE FALTAS
+# -------------------------------------------------------------------
+# Alertas de Faltas
+# -------------------------------------------------------------------
 if modo == "Alertas de Faltas":
     st.subheader("⚠️ Entregadores com 3+ faltas consecutivas")
+
     hoje = datetime.now().date()
     ultimos_15_dias = hoje - timedelta(days=15)
     df["data"] = pd.to_datetime(df["data"]).dt.date
@@ -525,6 +576,7 @@ if modo == "Alertas de Faltas":
         entregador = df[df["pessoa_entregadora_normalizado"] == nome]
         if entregador.empty:
             continue
+
         dias = pd.date_range(end=hoje - timedelta(days=1), periods=30).to_pydatetime()
         dias = [d.date() for d in dias]
         presencas = set(entregador["data"])
@@ -539,15 +591,18 @@ if modo == "Alertas de Faltas":
         if sequencia >= 4:
             nome_original = entregador["pessoa_entregadora"].iloc[0]
             ultima_data = entregador["data"].max().strftime('%d/%m')
-            mensagens.append(f"• {nome_original} – {sequencia} dias consecutivos ausente (última presença: {ultima_data})")
+            mensagens.append(
+                f"• {nome_original} – {sequencia} dias consecutivos ausente (última presença: {ultima_data})"
+            )
 
     if mensagens:
         st.text_area("Resultado:", value="\n".join(mensagens), height=400)
     else:
         st.success("✅ Nenhum entregador ativo com faltas consecutivas.")
 
-
-# RELATÓRIO CUSTOMIZADO
+# -------------------------------------------------------------------
+# Relatório Customizado
+# -------------------------------------------------------------------
 if modo == "Relatório Customizado":
     st.header("Relatório Customizado do Entregador")
 
@@ -597,8 +652,9 @@ if modo == "Relatório Customizado":
         texto = gerar_dados(entregador, None, None, df_filt)
         st.text_area("Resultado:", value=texto or "❌ Nenhum dado encontrado", height=400)
 
-
-# CATEGORIAS DE ENTREGADORES
+# -------------------------------------------------------------------
+# Categorias de Entregadores
+# -------------------------------------------------------------------
 if modo == "Categorias de Entregadores":
     st.header("📚 Categorias de Entregadores")
 
@@ -634,8 +690,9 @@ if modo == "Categorias de Entregadores":
         csv_cat = df_cat[cols_cat].to_csv(index=False, decimal=",").encode("utf-8")
         st.download_button("⬇️ Baixar CSV", data=csv_cat, file_name="categorias_entregadores.csv", mime="text/csv")
 
-
-# UTR
+# -------------------------------------------------------------------
+# UTR — PONDERADA e MÉDIA DAS MÉDIAS
+# -------------------------------------------------------------------
 if modo == "UTR":
     st.header("🧭 UTR – Corridas ofertadas por hora")
 
@@ -657,8 +714,11 @@ if modo == "UTR":
     turno_sel = st.selectbox("Turno", options=turnos_opts, index=0)
 
     metodo = st.radio(
-        "Método", ["Tempo absoluto", "Médias"], horizontal=True, index=0,
-        help="Tempo absoluto = soma ofertadas / soma de horas. Médias = média aritmética dos UTRs (por entregador/dia)."        
+        "Método",
+        ["Tempo absoluto", "Médias"],
+        horizontal=True,
+        index=0,
+        help="Tempo absoluto = soma ofertadas / soma absoluto. Médias = soma das médias de cada entregador e divide pela quantia."        
     )
 
     base_plot = base_full if turno_sel == "Todos os turnos" else base_full[base_full["periodo"] == turno_sel]
@@ -666,35 +726,51 @@ if modo == "UTR":
         st.info("Sem dados para o turno selecionado.")
         st.stop()
 
+    # Série diária conforme método
     serie = _serie_diaria_utr(base_plot, metodo)
     y_max = float(serie["utr_val"].max()) * 1.25 if not serie.empty else 1.0
 
     fig = px.bar(
-        serie, x="dia_num", y="utr_val", text="utr_val",
+        serie,
+        x="dia_num",
+        y="utr_val",
+        text="utr_val",
         title=f"UTR por dia – {mes_sel:02d}/{ano_sel} • {('Todos os turnos' if turno_sel=='Todos os turnos' else turno_sel)} • {metodo}",
         labels={"dia_num": "Dia do mês", "utr_val": "UTR (ofertadas/hora)"},
-        template=PLOTLY_TEMPLATE, color_discrete_sequence=["#3b82f6"],
+        template="plotly_dark",
+        color_discrete_sequence=["#00BFFF"],
     )
     fig.update_traces(
-        texttemplate="<b>%{text:.2f}</b>", textposition="outside", textfont=dict(size=18),
-        marker_line_color="rgba(255,255,255,0.25)", marker_line_width=0.5,
+        texttemplate="<b>%{text:.2f}</b>",
+        textposition="outside",
+        textfont=dict(size=18, color="white"),
+        marker_line_color="rgba(255,255,255,0.25)",
+        marker_line_width=0.5,
     )
     fig.update_xaxes(
-        tickmode="linear", dtick=1, tick0=1, tickfont=dict(size=14),
+        tickmode="linear", dtick=1, tick0=1,
+        tickfont=dict(size=14),
         showgrid=False, showline=True, linewidth=1, linecolor="rgba(255,255,255,0.2)"
     )
     fig.update_yaxes(
-        range=[0, max(y_max, 1)], showgrid=True, gridcolor="gray", rangemode="tozero", tickfont=dict(size=14)
+        range=[0, max(y_max, 1)],
+        showgrid=True, gridcolor="gray", rangemode="tozero",
+        tickfont=dict(size=14)
     )
     fig.update_layout(
-        bargap=0.25, uniformtext_minsize=14, uniformtext_mode="show",
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        title_font=dict(size=22), showlegend=False, margin=dict(t=70, r=20, b=60, l=60),
+        bargap=0.25,
+        uniformtext_minsize=14, uniformtext_mode="show",
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white"),
+        title_font=dict(size=22),
+        showlegend=False,
+        margin=dict(t=70, r=20, b=60, l=60),
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # métrica do mês (conforme método)
-    if metodo == "Tempo absoluto":
+    # ✅ Métrica do mês conforme método
+    if metodo == "Ponderada (global)":
         ofertadas_totais = base_plot["corridas_ofertadas"].sum()
         horas_totais     = base_plot["supply_hours"].sum()
         utr_mes          = (ofertadas_totais / horas_totais) if horas_totais > 0 else 0.0
@@ -703,7 +779,7 @@ if modo == "UTR":
 
     st.metric(f"Média UTR no mês ({metodo.lower()})", f"{utr_mes:.2f}")
 
-    # Export geral do mês (sem filtrar turno)
+    # Export sempre no detalhado (sem filtrar turno)
     st.caption("📄 O botão abaixo baixa o **CSV GERAL** (sem filtro de turno).")
     cols_csv = ["data","pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
     base_csv = base_full.copy()
@@ -726,8 +802,9 @@ if modo == "UTR":
         help="Exporta o CSV geral do mês/ano, ignorando o filtro de turno."
     )
 
-
-# RELAÇÃO DE ENTREGADORES
+# -------------------------------------------------------------------
+# Relação de Entregadores (listar por filtros)
+# -------------------------------------------------------------------
 if modo == "Relação de Entregadores":
     st.header("Relatório")
 
@@ -780,6 +857,7 @@ if modo == "Relação de Entregadores":
         st.subheader("👤 Entregadores encontrados")
         st.dataframe(pd.DataFrame({"pessoa_entregadora": nomes_filtrados}), use_container_width=True)
 
+        from relatorios import gerar_dados
         st.subheader("Números")
         blocos = []
         for nome in nomes_filtrados:
@@ -791,8 +869,9 @@ if modo == "Relação de Entregadores":
         texto_final = "\n" + ("\n" + "—" * 40 + "\n").join(blocos) if blocos else "Sem blocos gerados para os filtros."
         st.text_area("Resultado:", value=texto_final, height=500)
 
-
-# INÍCIO
+# ================================
+# 🏠 TELA INICIAL
+# ================================
 if modo == "Início":
     st.title("📋 Painel de Entregadores")
 
@@ -807,16 +886,19 @@ if modo == "Início":
             f"""
             <style>
               .home-bg {{
-                position: relative; overflow: hidden;
+                position: relative;
+                overflow: hidden;
               }}
               .home-bg:before {{
                 content: "";
-                position: absolute; inset: 0;
+                position: absolute;
+                inset: 0;
                 background-image: url('{bg_logo}');
                 background-repeat: no-repeat;
                 background-position: center 20%;
                 background-size: 40%;
-                opacity: 0.06; pointer-events: none;
+                opacity: 0.06;
+                pointer-events: none;
               }}
             </style>
             """,
@@ -832,19 +914,19 @@ if modo == "Início":
         ultimo_dia_txt = "—"
 
     # Card Atualizar dados
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    c1, c2 = st.columns([1, 2], gap="large")
-    with c1:
-        st.subheader("Dados mais recentes")
-        st.metric(label="", value=ultimo_dia_txt)
-    with c2:
-        st.subheader("Atualização de base")
-        if st.button("🔄 Atualizar dados", use_container_width=True, key="btn_refresh_drive"):
-            st.session_state.force_refresh = True
-            st.session_state.just_refreshed = True
-            st.cache_data.clear()
-            st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
+    with st.container():
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            st.subheader("Dados mais recentes")
+            st.metric(label="", value=ultimo_dia_txt)
+        with c2:
+            st.subheader("Atualização de base")
+            if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_drive"):
+                # Marca flag e rerenderiza. O download acontece no topo (get_df_once).
+                st.session_state.force_refresh = True
+                st.session_state.just_refreshed = True  # para feedback visual
+                st.cache_data.clear()
+                st.rerun()
 
     st.divider()
 
@@ -861,23 +943,24 @@ if modo == "Início":
     acc_pct = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
     rej_pct = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
 
+    # ✅ UTR do mês (ponderada) — cacheada
     utr_mes = round(_utr_mensal_cached(df_key, mes_atual, ano_atual, None), 2)
+
+    # ✅ UTR do mês — média das médias (não ponderada)
     base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
     utr_medias = round(_utr_media_das_medias(base_home), 2)
 
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader(f"📦 Resumo do mês atual ({mes_atual:02d}/{ano_atual})")
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.metric("Ofertadas • UTR", f"{ofertadas:,}".replace(",", "."))
+        st.metric("Ofertadas - UTR", f"{ofertadas:,}".replace(",", "."))
         st.caption(f"Absoluto: **{utr_mes:.2f}**")
         st.caption(f"Médias: **{utr_medias:.2f}**")
     with m2:
         st.metric("Aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%")
     with m3:
-        st.metric("Rejeitadas", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%")
+        st.metric("Reijeitadas", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%")
     with m4:
         st.metric("Entregadores ativos", f"{entreg_uniq}")
-    st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
