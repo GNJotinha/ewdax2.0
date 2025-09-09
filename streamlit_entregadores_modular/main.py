@@ -958,6 +958,7 @@ if modo == "Início":
         st.caption(f"Médias: **{utr_medias:.2f}**")
     with m2:
         st.metric("Aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%")
+        st.caption("Aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%")
     with m3:
         st.metric("Reijeitadas", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%")
     with m4:
