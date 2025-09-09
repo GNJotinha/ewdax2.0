@@ -418,11 +418,11 @@ if modo == "Indicadores Gerais":
     # --- Demais gráficos (com tratamento especial para Corridas ofertadas)
     if tipo_grafico == "Corridas ofertadas":
         metodo_utr = st.radio(
-            "Método do UTR (rótulo)",
-            ["Ponderada (global)", "Média das médias"],
+            "Método",
+            ["Absoluto)", "Médias"],
             horizontal=True,
             index=0,
-            help="Ponderada = soma ofertadas ÷ soma horas por mês. Média das médias = média aritmética dos UTRs (pessoa/turno/dia) dentro do mês."
+            help="Tempo absoluto = soma ofertadas / soma absoluto. Médias = soma das médias de cada entregador e divide pela quantia."
         )
 
         mensal = df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
@@ -714,11 +714,11 @@ if modo == "UTR":
     turno_sel = st.selectbox("Turno", options=turnos_opts, index=0)
 
     metodo = st.radio(
-        "Método de agregação",
-        ["Ponderada (global)", "Média das médias"],
+        "Método",
+        ["Tempo absoluto", "Médias"],
         horizontal=True,
         index=0,
-        help="Ponderada = soma ofertadas ÷ soma horas. Média das médias = média aritmética dos UTRs por pessoa/turno/dia."
+        help="Tempo absoluto = soma ofertadas / soma absoluto. Médias = soma das médias de cada entregador e divide pela quantia."        
     )
 
     base_plot = base_full if turno_sel == "Todos os turnos" else base_full[base_full["periodo"] == turno_sel]
@@ -955,7 +955,7 @@ if modo == "Início":
     m1, m2, m3, m4 = st.columns(4)
     with m1:
         st.metric("Corridas ofertadas (UTR)", f"{ofertadas:,}".replace(",", "."))
-        st.caption(f"UTR ponderada: **{utr_mes:.2f}**  •  média das médias: **{utr_medias:.2f}**")
+        st.caption(f"UTR absoluto: **{utr_mes:.2f}**  •  Médias: **{utr_medias:.2f}**")
     with m2:
         st.metric("Corridas aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%")
     with m3:
