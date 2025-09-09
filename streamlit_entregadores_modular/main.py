@@ -954,8 +954,7 @@ if modo == "Início":
     m1, m2, m3, m4 = st.columns(4)
     with m1:
         st.metric("Ofertadas - UTR", f"{ofertadas:,}".replace(",", "."))
-        st.caption(f"Absoluto: **{utr_mes:.2f}**
-        Médias: **{utr_medias:.2f}**")
+        st.caption(f"Absoluto: **{utr_mes:.2f}** - Médias: **{utr_medias:.2f}**")
     with m2:
         st.metric("Aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%")
     with m3:
