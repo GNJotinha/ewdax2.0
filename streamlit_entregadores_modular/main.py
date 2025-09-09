@@ -210,9 +210,9 @@ if "open_cat" not in st.session_state:
     st.session_state.open_cat = None
 
 with st.sidebar:
-    st.markdown("### 🧭 Navegação")
+    st.markdown("Navegação")
 
-    if st.button("🏠 Início", use_container_width=True):
+    if st.button("Início", use_container_width=True):
         st.session_state.modo = "Início"
         st.session_state.open_cat = None
         st.rerun()
