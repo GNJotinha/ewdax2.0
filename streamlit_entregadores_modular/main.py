@@ -50,8 +50,8 @@ def _utr_media_das_medias(rows: pd.DataFrame) -> float:
 def _serie_diaria_utr(base_plot: pd.DataFrame, metodo: str) -> pd.DataFrame:
     """
     Gera a série diária:
-      - Ponderada (global): ofertadas_dia_total / horas_dia_total
-      - Média das médias: média aritmética dos UTRs dos entregadores no dia
+      - Absoluto: ofertadas_dia_total / horas_dia_total
+      - Médias: média aritmética dos UTRs dos entregadores no dia
     Retorna ['dia_num','utr_val'].
     """
     if base_plot.empty:
@@ -420,16 +420,16 @@ if modo == "Indicadores Gerais":
         # ✅ RÓTULOS PADRONIZADOS
         metodo_utr = st.radio(
             "Método",
-            ["Ponderada (global)", "Média das médias"],
+            ["Absoluto", "Médias"],
             horizontal=True,
             index=0,
-            help="Ponderada (global) = soma de ofertadas ÷ soma de horas. Média das médias = média simples dos UTRs por entregador/dia."
+            help="Absoluto = soma de ofertadas ÷ soma de horas. Médias = média simples dos UTRs por entregador/dia."
         )
 
         mensal = df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
         mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
 
-        if metodo_utr == "Ponderada (global)":
+        if metodo_utr == "Absoluto":
             mensal = mensal.merge(horas_mensais, on="mes_ano", how="left")
             mensal["UTR_calc"] = mensal.apply(
                 lambda r: (float(r["numero_de_corridas_ofertadas"]) / float(r["horas"]))
@@ -717,10 +717,10 @@ if modo == "UTR":
     # ✅ RÓTULOS PADRONIZADOS
     metodo = st.radio(
         "Método",
-        ["Ponderada (global)", "Média das médias"],
+        ["Absoluto", "Médias"],
         horizontal=True,
         index=0,
-        help="Ponderada (global) = soma de ofertadas ÷ soma de horas. Média das médias = média simples dos UTRs por entregador/dia."
+        help="Absolto = soma de ofertadas ÷ soma de horas. Médias = média simples dos UTRs por entregador/dia."
     )
 
     base_plot = base_full if turno_sel == "Todos os turnos" else base_full[base_full["periodo"] == turno_sel]
@@ -772,7 +772,7 @@ if modo == "UTR":
     st.plotly_chart(fig, use_container_width=True)
 
     # ✅ Métrica do mês conforme método
-    if metodo == "Ponderada (global)":
+    if metodo == "Absoluto":
         ofertadas_totais = base_plot["corridas_ofertadas"].sum()
         horas_totais     = base_plot["supply_hours"].sum()
         utr_mes          = (ofertadas_totais / horas_totais) if horas_totais > 0 else 0.0
