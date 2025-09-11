@@ -981,12 +981,14 @@ if modo == "Início":
 if modo == "Relatórios Subpraças":
     st.header("📍 Números por Subpraça")
 
+    # ===== Filtros =====
     subpracas = sorted(df["sub_praca"].dropna().unique())
     sub_sel = st.selectbox("Selecione a subpraça:", subpracas)
 
     turnos = sorted(df["periodo"].dropna().unique())
     turnos_sel = st.multiselect("Filtrar por turnos:", turnos)
 
+    # ===== Base filtrada =====
     df_area = df[df["sub_praca"] == sub_sel].copy()
     if turnos_sel:
         df_area = df_area[df_area["periodo"].isin(turnos_sel)]
@@ -1000,10 +1002,16 @@ if modo == "Relatórios Subpraças":
         completas  = int(df_area["numero_de_corridas_completadas"].sum())
         entreg_uniq = df_area["pessoa_entregadora"].dropna().nunique()
 
+        # ===== KPIs =====
+        st.markdown("### 📊 Indicadores principais")
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("📦 Ofertadas", ofertadas)
-        c2.metric("👍 Aceitas", f"{aceitas} ({(aceitas/ofertadas*100 if ofertadas else 0):.1f}%)")
-        c3.metric("👎 Rejeitadas", f"{rejeitadas} ({(rejeitadas/ofertadas*100 if ofertadas else 0):.1f}%)")
-        c4.metric("🏁 Completas", f"{completas} ({(completas/aceitas*100 if aceitas else 0):.1f}%)")
+        c1.metric("📦 Ofertadas", f"{ofertadas:,}".replace(",", "."))
+        c2.metric("👍 Aceitas", f"{aceitas:,}".replace(",", "."), f"{(aceitas/ofertadas*100 if ofertadas else 0):.1f}%")
+        c3.metric("👎 Rejeitadas", f"{rejeitadas:,}".replace(",", "."), f"{(rejeitadas/ofertadas*100 if ofertadas else 0):.1f}%")
+        c4.metric("🏁 Completas", f"{completas:,}".replace(",", "."), f"{(completas/aceitas*100 if aceitas else 0):.1f}%")
         c5.metric("👤 Entregadores", entreg_uniq)
+
+        st.caption(f"ℹ️ Filtros aplicados → Subpraça: **{sub_sel}**"
+                   + (f" • Turnos: {', '.join(turnos_sel)}" if turnos_sel else " • Todos os turnos"))
+
 
