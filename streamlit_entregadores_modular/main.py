@@ -704,6 +704,9 @@ if modo == "Categorias de Entregadores":
 # -------------------------------------------------------------------
 # UTR — ABSOLUTO e MÉDIAS
 # -------------------------------------------------------------------
+# -------------------------------------------------------------------
+# UTR — ABSOLUTO e MÉDIAS (com filtro de Subpraça)
+# -------------------------------------------------------------------
 if modo == "UTR":
     st.header("🧭 UTR – Corridas ofertadas por hora")
 
@@ -711,19 +714,39 @@ if modo == "UTR":
     mes_sel = col1.selectbox("Mês", list(range(1, 13)))
     ano_sel = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
 
-    base_full = utr_por_entregador_turno(df, mes_sel, ano_sel)
+    # 🔎 Subpraça (opcional)
+    # lista de subpraças relevantes para o recorte mês/ano (se tiver)
+    df_mm = df[(df["mes"] == mes_sel) & (df["ano"] == ano_sel)]
+    if "sub_praca" in df.columns:
+        subpracas_opts = sorted([x for x in df_mm.get("sub_praca", pd.Series(dtype=object)).dropna().unique()])
+        subpraca_sel = st.multiselect("Filtrar por subpraça (opcional):", subpracas_opts)
+    else:
+        subpraca_sel = []
+
+    # aplica filtro de subpraça ANTES de montar a base do UTR
+    df_base = df.copy()
+    if subpraca_sel:
+        if "sub_praca" not in df_base.columns:
+            st.warning("⚠️ Coluna 'sub_praca' não encontrada na base.")
+        else:
+            df_base = df_base[df_base["sub_praca"].isin(subpraca_sel)]
+
+    # monta base UTR já com filtros aplicados
+    base_full = utr_por_entregador_turno(df_base, mes_sel, ano_sel)
     if base_full.empty:
-        st.info("Nenhum dado encontrado para o período selecionado.")
+        st.info("Nenhum dado encontrado para o período e filtros selecionados.")
         st.stop()
 
     if "supply_hours" in base_full.columns:
         base_full["tempo_hms"] = base_full["supply_hours"].apply(_hms_from_hours)
 
+    # Turno
     turnos_opts = ["Todos os turnos"]
     if "periodo" in base_full.columns:
         turnos_opts += sorted([t for t in base_full["periodo"].dropna().unique()])
     turno_sel = st.selectbox("Turno", options=turnos_opts, index=0)
 
+    # Método (Absoluto x Médias)
     metodo = st.radio(
         "Método",
         ["Absoluto", "Médias"],
@@ -732,21 +755,30 @@ if modo == "UTR":
         help="Absoluto = soma de ofertadas ÷ soma de horas. Médias = média simples dos UTRs por entregador/dia."
     )
 
+    # aplica filtro de turno para o gráfico diário
     base_plot = base_full if turno_sel == "Todos os turnos" else base_full[base_full["periodo"] == turno_sel]
     if base_plot.empty:
-        st.info("Sem dados para o turno selecionado.")
+        st.info("Sem dados para o turno selecionado dentro dos filtros.")
         st.stop()
 
-    # Série diária conforme método (agora TROCA de verdade)
+    # Série diária conforme método (ponderado x média simples)
     serie = _serie_diaria_utr(base_plot, metodo)
     y_max = float(serie["utr_val"].max()) * 1.25 if not serie.empty else 1.0
+
+    # monta sufixo do título com subpraças (se houver filtro)
+    sub_sufixo = ""
+    if subpraca_sel:
+        sub_sufixo = " • Subpraça: " + (", ".join(subpraca_sel) if len(subpraca_sel) <= 3 else f"{len(subpraca_sel)} selecionadas")
 
     fig = px.bar(
         serie,
         x="dia_num",
         y="utr_val",
         text="utr_val",
-        title=f"UTR por dia – {mes_sel:02d}/{ano_sel} • {('Todos os turnos' if turno_sel=='Todos os turnos' else turno_sel)} • {metodo}",
+        title=(
+            f"UTR por dia – {mes_sel:02d}/{ano_sel} • "
+            f"{('Todos os turnos' if turno_sel=='Todos os turnos' else turno_sel)} • {metodo}{sub_sufixo}"
+        ),
         labels={"dia_num": "Dia do mês", "utr_val": "UTR (ofertadas/hora)"},
         template="plotly_dark",
         color_discrete_sequence=["#00BFFF"],
@@ -780,7 +812,7 @@ if modo == "UTR":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # ✅ Métrica do mês conforme método
+    # ✅ Métrica do mês conforme método (respeitando subpraça + turno)
     if _is_absoluto(metodo):
         ofertadas_totais = base_plot["corridas_ofertadas"].sum()
         horas_totais     = base_plot["supply_hours"].sum()
@@ -790,8 +822,8 @@ if modo == "UTR":
 
     st.metric(f"Média UTR no mês ({metodo.lower()})", f"{utr_mes:.2f}")
 
-    # Export sempre no detalhado (sem filtrar turno)
-    st.caption("📄 O botão abaixo baixa o **CSV GERAL** (sem filtro de turno).")
+    # 📄 Export: sempre no detalhado (sem filtrar turno), mas já com subpraça aplicada
+    st.caption("📄 O botão abaixo baixa o **CSV GERAL** (sem filtro de turno), respeitando os filtros de subpraça.")
     cols_csv = ["data","pessoa_entregadora","periodo","tempo_hms","corridas_ofertadas","UTR"]
     base_csv = base_full.copy()
     try:
@@ -804,13 +836,21 @@ if modo == "UTR":
     base_csv["UTR"] = pd.to_numeric(base_csv["UTR"], errors="coerce").round(2)
     base_csv["corridas_ofertadas"] = pd.to_numeric(base_csv["corridas_ofertadas"], errors="coerce").fillna(0).astype(int)
 
+    file_name = f"utr_entregador_turno_diario_{mes_sel:02d}_{ano_sel}"
+    if subpraca_sel:
+        # evita nomes gigantes: concatena primeiras e quantidade total
+        tag = "_".join([s.replace(" ", "") for s in subpraca_sel[:2]])
+        if len(subpraca_sel) > 2:
+            tag += f"_e{len(subpraca_sel)-2}mais"
+        file_name += f"_{tag}"
+
     csv_bin = base_csv[cols_csv].to_csv(index=False, decimal=",").encode("utf-8")
     st.download_button(
         "⬇️ Baixar CSV (GERAL)",
         data=csv_bin,
-        file_name=f"utr_entregador_turno_diario_{mes_sel:02d}_{ano_sel}.csv",
+        file_name=f"{file_name}.csv",
         mime="text/csv",
-        help="Exporta o CSV geral do mês/ano, ignorando o filtro de turno."
+        help="Exporta o CSV geral do mês/ano com os filtros aplicados (subpraça), ignorando o filtro de turno."
     )
 
 # -------------------------------------------------------------------
