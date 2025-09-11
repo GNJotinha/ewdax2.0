@@ -1078,7 +1078,7 @@ if modo == "Relatórios Subpraças":
     completas  = int(pd.to_numeric(df_area["numero_de_corridas_completadas"], errors="coerce").fillna(0).sum())
     entreg_uniq = int(df_area["pessoa_entregadora"].dropna().nunique())
 
-    st.markdown("Número da região")
+    st.markdown("Números da região")
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("📦 Ofertadas", f"{ofertadas:,}".replace(",", "."))
     c2.metric("👍 Aceitas", f"{aceitas:,}".replace(",", "."), f"{(aceitas/ofertadas*100 if ofertadas else 0):.1f}%")
