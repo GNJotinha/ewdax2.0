@@ -359,3 +359,96 @@ def utr_pivot_por_entregador(df, mes=None, ano=None):
     piv = piv.sort_values("__media__", ascending=False).drop(columns="__media__")
 
     return piv.round(2)
+
+
+# =========================
+# 📊 Resumo Semanal (WhatsApp)
+# =========================
+
+def gerar_resumo_semanal(df, domingo_ref=None, titulo="Resumo semanal"):
+    """
+    Gera texto estilo WhatsApp com métricas da semana (seg→dom) e variação
+    em relação à semana anterior.
+
+    Retorna: (texto, dict_metas)
+    """
+    base = df.copy()
+    base["data"] = pd.to_datetime(base["data"], errors="coerce")
+
+    if base.empty:
+        return "❌ Sem dados para gerar resumo.", {}
+
+    # Último domingo como referência
+    if domingo_ref is None:
+        datas_validas = base["data"].dropna().dt.normalize()
+        domingos = datas_validas[datas_validas.dt.weekday == 6]
+        if domingos.empty:
+            domingo_ref = datas_validas.max()
+            domingo_ref = domingo_ref + pd.Timedelta(days=(6 - domingo_ref.weekday()) % 7)
+        else:
+            domingo_ref = domingos.max()
+    domingo_ref = pd.to_datetime(domingo_ref).normalize()
+    ini_atual = domingo_ref - pd.Timedelta(days=6)
+    ini_ant = ini_atual - pd.Timedelta(days=7)
+    fim_ant = ini_atual - pd.Timedelta(days=1)
+
+    sem_atual = base[(base["data"] >= ini_atual) & (base["data"] <= domingo_ref)].copy()
+    sem_ant   = base[(base["data"] >= ini_ant) & (base["data"] <= fim_ant)].copy()
+
+    def _metrica(d):
+        ofertadas  = float(d.get("numero_de_corridas_ofertadas", 0).sum())
+        aceitas    = float(d.get("numero_de_corridas_aceitas", 0).sum())
+        rejeitadas = float(d.get("numero_de_corridas_rejeitadas", 0).sum())
+        completas  = float(d.get("numero_de_corridas_completadas", 0).sum())
+        horas      = float(d.get("segundos_abs", 0).sum()) / 3600.0
+
+        acc = (aceitas / ofertadas * 100) if ofertadas > 0 else 0.0
+        rej = (rejeitadas / ofertadas * 100) if ofertadas > 0 else 0.0
+        comp = (completas / aceitas * 100) if aceitas > 0 else 0.0
+        utr_abs = (ofertadas / horas) if horas > 0 else 0.0
+
+        # UTR médias
+        if "periodo" not in d.columns:
+            d = d.assign(periodo="(sem turno)")
+        g = (
+            d.groupby(["pessoa_entregadora", "periodo", "data"], dropna=False)
+             .agg(ofertadas=("numero_de_corridas_ofertadas", "sum"),
+                  segundos=("segundos_abs", "sum"))
+             .reset_index()
+        )
+        g["horas"] = g["segundos"] / 3600.0
+        g = g[g["horas"] > 0]
+        utr_medias = (g["ofertadas"] / g["horas"]).mean() if not g.empty else 0.0
+
+        return dict(acc=acc, rej=rej, comp=comp, horas=horas,
+                    utr_abs=utr_abs, utr_medias=utr_medias)
+
+    mA = _metrica(sem_atual)
+    mP = _metrica(sem_ant)
+
+    def _delta(vA, vP, pct=True):
+        if vP == 0:
+            return " (novo)" if vA > 0 else ""
+        diff = vA - vP
+        if pct:
+            setinha = "⬆️" if diff > 0 else ("⬇️" if diff < 0 else "=")
+            return f" {setinha} {diff / vP * 100:+.1f}%"
+        else:
+            return f" {diff:+.1f}h"
+
+    def _fmt_h(h):
+        s = int(round(h * 3600))
+        hh, r = divmod(s, 3600); mm, ss = divmod(r, 60)
+        return f"{hh}h{mm:02d}m"
+
+    texto = f"""📊 {titulo} ({ini_atual.strftime('%d/%m')} a {domingo_ref.strftime('%d/%m')})
+
+• % Aceite: {mA['acc']:.1f}%{_delta(mA['acc'], mP['acc'])}
+• % Rejeite: {mA['rej']:.1f}%{_delta(mA['rej'], mP['rej'])}
+• % Completas: {mA['comp']:.1f}%{_delta(mA['comp'], mP['comp'])}
+• Supply Hours: {_fmt_h(mA['horas'])}{_delta(mA['horas'], mP['horas'], pct=False)}
+• UTR (Abs): {mA['utr_abs']:.2f}{_delta(mA['utr_abs'], mP['utr_abs'])}
+• UTR (Médias): {mA['utr_medias']:.2f}{_delta(mA['utr_medias'], mP['utr_medias'])}
+"""
+    return texto.strip(), {"semana_atual": mA, "semana_anterior": mP}
+
