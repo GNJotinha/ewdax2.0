@@ -1018,12 +1018,11 @@ if modo == "Início":
     # Curiosidade do ano (separado dos cards mensais)
     # ----------------------------------------------------
     st.divider()
-    st.subheader("🎲 Curiosidade")
-
+    
     ano_atual = pd.Timestamp.today().year
     total_corridas_ano = int(df[df["ano"] == ano_atual]["numero_de_corridas_completadas"].sum())
 
-    st.metric("🏁 Total de corridas completadas no ano", f"{total_corridas_ano:,}".replace(",", "."))
+    st.metric("Total de corridas completadas no ano", f"{total_corridas_ano:,}".replace(",", "."))
 
     st.markdown("</div>", unsafe_allow_html=True)
 
