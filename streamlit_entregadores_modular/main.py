@@ -17,7 +17,9 @@ from relatorios import (
     utr_por_entregador_turno,
     utr_pivot_por_entregador,
     _horas_from_abs,
+    gerar_resumo_semanal, 
 )
+
 
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
@@ -209,6 +211,7 @@ MENU = {
         "Relação de Entregadores",
         "Categorias de Entregadores",
         "Relatórios Subpraças",
+        "Resumo Semanal
     ],
     "Dashboards": [
         "UTR",
@@ -1101,4 +1104,40 @@ if modo == "Relatórios Subpraças":
         + f" • Período: **{periodo_txt}**"
     )
 
+# -------------------------------------------------------------------
+# Resumo Semanal (WhatsApp)
+# -------------------------------------------------------------------
+if modo == "Resumo Semanal":
+    st.header("📆 Resumo Semanal")
+    st.caption("Gera um texto curto com % Aceite / % Rejeite / % Completas, Supply Hours e UTR (Abs/Médias), com variação vs. semana anterior.")
+
+    # Domingo de referência (opcional). Se vazio, usa o último domingo com dados.
+    domingo_override = st.date_input(
+        "Domingo de referência (opcional)",
+        value=None,
+        format="DD/MM/YYYY",
+        help="Se não selecionar, o sistema usa automaticamente o último domingo presente na base."
+    )
+
+    titulo = st.text_input("Título (opcional)", value="Resumo semanal")
+
+    gerar = st.button("Gerar texto")
+    if gerar:
+        dom = pd.to_datetime(domingo_override) if domingo_override else None
+        texto, meta = gerar_resumo_semanal(df, domingo_ref=dom, titulo=titulo)
+
+        st.text_area("Texto pronto para WhatsApp:", value=texto, height=220)
+        st.download_button(
+            "⬇️ Baixar .txt",
+            data=texto.encode("utf-8"),
+            file_name="resumo_semanal.txt",
+            mime="text/plain"
+        )
+
+        # Métricas rápidas (opcional)
+        if meta:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("% Aceite (semana)", f"{meta['semana_atual']['acc']:.1f}%")
+            c2.metric("% Rejeite (semana)", f"{meta['semana_atual']['rej']:.1f}%")
+            c3.metric("% Completas (semana)", f"{meta['semana_atual']['comp']:.1f}%")
 
