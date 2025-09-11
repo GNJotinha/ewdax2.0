@@ -208,6 +208,7 @@ MENU = {
         "Alertas de Faltas",
         "Relação de Entregadores",
         "Categorias de Entregadores",
+        "Relatórios Subpraças",
     ],
     "Dashboards": [
         "UTR",
@@ -973,3 +974,36 @@ if modo == "Início":
         st.metric("Entregadores ativos", f"{entreg_uniq}")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+# -------------------------------------------------------------------
+# 📍 Visão por Subpraça
+# -------------------------------------------------------------------
+if modo == "Relatórios Subpraças":
+    st.header("📍 Números por Subpraça")
+
+    subpracas = sorted(df["sub_praca"].dropna().unique())
+    sub_sel = st.selectbox("Selecione a subpraça:", subpracas)
+
+    turnos = sorted(df["periodo"].dropna().unique())
+    turnos_sel = st.multiselect("Filtrar por turnos:", turnos)
+
+    df_area = df[df["sub_praca"] == sub_sel].copy()
+    if turnos_sel:
+        df_area = df_area[df_area["periodo"].isin(turnos_sel)]
+
+    if df_area.empty:
+        st.info("❌ Nenhum dado encontrado para esse filtro.")
+    else:
+        ofertadas  = int(df_area["numero_de_corridas_ofertadas"].sum())
+        aceitas    = int(df_area["numero_de_corridas_aceitas"].sum())
+        rejeitadas = int(df_area["numero_de_corridas_rejeitadas"].sum())
+        completas  = int(df_area["numero_de_corridas_completadas"].sum())
+        entreg_uniq = df_area["pessoa_entregadora"].dropna().nunique()
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("📦 Ofertadas", ofertadas)
+        c2.metric("👍 Aceitas", f"{aceitas} ({(aceitas/ofertadas*100 if ofertadas else 0):.1f}%)")
+        c3.metric("👎 Rejeitadas", f"{rejeitadas} ({(rejeitadas/ofertadas*100 if ofertadas else 0):.1f}%)")
+        c4.metric("🏁 Completas", f"{completas} ({(completas/aceitas*100 if aceitas else 0):.1f}%)")
+        c5.metric("👤 Entregadores", entreg_uniq)
+
