@@ -17,7 +17,7 @@ from relatorios import (
     utr_por_entregador_turno,
     utr_pivot_por_entregador,
     _horas_from_abs,
-    gerar_resumo_semanal, 
+    gerar_resumo_semanal
 )
 
 
