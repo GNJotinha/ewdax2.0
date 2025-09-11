@@ -211,7 +211,7 @@ MENU = {
         "Relação de Entregadores",
         "Categorias de Entregadores",
         "Relatórios Subpraças",
-        "Resumo Semanal
+        "Resumo Semanal",
     ],
     "Dashboards": [
         "UTR",
