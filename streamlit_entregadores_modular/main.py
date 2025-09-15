@@ -1103,19 +1103,40 @@ if modo == "Perfil do Entregador":
     ultima_atividade = df_e["data"].max()
     ultima_txt = ultima_atividade.strftime("%d/%m/%y") if pd.notna(ultima_atividade) else "—"
 
-    # KPIs (duas linhas)
-    k1,k2,k3,k4 = st.columns(4)
-    k1.metric("UTR (Absoluto)", f"{utr_abs_hist:.2f}")
-    k2.metric("UTR (Médias)",   f"{utr_medias_hist:.2f}")
-    k3.metric("Aceitas", f"{aceitas:,}".replace(",","."), f"{acc_pct:.2f}%")
-    k4.metric("Completas", f"{completas:,}".replace(",","."), f"{comp_pct:.2f}%")
+    # ======================
+    # KPIs — layout limpo + legendas %
+    # ======================
 
-    k5,k6,k7,k8,k9 = st.columns(5)
-    k5.metric("Ofertadas", f"{ofertadas:,}".replace(",","."))  # sem delta
-    k6.metric("Rejeitadas", f"{rejeitadas:,}".replace(",","."), f"{rej_pct:.2f}%")
-    k7.metric("Horas (hist.)", f"{horas_total:.1f} h")
-    k8.metric("Dias ativos", f"{dias_ativos}")
-    k9.metric("Últ. atividade", ultima_txt)
+    # 1ª linha (4 colunas)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("UTR (Absoluto)", f"{utr_abs_hist:.2f}")
+    with c2:
+        st.metric("UTR (Médias)",   f"{utr_medias_hist:.2f}")
+    with c3:
+        st.metric("Aceitas",        f"{aceitas:,}".replace(",","."))      # sem delta
+        st.caption(f"Acc: {acc_pct:.2f}%")
+    with c4:
+        st.metric("Completas",      f"{completas:,}".replace(",","."))    # sem delta
+        st.caption(f"Conclusão: {comp_pct:.2f}%")
+
+    # 2ª linha (4 colunas) — SH em HH:MM:SS
+    c5, c6, c7, c8 = st.columns(4)
+    with c5:
+        st.metric("Ofertadas",      f"{ofertadas:,}".replace(",","."))    # sem delta
+    with c6:
+        st.metric("Rejeitadas",     f"{rejeitadas:,}".replace(",","."))   # sem delta
+        st.caption(f"Rejeição: {rej_pct:.2f}%")
+    with c7:
+        st.metric("SH (hist.)",     _sec_to_hms(horas_total * 3600))      # HH:MM:SS
+        st.caption(f"Tempo online médio: {t_online_pct:.2f}%")
+    with c8:
+        st.metric("Dias ativos",    f"{dias_ativos}")
+
+    # 3ª linha — data com coluna larga pra não cortar
+    dcol, _ = st.columns([1, 3])
+    with dcol:
+        st.metric("Últ. dia", ultima_txt)  # ex.: 14/09/25
 
     # ============================
     # 📈 Evolução mensal (barras)
