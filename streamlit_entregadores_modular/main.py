@@ -1033,6 +1033,9 @@ if modo == "Início":
 # -------------------------------------------------------------------
 # 👤 Perfil do Entregador (histórico completo, sem filtros extras)
 # -------------------------------------------------------------------
+# -------------------------------------------------------------------
+# 👤 Perfil do Entregador (histórico completo, sem filtros extras)
+# -------------------------------------------------------------------
 if modo == "Perfil do Entregador":
     st.header("👤 Perfil do Entregador")
 
@@ -1040,7 +1043,6 @@ if modo == "Perfil do Entregador":
     entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
     nome = st.selectbox("Selecione o entregador:", [None] + entregadores_lista,
                         format_func=lambda x: "" if x is None else x)
-
     if not nome:
         st.stop()
 
@@ -1066,17 +1068,25 @@ if modo == "Perfil do Entregador":
     rej_pct  = (rejeitadas/ ofertadas * 100) if ofertadas > 0 else 0.0
     comp_pct = (completas / aceitas   * 100) if aceitas   > 0 else 0.0
 
-    # Horas totais (já temos 'segundos_abs' blindado no app)
+    # Horas totais (segundos_abs já existe no app; fallback se precisar)
     if "segundos_abs" in df_e.columns:
         horas_total = df_e["segundos_abs"].sum() / 3600.0
     else:
         from relatorios import _horas_from_abs
         horas_total = _horas_from_abs(df_e)
 
-    # UTR absoluto (histórico)
+    # UTR (histórico) — Absoluto e Médias
     utr_abs_hist = (ofertadas / horas_total) if horas_total > 0 else 0.0
+    # UTR "Médias": média dos UTRs linha-a-linha (pessoa/turno/dia) não ponderada
+    from relatorios import utr_por_entregador_turno
+    base_u = utr_por_entregador_turno(df_e)
+    if not base_u.empty:
+        base_u = base_u[base_u["supply_hours"] > 0]
+        utr_medias_hist = (base_u["corridas_ofertadas"] / base_u["supply_hours"]).mean() if not base_u.empty else 0.0
+    else:
+        utr_medias_hist = 0.0
 
-    # Tempo online (usar a mesma função das outras telas) -> exibir em %
+    # Tempo online (mesma função das outras telas) -> exibir em %
     try:
         from utils import calcular_tempo_online
         t_online_ratio = calcular_tempo_online(df_e)  # 0–1
@@ -1084,17 +1094,16 @@ if modo == "Perfil do Entregador":
     except Exception:
         t_online_pct = 0.0
 
-    # Dias ativos, última atividade, médias por dia ativo
+    # Dias ativos, última atividade
     dias_ativos = int(df_e["data"].dt.date.nunique())
     ultima_atividade = df_e["data"].max()
-    horas_por_dia = (horas_total / dias_ativos) if dias_ativos > 0 else 0.0
-    ofertadas_por_dia = (ofertadas / dias_ativos) if dias_ativos > 0 else 0.0
 
+    # KPIs (duas linhas)
     k1,k2,k3,k4 = st.columns(4)
-    k1.metric("UTR (histórico)", f"{utr_abs_hist:.2f}")
-    k2.metric("Aceitas", f"{aceitas:,}".replace(",","."), f"{acc_pct:.1f}%")
-    k3.metric("Completas", f"{completas:,}".replace(",","."), f"{comp_pct:.1f}%")
-    k4.metric("Tempo online (médio)", f"{t_online_pct:.1f}%")
+    k1.metric("UTR (Absoluto)", f"{utr_abs_hist:.2f}")
+    k2.metric("UTR (Médias)",   f"{utr_medias_hist:.2f}")
+    k3.metric("Aceitas", f"{aceitas:,}".replace(",","."), f"{acc_pct:.1f}%")
+    k4.metric("Completas", f"{completas:,}".replace(",","."), f"{comp_pct:.1f}%")
 
     k5,k6,k7,k8 = st.columns(4)
     k5.metric("Ofertadas", f"{ofertadas:,}".replace(",","."), f"{rej_pct:.1f}% rejeite")
@@ -1104,22 +1113,23 @@ if modo == "Perfil do Entregador":
 
     # =======================================
     # Top Subpraças e Top Turnos (histórico)
+    # — agora com CORRIDAS ACEITAS (não ofertadas)
     # =======================================
     st.subheader("🏆 Tops do entregador (histórico)")
 
     c1, c2 = st.columns(2)
 
     with c1:
-        st.markdown("**Top Subpraças** (corridas ofertadas)")
+        st.markdown("**Top Subpraças** (corridas aceitas)")
         if "sub_praca" in df_e.columns:
             top_sp = (df_e.groupby("sub_praca", as_index=False)
-                        .agg(ofertadas=("numero_de_corridas_ofertadas","sum"),
+                        .agg(aceitas=("numero_de_corridas_aceitas","sum"),
                              seg=("segundos_abs","sum")))
             if not top_sp.empty:
                 top_sp["horas"] = top_sp["seg"]/3600.0
-                top_sp = top_sp.sort_values("ofertadas", ascending=False).head(10)
-                st.dataframe(top_sp[["sub_praca","ofertadas","horas"]]
-                             .rename(columns={"sub_praca":"Subpraça","ofertadas":"Corridas","horas":"Horas"}),
+                top_sp = top_sp.sort_values("aceitas", ascending=False).head(10)
+                st.dataframe(top_sp[["sub_praca","aceitas","horas"]]
+                             .rename(columns={"sub_praca":"Subpraça","aceitas":"Aceitas","horas":"Horas"}),
                              use_container_width=True)
             else:
                 st.caption("—")
@@ -1127,16 +1137,16 @@ if modo == "Perfil do Entregador":
             st.caption("—")
 
     with c2:
-        st.markdown("**Top Turnos** (corridas ofertadas)")
+        st.markdown("**Top Turnos** (corridas aceitas)")
         if "periodo" in df_e.columns:
             top_turno = (df_e.groupby("periodo", as_index=False)
-                           .agg(ofertadas=("numero_de_corridas_ofertadas","sum"),
+                           .agg(aceitas=("numero_de_corridas_aceitas","sum"),
                                 seg=("segundos_abs","sum")))
             if not top_turno.empty:
                 top_turno["horas"] = top_turno["seg"]/3600.0
-                top_turno = top_turno.sort_values("ofertadas", ascending=False)
-                st.dataframe(top_turno[["periodo","ofertadas","horas"]]
-                             .rename(columns={"periodo":"Turno","ofertadas":"Corridas","horas":"Horas"}),
+                top_turno = top_turno.sort_values("aceitas", ascending=False)
+                st.dataframe(top_turno[["periodo","aceitas","horas"]]
+                             .rename(columns={"periodo":"Turno","aceitas":"Aceitas","horas":"Horas"}),
                              use_container_width=True)
             else:
                 st.caption("—")
@@ -1145,34 +1155,42 @@ if modo == "Perfil do Entregador":
 
     # ============================
     # Evolução mensal (histórico)
+    # — barras com COMPLETAS e % ACEITAÇÃO no rótulo
     # ============================
     st.subheader("📈 Evolução mensal")
     mens = (df_e.groupby("mes_ano", as_index=False)
               .agg(ofertadas=("numero_de_corridas_ofertadas","sum"),
                    aceitas=("numero_de_corridas_aceitas","sum"),
-                   completas=("numero_de_corridas_completadas","sum"),
-                   seg=("segundos_abs","sum")))
-    mens["horas"] = mens["seg"]/3600.0
-    mens["UTR_abs"] = mens.apply(lambda r: (r["ofertadas"]/r["horas"]) if r["horas"]>0 else 0.0, axis=1)
+                   completas=("numero_de_corridas_completadas","sum")))
     mens["acc_pct"] = mens.apply(lambda r: (r["aceitas"]/r["ofertadas"]*100) if r["ofertadas"]>0 else 0.0, axis=1)
-    mens["comp_pct"]= mens.apply(lambda r: (r["completas"]/r["aceitas"]*100)   if r["aceitas"]>0   else 0.0, axis=1)
     mens["mes_rotulo"] = pd.to_datetime(mens["mes_ano"]).dt.strftime("%b/%y")
+    mens["__label_text__"] = mens["acc_pct"].map(lambda v: f"{v:.1f}%")
 
-    fig_evo = px.line(
-        mens, x="mes_rotulo", y=["UTR_abs","acc_pct","comp_pct"],
-        labels={"value":"Valor","mes_rotulo":"Mês","variable":"Métrica"},
-        title="UTR (abs), Aceitação (%) e Conclusão (%) por mês",
-        template="plotly_dark"
+    fig_evo = px.bar(
+        mens, x="mes_rotulo", y="completas", text="__label_text__",
+        labels={"mes_rotulo":"Mês","completas":"Completas"},
+        title="Completas por mês (rótulo: % de aceitação)",
+        template="plotly_dark", color_discrete_sequence=["#00BFFF"]
     )
-    fig_evo.update_traces(mode="lines+markers")
-    fig_evo.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    fig_evo.update_traces(
+        textposition="outside",
+        texttemplate="<b>%{text}</b>",
+        marker_line_color="rgba(255,255,255,0.25)",
+        marker_line_width=0.5,
+    )
+    fig_evo.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white"), title_font=dict(size=22),
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
+        bargap=0.25, margin=dict(t=70, r=20, b=60, l=60), showlegend=False,
+    )
     st.plotly_chart(fig_evo, use_container_width=True)
 
     # =======================================
-    # Histórico de categoria por mês (opcional)
+    # Histórico de categoria por mês (com SH)
     # =======================================
     st.subheader("🏷️ Histórico de categoria (por mês)")
-    # Para cada mês existente no histórico geral, consulta a classificação do mês e pega a linha do entregador
     meses_unicos = (df["mes_ano"].dropna().sort_values().unique().tolist())
     hist_cat = []
     from relatorios import classificar_entregadores
@@ -1182,123 +1200,58 @@ if modo == "Perfil do Entregador":
         df_cat = classificar_entregadores(df, mes_i, ano_i)
         row = df_cat[df_cat["pessoa_entregadora"] == nome]
         if not row.empty:
-            hist_cat.append({"mes_ano": ts, "categoria": str(row.iloc[0]["categoria"]),
-                             "aceitacao_%": row.iloc[0]["aceitacao_%"], "conclusao_%": row.iloc[0]["conclusao_%"]})
+            hist_cat.append({
+                "mes_ano": ts,
+                "categoria": str(row.iloc[0]["categoria"]),
+                "supply_hours": float(row.iloc[0]["supply_hours"]),
+                "aceitacao_%": float(row.iloc[0]["aceitacao_%"]),
+                "conclusao_%": float(row.iloc[0]["conclusao_%"]),
+            })
 
     if hist_cat:
         cat_df = pd.DataFrame(hist_cat).sort_values("mes_ano")
         cat_df["mês"] = cat_df["mes_ano"].dt.strftime("%b/%y")
-        st.dataframe(cat_df[["mês","categoria","aceitacao_%","conclusao_%"]]
-                     .rename(columns={"aceitacao_%":"Aceitação %","conclusao_%":"Conclusão %"}),
-                     use_container_width=True)
+        # opcional: formato HH:MM:SS a partir de horas
+        def _hms_from_hours(h):
+            try:
+                total_seconds = int(round(float(h) * 3600))
+                horas, resto = divmod(total_seconds, 3600)
+                minutos, segundos = divmod(resto, 60)
+                return f"{horas:02d}:{minutos:02d}:{segundos:02d}"
+            except Exception:
+                return "00:00:00"
+        cat_df["tempo_hms"] = cat_df["supply_hours"].apply(_hms_from_hours)
+
+        st.dataframe(
+            cat_df[["mês","categoria","supply_hours","tempo_hms","aceitacao_%","conclusao_%"]]
+                .rename(columns={
+                    "mês":"Mês",
+                    "categoria":"Categoria",
+                    "supply_hours":"Supply Hours (h)",
+                    "tempo_hms":"Supply Hours (HH:MM:SS)",
+                    "aceitacao_%":"Aceitação %",
+                    "conclusao_%":"Conclusão %",
+                }),
+            use_container_width=True
+        )
     else:
         st.caption("Sem categoria calculada nos meses desse histórico.")
 
-    # ==========================================
-    # Distribuições: Subpraça e Turno (histórico)
-    # ==========================================
-    st.subheader("🧭 Distribuição de atuação (histórico)")
-    col_d1, col_d2 = st.columns(2)
-
-    with col_d1:
-        if "sub_praca" in df_e.columns:
-            dist_sp = (df_e.groupby("sub_praca", as_index=False)
-                         .agg(ofertadas=("numero_de_corridas_ofertadas","sum")))
-            if not dist_sp.empty:
-                fig_sp = px.pie(dist_sp, names="sub_praca", values="ofertadas",
-                                title="Participação por Subpraça", template="plotly_dark")
-                st.plotly_chart(fig_sp, use_container_width=True)
-            else:
-                st.caption("—")
-        else:
-            st.caption("—")
-
-    with col_d2:
-        if "periodo" in df_e.columns:
-            dist_tn = (df_e.groupby("periodo", as_index=False)
-                         .agg(ofertadas=("numero_de_corridas_ofertadas","sum")))
-            if not dist_tn.empty:
-                fig_tn = px.pie(dist_tn, names="periodo", values="ofertadas",
-                                title="Participação por Turno", template="plotly_dark")
-                st.plotly_chart(fig_tn, use_container_width=True)
-            else:
-                st.caption("—")
-        else:
-            st.caption("—")
-
-    # ====================================
-    # Histograma de corridas por dia ativo
-    # ====================================
-    st.subheader("📦 Distribuição de corridas por dia ativo (histórico)")
-    por_dia = (df_e.groupby(df_e["data"].dt.date, as_index=False)
-                 .agg(ofertadas=("numero_de_corridas_ofertadas","sum")))
-    por_dia.rename(columns={"data":"dia"}, inplace=True)
-    if not por_dia.empty:
-        fig_hist = px.histogram(por_dia, x="ofertadas", nbins=20, template="plotly_dark",
-                                labels={"ofertadas":"Corridas ofertadas/dia"})
-        fig_hist.update_layout(title="Frequência de corridas ofertadas por dia")
-        st.plotly_chart(fig_hist, use_container_width=True)
-    else:
-        st.caption("—")
-
-    # =================
-    # Recordes pessoais
-    # =================
-    st.subheader("🏅 Recordes pessoais (histórico)")
-    # Dia de maior ofertadas, maior UTR, maior carga de horas
-    base_daily = (df_e.groupby(["data","periodo"], dropna=False, as_index=False)
-                    .agg(ofertadas=("numero_de_corridas_ofertadas","sum"),
-                         seg=("segundos_abs","sum")))
-    base_daily["horas"] = base_daily["seg"]/3600.0
-    base_daily["UTR"] = base_daily.apply(lambda r: (r["ofertadas"]/r["horas"]) if r["horas"]>0 else 0.0, axis=1)
-
-    def _top_row(df_in, col):
-        if df_in.empty or df_in[col].max() == 0:
-            return None
-        r = df_in.loc[df_in[col].idxmax()]
-        return r
-
-    top_of = _top_row(base_daily, "ofertadas")
-    top_utr = _top_row(base_daily, "UTR")
-    top_h   = _top_row(base_daily, "horas")
-
-    ctop1, ctop2, ctop3 = st.columns(3)
-    ctop1.metric("Maior nº de corridas (dia/turno)", 
-                 f"{int(top_of['ofertadas']) if top_of is not None else 0}",
-                 None)
-    ctop1.caption(f"{top_of['data'].strftime('%d/%m/%Y')} • {top_of['periodo']}" if top_of is not None else "—")
-
-    ctop2.metric("Maior UTR (dia/turno)", 
-                 f"{top_utr['UTR']:.2f}" if top_utr is not None else "0.00",
-                 None)
-    ctop2.caption(f"{top_utr['data'].strftime('%d/%m/%Y')} • {top_utr['periodo']}" if top_utr is not None else "—")
-
-    ctop3.metric("Maior carga de horas (dia/turno)",
-                 f"{top_h['horas']:.1f} h" if top_h is not None else "0.0 h",
-                 None)
-    ctop3.caption(f"{top_h['data'].strftime('%d/%m/%Y')} • {top_h['periodo']}" if top_h is not None else "—")
-
-    # =================
-    # Ranking relativo
-    # =================
-    st.subheader("🏁 Ranking relativo (histórico geral)")
-    # UTR absoluto por entregador (histórico), compara a posição do selecionado
-    agg_all = (df.groupby("pessoa_entregadora", dropna=True, as_index=False)
-                 .agg(ofertadas=("numero_de_corridas_ofertadas","sum"),
-                      seg=("segundos_abs","sum")))
-    agg_all["horas"] = agg_all["seg"]/3600.0
-    agg_all["UTR_abs"] = agg_all.apply(lambda r: (r["ofertadas"]/r["horas"]) if r["horas"]>0 else 0.0, axis=1)
-    agg_all = agg_all.sort_values("UTR_abs", ascending=False).reset_index(drop=True)
-    if not agg_all.empty:
-        # posição e percentil aproximado
-        pos = agg_all.index[agg_all["pessoa_entregadora"] == nome].tolist()
-        if pos:
-            posi = pos[0] + 1
-            total = len(agg_all)
-            pct = (1 - (posi-1)/max(total-1,1)) * 100.0
-            st.metric("Posição no ranking (UTR histórico)", f"{posi}/{total}",
-                      f"Top {pct:.1f}%")
+    # ==========================
+    # Distribuição por Turno (pizza)
+    # (removeu a de Subpraça como pedido)
+    # ==========================
+    st.subheader("🧭 Distribuição por Turno (histórico)")
+    if "periodo" in df_e.columns:
+        dist_tn = (df_e.groupby("periodo", as_index=False)
+                     .agg(aceitas=("numero_de_corridas_aceitas","sum")))
+        if not dist_tn.empty:
+            fig_tn = px.pie(dist_tn, names="periodo", values="aceitas",
+                            title="Participação por Turno (base: corridas aceitas)", template="plotly_dark")
+            st.plotly_chart(fig_tn, use_container_width=True)
         else:
             st.caption("—")
     else:
         st.caption("—")
+
+    # — Itens removidos: Recordes pessoais, Ranking relativo, Histograma por dia ativo, Pizza por subpraça —
