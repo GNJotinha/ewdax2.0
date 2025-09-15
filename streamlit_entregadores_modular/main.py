@@ -1454,8 +1454,8 @@ if modo == "Resumos":
     prev = kpis(df_prev)
 
     d_com_pct = delta_pct(cur["com"],      prev["com"])
-    d_acc_pp  = delta_pp (cur["acc"],      prev["acc"])
-    d_rej_pp  = delta_pp (cur["rejp"],     prev["rejp"])
+    d_acc_pct = delta_pct(cur["acc"],      prev["acc"])
+    d_rej_pct = delta_pct(cur["rejp"],     prev["rejp"])
     d_sh_pct  = delta_pct(cur["sh_h"],     prev["sh_h"])
     d_ati_pct = delta_pct(cur["ativos"],   prev["ativos"])
     d_uab_pct = delta_pct(cur["utr_abs"],  prev["utr_abs"])
@@ -1464,8 +1464,8 @@ if modo == "Resumos":
     # ------------- Texto final (parágrafos vazios) -------------
     linhas = [
         f"Completas: {fmt_int(cur['com'])} ({fmt_pct(d_com_pct)}) {arrow(d_com_pct)}",
-        f"Aceitação: {fmt_dec(cur['acc'])}% ({fmt_pp(d_acc_pp)}) {arrow(d_acc_pp)}",
-        f"Rejeição: {fmt_dec(cur['rejp'])}% ({fmt_pp(d_rej_pp)}) {arrow(d_rej_pp)}",
+        f"Aceitação: {fmt_dec(cur['acc'])}% ({fmt_pct(d_acc_pct)}) {arrow(d_acc_pct)}",
+        f"Rejeição: {fmt_dec(cur['rejp'])}% ({fmt_pct(d_rej_pct)}) {arrow(d_rej_pct)}",
         f"Total SH: {_sec_to_hms(cur['seg'])} ({fmt_pct(d_sh_pct)}) {arrow(d_sh_pct)}",
         f"Ativos: {fmt_int(cur['ativos'])} ({fmt_pct(d_ati_pct)}) {arrow(d_ati_pct)}",
         f"UTR (Abs.): {fmt_dec(cur['utr_abs'])} ({fmt_pct(d_uab_pct)}) {arrow(d_uab_pct)}",
