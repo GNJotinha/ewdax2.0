@@ -1292,7 +1292,7 @@ if modo == "Perfil do Entregador":
 # -------------------------------------------------------------------
 # 🧾 Resumo (Mensal/Semanal) — com texto pronto e setas 🟢/🔴
 # -------------------------------------------------------------------
-if modo == "Resumo (Mensal/Semanal)":
+if modo == "Resumos":
     st.header("🧾 Resumo (Mensal/Semanal)")
 
     # -----------------------------
