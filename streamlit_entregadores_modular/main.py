@@ -1417,7 +1417,7 @@ if modo == "Resumos":
         fim_prev = fim - pd.Timedelta(days=7)
 
         semana_label = f"Semana {int(ref_ts.isocalendar().week)}"
-        header = f"Resumo semanal — {semana_label} ({ini.strftime('%d/%m')}–{fim.strftime('%d/%m')}) • vs semana anterior"
+        header = f"Resumo semanal — {semana_label} ({ini.strftime('%d/%m')}–{fim.strftime('%d/%m')})"
 
         df_cur  = df[(df["data"] >= ini) & (df["data"] <= fim)].copy()
         df_prev = df[(df["data"] >= ini_prev) & (df["data"] <= fim_prev)].copy()
@@ -1472,9 +1472,6 @@ if modo == "Resumos":
         f"UTR (Médias): {fmt_dec(cur['utr_med'])} ({fmt_pct(d_ume_pct)}) {arrow(d_ume_pct)}",
     ]
     texto = header + "\n\n" + "\n\n".join(linhas)
-
-    st.subheader("📝 Texto pronto")
-    st.text_area("Copie e cole:", value=texto, height=300)
 
 
 #SUBPRAÇA
