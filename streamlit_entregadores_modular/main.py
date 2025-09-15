@@ -1290,9 +1290,9 @@ if modo == "Perfil do Entregador":
 # 🧾 Resumo (Mensal/Semanal) — com texto pronto e setas 🟢/🔴
 # -------------------------------------------------------------------
 # -------------------------------------------------------------------
-# 🧾 Resumo (Mensal/Semanal) — texto pronto com setas 🟢/🔴 e parágrafos vazios
+# 🧾 Resumo (Mensal/Semanal) — texto pronto com setas por sinal (🟢⬆ / 🔴⬇ / ⚪)
 # -------------------------------------------------------------------
-if modo == "Resumos":
+if modo == "Resumo (Mensal/Semanal)":
     st.header("🧾 Resumo (Mensal/Semanal)")
 
     import pandas as pd
@@ -1332,15 +1332,11 @@ if modo == "Resumos":
         num = f"{v:+.2f}".replace(".", ",")
         return f"{num} p.p."
 
-    def arrow(delta: float | None, good_when_up: bool = True) -> str:
-        """🟢⬆ / 🔴⬇ para métricas em que subir é bom;
-           🟢⬇ / 🔴⬆ para métricas em que descer é bom (ex.: rejeição)."""
+    # 🔁 Setas apenas pelo sinal do delta (sem interpretar “bom/ruim”)
+    def arrow(delta: float | None) -> str:
         if delta is None or abs(delta) < 1e-9:
             return "⚪"
-        if good_when_up:
-            return "🟢⬆" if delta > 0 else "🔴⬇"
-        # quando descer é bom
-        return "🟢⬇" if delta < 0 else "🔴⬆"
+        return "🟢⬆" if delta > 0 else "🔴⬇"
 
     def calc_utr_medias(df_slice: pd.DataFrame) -> float:
         """Média dos UTRs por linha (pessoa/turno/dia). Usa helper se existir, senão fallback."""
@@ -1371,13 +1367,13 @@ if modo == "Resumos":
         sh_h = float(seg) / 3600.0
         acc  = float(ace / ofe * 100) if ofe > 0 else 0.0
         rejp = float(rej / ofe * 100) if ofe > 0 else 0.0
-        # "ativos": quem tem alguma atividade no período
+        # ativos: quem tem alguma atividade no período
         if "pessoa_entregadora" in df_slice.columns:
-            ativos = int(df_slice[df_slice[["segundos_abs",
-                                            "numero_de_corridas_ofertadas",
-                                            "numero_de_corridas_aceitas",
-                                            "numero_de_corridas_completadas"]]
-                                  .fillna(0).sum(axis=1) > 0]["pessoa_entregadora"].nunique())
+            atividade = df_slice[["segundos_abs",
+                                   "numero_de_corridas_ofertadas",
+                                   "numero_de_corridas_aceitas",
+                                   "numero_de_corridas_completadas"]].fillna(0).sum(axis=1) > 0
+            ativos = int(df_slice.loc[atividade, "pessoa_entregadora"].nunique())
         else:
             ativos = 0
         utr_abs = float(ofe / sh_h) if sh_h > 0 else 0.0
@@ -1386,7 +1382,7 @@ if modo == "Resumos":
                     acc=acc, rejp=rejp, ativos=ativos, utr_abs=utr_abs, utr_med=utr_med)
 
     def delta_pct(cur_v, prev_v):
-        """Retorna variação % ou None quando não dá pra calcular."""
+        """Variação %; None quando não dá pra calcular (prev=0 e cur>0)."""
         if prev_v is None or prev_v == 0:
             if cur_v == 0:
                 return 0.0
@@ -1407,7 +1403,7 @@ if modo == "Resumos":
     tipo = st.radio("Período", ["Semanal (Seg–Dom)", "Mensal"], horizontal=True, index=0)
 
     if tipo.startswith("Semanal"):
-        # Pega qualquer dia dentro da semana — default: última data da base
+        # escolhe qualquer dia dentro da semana (default: última data da base)
         ref_date = st.date_input(
             "Escolha um dia da semana (Seg–Dom)",
             value=data_max, min_value=data_min, max_value=data_max, format="DD/MM/YYYY"
@@ -1467,17 +1463,110 @@ if modo == "Resumos":
 
     # ------------- Texto final (parágrafos vazios) -------------
     linhas = [
-        f"Completas: {fmt_int(cur['com'])} ({fmt_pct(d_com_pct)}) {arrow(d_com_pct, good_when_up=True)}",
-        f"Aceitação: {fmt_dec(cur['acc'])}% ({fmt_pp(d_acc_pp)}) {arrow(d_acc_pp,  good_when_up=True)}",
-        f"Rejeição: {fmt_dec(cur['rejp'])}% ({fmt_pp(d_rej_pp)}) {arrow(d_rej_pp, good_when_up=False)}",
-        f"Total SH: {_sec_to_hms(cur['seg'])} ({fmt_pct(d_sh_pct)}) {arrow(d_sh_pct, good_when_up=True)}",
-        f"Ativos: {fmt_int(cur['ativos'])} ({fmt_pct(d_ati_pct)}) {arrow(d_ati_pct, good_when_up=True)}",
-        f"UTR (Abs.): {fmt_dec(cur['utr_abs'])} ({fmt_pct(d_uab_pct)}) {arrow(d_uab_pct, good_when_up=True)}",
-        f"UTR (Médias): {fmt_dec(cur['utr_med'])} ({fmt_pct(d_ume_pct)}) {arrow(d_ume_pct, good_when_up=True)}",
+        f"Completas: {fmt_int(cur['com'])} ({fmt_pct(d_com_pct)}) {arrow(d_com_pct)}",
+        f"Aceitação: {fmt_dec(cur['acc'])}% ({fmt_pp(d_acc_pp)}) {arrow(d_acc_pp)}",
+        f"Rejeição: {fmt_dec(cur['rejp'])}% ({fmt_pp(d_rej_pp)}) {arrow(d_rej_pp)}",
+        f"Total SH: {_sec_to_hms(cur['seg'])} ({fmt_pct(d_sh_pct)}) {arrow(d_sh_pct)}",
+        f"Ativos: {fmt_int(cur['ativos'])} ({fmt_pct(d_ati_pct)}) {arrow(d_ati_pct)}",
+        f"UTR (Abs.): {fmt_dec(cur['utr_abs'])} ({fmt_pct(d_uab_pct)}) {arrow(d_uab_pct)}",
+        f"UTR (Médias): {fmt_dec(cur['utr_med'])} ({fmt_pct(d_ume_pct)}) {arrow(d_ume_pct)}",
     ]
     texto = header + "\n\n" + "\n\n".join(linhas)
 
     st.subheader("📝 Texto pronto")
     st.text_area("Copie e cole:", value=texto, height=300)
+
+
+#SUBPRAÇA
+#SUBPRAÇA
+#SUBPRAÇA
+#SUBPRAÇA
+
+if modo == "Relatórios Subpraças":
+    st.header("Relatórios por região")
+
+    # ===== Verificações de colunas obrigatórias =====
+    obrig = ["sub_praca", "periodo", "data", "numero_de_corridas_ofertadas",
+             "numero_de_corridas_aceitas", "numero_de_corridas_rejeitadas",
+             "numero_de_corridas_completadas", "pessoa_entregadora"]
+    faltando = [c for c in obrig if c not in df.columns]
+    if faltando:
+        st.error("Colunas ausentes no dataset: " + ", ".join(faltando))
+        st.stop()
+
+    # ===== Filtros =====
+    subpracas = sorted(df["sub_praca"].dropna().unique())
+    sub_sel = st.selectbox("Selecione a subpraça:", subpracas)
+
+    turnos = sorted(df["periodo"].dropna().unique())
+    turnos_sel = st.multiselect("Filtrar por turnos:", turnos)
+
+    # ===== Base filtrada =====
+    df_area = df[df["sub_praca"] == sub_sel].copy()
+    if turnos_sel:
+        df_area = df_area[df_area["periodo"].isin(turnos_sel)]
+
+    # --- Período (contínuo ou dias específicos), mesmo padrão do resto ---
+    # garante colunas de data bem formadas
+    df_area["data_do_periodo"] = pd.to_datetime(df_area.get("data_do_periodo", df_area.get("data")), errors="coerce")
+    df_area["data"] = df_area["data_do_periodo"].dt.date
+
+    tipo_periodo = st.radio("Como deseja escolher as datas?", ("Período contínuo", "Dias específicos"), horizontal=True)
+    dias_escolhidos = []
+
+    if tipo_periodo == "Período contínuo":
+        data_min = df_area["data"].min()
+        data_max = df_area["data"].max()
+        periodo = st.date_input("Selecione o intervalo de datas:", [data_min, data_max], format="DD/MM/YYYY")
+        if len(periodo) == 2:
+            dias_escolhidos = list(pd.date_range(start=periodo[0], end=periodo[1]).date)
+        elif len(periodo) == 1:
+            dias_escolhidos = [periodo[0]]
+    else:
+        dias_opcoes = sorted([d for d in df_area["data"].dropna().unique()])
+        dias_escolhidos = st.multiselect(
+            "Selecione os dias desejados:",
+            dias_opcoes,
+            format_func=lambda x: x.strftime("%d/%m/%Y")
+        )
+
+    if dias_escolhidos:
+        df_area = df_area[df_area["data"].isin(dias_escolhidos)]
+
+    if df_area.empty:
+        st.info("❌ Nenhum dado encontrado para esse filtro.")
+        st.stop()
+
+    # ===== KPIs =====
+    ofertadas  = int(pd.to_numeric(df_area["numero_de_corridas_ofertadas"], errors="coerce").fillna(0).sum())
+    aceitas    = int(pd.to_numeric(df_area["numero_de_corridas_aceitas"], errors="coerce").fillna(0).sum())
+    rejeitadas = int(pd.to_numeric(df_area["numero_de_corridas_rejeitadas"], errors="coerce").fillna(0).sum())
+    completas  = int(pd.to_numeric(df_area["numero_de_corridas_completadas"], errors="coerce").fillna(0).sum())
+    entreg_uniq = int(df_area["pessoa_entregadora"].dropna().nunique())
+
+    st.markdown("Números da região")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("📦 Ofertadas", f"{ofertadas:,}".replace(",", "."))
+    c2.metric("👍 Aceitas", f"{aceitas:,}".replace(",", "."), f"{(aceitas/ofertadas*100 if ofertadas else 0):.1f}%")
+    c3.metric("👎 Rejeitadas", f"{rejeitadas:,}".replace(",", "."), f"{(rejeitadas/ofertadas*100 if ofertadas else 0):.1f}%")
+    c4.metric("🏁 Completas", f"{completas:,}".replace(",", "."), f"{(completas/aceitas*100 if aceitas else 0):.1f}%")
+    c5.metric("👤 Entregadores", entreg_uniq)
+
+    # período legível na legenda
+    try:
+        dmin = pd.to_datetime(df_area["data"]).min().strftime("%d/%m/%Y")
+        dmax = pd.to_datetime(df_area["data"]).max().strftime("%d/%m/%Y")
+        periodo_txt = f"{dmin} a {dmax}"
+    except Exception:
+        periodo_txt = "—"
+
+    st.caption(
+        "ℹ️ Filtros → "
+        f"Subpraça: **{sub_sel}**"
+        + (f" • Turnos: {', '.join(turnos_sel)}" if turnos_sel else " • Todos os turnos")
+        + f" • Período: **{periodo_txt}**"
+    )
+
+
 
 
