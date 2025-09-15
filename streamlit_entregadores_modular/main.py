@@ -1289,16 +1289,16 @@ if modo == "Perfil do Entregador":
 # -------------------------------------------------------------------
 # 🧾 Resumo (Mensal/Semanal) — com texto pronto e setas 🟢/🔴
 # -------------------------------------------------------------------
-if modo == "Resumos":
+# -------------------------------------------------------------------
+# 🧾 Resumo (Mensal/Semanal) — texto pronto com setas 🟢/🔴 e parágrafos vazios
+# -------------------------------------------------------------------
+if modo == "Resumo (Mensal/Semanal)":
     st.header("🧾 Resumo (Mensal/Semanal)")
 
-    # -----------------------------
-    # Helpers de formatação/cálculo
-    # -----------------------------
-    import numpy as np
+    import pandas as pd
     import calendar
-    from datetime import timedelta
 
+    # ------------- Helpers -------------
     def _sec_to_hms(sec_total: float | int) -> str:
         try:
             sec = int(round(float(sec_total)))
@@ -1329,21 +1329,21 @@ if modo == "Resumos":
     def fmt_pp(v: float | None) -> str:
         if v is None:
             return "—"
-        return f"{v:+.2f} p.p.".replace(".", ",")
+        num = f"{v:+.2f}".replace(".", ",")
+        return f"{num} p.p."
 
-    def arrow(delta: float | None, good_when_up=True) -> str:
-        """Retorna bolinha+seta: 🟢⬆ / 🔴⬇ / ⚪.
-        good_when_up=False inverte a lógica (ex.: rejeição: menor é melhor)."""
-        if delta is None:
+    def arrow(delta: float | None, good_when_up: bool = True) -> str:
+        """🟢⬆ / 🔴⬇ para métricas em que subir é bom;
+           🟢⬇ / 🔴⬆ para métricas em que descer é bom (ex.: rejeição)."""
+        if delta is None or abs(delta) < 1e-9:
             return "⚪"
-        if (delta > 0 and good_when_up) or (delta < 0 and not good_when_up):
-            return "🟢⬆"
-        if (delta < 0 and good_when_up) or (delta > 0 and not good_when_up):
-            return "🔴⬇"
-        return "⚪"
+        if good_when_up:
+            return "🟢⬆" if delta > 0 else "🔴⬇"
+        # quando descer é bom
+        return "🟢⬇" if delta < 0 else "🔴⬆"
 
-    # UTR (Médias): tenta usar a base auxiliar; se não tiver, usa fallback
     def calc_utr_medias(df_slice: pd.DataFrame) -> float:
+        """Média dos UTRs por linha (pessoa/turno/dia). Usa helper se existir, senão fallback."""
         try:
             from relatorios import utr_por_entregador_turno
             b = utr_por_entregador_turno(df_slice)
@@ -1352,92 +1352,26 @@ if modo == "Resumos":
             b = b[b["supply_hours"] > 0]
             return float((b["corridas_ofertadas"] / b["supply_hours"]).mean()) if not b.empty else 0.0
         except Exception:
-            # fallback: usa as próprias linhas, considerando apenas onde há horas
             if "segundos_abs" not in df_slice.columns:
                 return 0.0
             tmp = df_slice.copy()
-            tmp["h"] = pd.to_numeric(tmp["segundos_abs"], errors="coerce").fillna(0) / 3600.0
+            tmp["h"]  = pd.to_numeric(tmp["segundos_abs"], errors="coerce").fillna(0) / 3600.0
             tmp["co"] = pd.to_numeric(tmp.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0)
             tmp = tmp[tmp["h"] > 0]
             if tmp.empty:
                 return 0.0
             return float((tmp["co"] / tmp["h"]).mean())
 
-    # -----------------------------
-    # Seletores de período
-    # -----------------------------
-    df["data"] = pd.to_datetime(df["data"], errors="coerce")
-    data_min = pd.to_datetime(df["data"]).min().date()
-    data_max = pd.to_datetime(df["data"]).max().date()
-
-    tipo = st.radio("Período", ["Semanal (Seg–Dom)", "Mensal"], horizontal=True, index=0)
-
-    if tipo.startswith("Semanal"):
-        # Escolhe qualquer dia dentro da semana desejada (default: última data da base)
-        ref_date = st.date_input(
-            "Escolha um dia da semana (Seg–Dom)",
-            value=data_max,
-            min_value=data_min, max_value=data_max, format="DD/MM/YYYY"
-        )
-
-        # semana SEG–DOM do dia escolhido
-        ref_ts = pd.to_datetime(ref_date)
-        dow = ref_ts.weekday()  # 0 = seg
-        ini = (ref_ts - pd.Timedelta(days=dow)).normalize()
-        fim = ini + pd.Timedelta(days=6)
-        # semana anterior
-        ini_prev = ini - pd.Timedelta(days=7)
-        fim_prev = fim - pd.Timedelta(days=7)
-
-        semana_label = f"Semana {int(ref_ts.isocalendar().week)}"
-        periodo_label = f"{ini.strftime('%d/%m')}–{fim.strftime('%d/%m')}"
-        comparar_label = "semana anterior"
-
-        df_cur = df[(df["data"] >= ini) & (df["data"] <= fim)].copy()
-        df_prev = df[(df["data"] >= ini_prev) & (df["data"] <= fim_prev)].copy()
-
-    else:  # Mensal
-        # default: último mês com dados
-        ultimo = pd.to_datetime(df["data"]).max()
-        mes_default, ano_default = int(ultimo.month), int(ultimo.year)
-
-        c1, c2 = st.columns(2)
-        mes_sel = c1.selectbox("Mês", list(range(1, 12+1)), index=mes_default-1)
-        ano_sel = c2.selectbox("Ano", sorted(df["data"].dt.year.unique(), reverse=True),
-                               index=sorted(df["data"].dt.year.unique(), reverse=True).index(ano_default))
-
-        ini = pd.Timestamp(year=ano_sel, month=mes_sel, day=1)
-        ndias = calendar.monthrange(ano_sel, mes_sel)[1]
-        fim = pd.Timestamp(year=ano_sel, month=mes_sel, day=ndias)
-        # mês anterior
-        if mes_sel == 1:
-            ano_prev, mes_prev = ano_sel - 1, 12
-        else:
-            ano_prev, mes_prev = ano_sel, mes_sel - 1
-        ndias_prev = calendar.monthrange(ano_prev, mes_prev)[1]
-        ini_prev = pd.Timestamp(year=ano_prev, month=mes_prev, day=1)
-        fim_prev = pd.Timestamp(year=ano_prev, month=mes_prev, day=ndias_prev)
-
-        semana_label = None
-        periodo_label = f"{ini.strftime('%b/%Y')}".capitalize()
-        comparar_label = f"{ini_prev.strftime('%b/%Y')}".capitalize()
-
-        df_cur = df[(df["data"] >= ini) & (df["data"] <= fim)].copy()
-        df_prev = df[(df["data"] >= ini_prev) & (df["data"] <= fim_prev)].copy()
-
-    # -----------------------------
-    # Cálculo dos KPIs do período
-    # -----------------------------
     def kpis(df_slice: pd.DataFrame):
-        ofe = pd.to_numeric(df_slice.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum()
-        ace = pd.to_numeric(df_slice.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum()
-        rej = pd.to_numeric(df_slice.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum()
+        ofe = pd.to_numeric(df_slice.get("numero_de_corridas_ofertadas",   0), errors="coerce").fillna(0).sum()
+        ace = pd.to_numeric(df_slice.get("numero_de_corridas_aceitas",     0), errors="coerce").fillna(0).sum()
+        rej = pd.to_numeric(df_slice.get("numero_de_corridas_rejeitadas",  0), errors="coerce").fillna(0).sum()
         com = pd.to_numeric(df_slice.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0).sum()
-        seg = pd.to_numeric(df_slice.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
+        seg = pd.to_numeric(df_slice.get("segundos_abs",                   0), errors="coerce").fillna(0).sum()
         sh_h = float(seg) / 3600.0
-        acc = float(ace / ofe * 100) if ofe > 0 else 0.0
+        acc  = float(ace / ofe * 100) if ofe > 0 else 0.0
         rejp = float(rej / ofe * 100) if ofe > 0 else 0.0
-        # ativos: quem tem qualquer atividade no período
+        # "ativos": quem tem alguma atividade no período
         if "pessoa_entregadora" in df_slice.columns:
             ativos = int(df_slice[df_slice[["segundos_abs",
                                             "numero_de_corridas_ofertadas",
@@ -1451,54 +1385,99 @@ if modo == "Resumos":
         return dict(ofe=ofe, ace=ace, rej=rej, com=com, seg=seg, sh_h=sh_h,
                     acc=acc, rejp=rejp, ativos=ativos, utr_abs=utr_abs, utr_med=utr_med)
 
-    cur = kpis(df_cur)
-    prev = kpis(df_prev)
-
-    # -----------------------------
-    # Deltas (vs período anterior)
-    # -----------------------------
     def delta_pct(cur_v, prev_v):
+        """Retorna variação % ou None quando não dá pra calcular."""
         if prev_v is None or prev_v == 0:
             if cur_v == 0:
-                return 0.0, None  # texto 0.00%, seta neutra
-            return None, None     # texto "—", seta neutra
-        return float((cur_v - prev_v) / prev_v * 100.0), True
+                return 0.0
+            return None
+        return float((cur_v - prev_v) / prev_v * 100.0)
 
     def delta_pp(cur_v, prev_v):
-        # pontos percentuais
+        """Variação em pontos percentuais (p.p.)."""
         if prev_v is None:
-            return None, None
-        return float(cur_v - prev_v), True
+            return None
+        return float(cur_v - prev_v)
 
-    d_com_pct,  has_com = delta_pct(cur["com"],  prev["com"])
-    d_acc_pp,   has_acc = delta_pp (cur["acc"],  prev["acc"])
-    d_rej_pp,   has_rej = delta_pp (cur["rejp"], prev["rejp"])
-    d_sh_pct,   has_sh  = delta_pct(cur["sh_h"], prev["sh_h"])
-    d_ati_pct,  has_ati = delta_pct(cur["ativos"], prev["ativos"])
-    d_uab_pct,  has_uab = delta_pct(cur["utr_abs"], prev["utr_abs"])
-    d_ume_pct,  has_ume = delta_pct(cur["utr_med"], prev["utr_med"])
+    # ------------- Seletores -------------
+    df["data"] = pd.to_datetime(df["data"], errors="coerce")
+    data_min = pd.to_datetime(df["data"]).min().date()
+    data_max = pd.to_datetime(df["data"]).max().date()
 
-    # -----------------------------
-    # Texto final (com parágrafos vazios e bolinhas+setas)
-    # -----------------------------
+    tipo = st.radio("Período", ["Semanal (Seg–Dom)", "Mensal"], horizontal=True, index=0)
+
     if tipo.startswith("Semanal"):
-        header = f"Resumo semanal — {semana_label} ({ini.strftime('%d/%m')}–{fim.strftime('%d/%m')}) • vs semana anterior"
-    else:
-        header = f"Resumo mensal — {periodo_label} • vs {comparar_label}"
+        # Pega qualquer dia dentro da semana — default: última data da base
+        ref_date = st.date_input(
+            "Escolha um dia da semana (Seg–Dom)",
+            value=data_max, min_value=data_min, max_value=data_max, format="DD/MM/YYYY"
+        )
+        ref_ts = pd.to_datetime(ref_date)
+        dow = ref_ts.weekday()  # 0 = segunda
+        ini = (ref_ts - pd.Timedelta(days=dow)).normalize()
+        fim = ini + pd.Timedelta(days=6)
+        # semana anterior
+        ini_prev = ini - pd.Timedelta(days=7)
+        fim_prev = fim - pd.Timedelta(days=7)
 
+        semana_label = f"Semana {int(ref_ts.isocalendar().week)}"
+        header = f"Resumo semanal — {semana_label} ({ini.strftime('%d/%m')}–{fim.strftime('%d/%m')}) • vs semana anterior"
+
+        df_cur  = df[(df["data"] >= ini) & (df["data"] <= fim)].copy()
+        df_prev = df[(df["data"] >= ini_prev) & (df["data"] <= fim_prev)].copy()
+
+    else:
+        # default: último mês com dados
+        ultimo = pd.to_datetime(df["data"]).max()
+        mes_default, ano_default = int(ultimo.month), int(ultimo.year)
+
+        c1, c2 = st.columns(2)
+        mes_sel = c1.selectbox("Mês", list(range(1, 13)), index=mes_default-1)
+        anos_disp = sorted(df["data"].dt.year.dropna().unique().tolist(), reverse=True)
+        ano_sel = c2.selectbox("Ano", anos_disp, index=anos_disp.index(ano_default))
+
+        ini = pd.Timestamp(year=ano_sel, month=mes_sel, day=1)
+        ndias = calendar.monthrange(ano_sel, mes_sel)[1]
+        fim = pd.Timestamp(year=ano_sel, month=mes_sel, day=ndias)
+        # mês anterior
+        if mes_sel == 1:
+            ano_prev, mes_prev = ano_sel - 1, 12
+        else:
+            ano_prev, mes_prev = ano_sel, mes_sel - 1
+        ndias_prev = calendar.monthrange(ano_prev, mes_prev)[1]
+        ini_prev = pd.Timestamp(year=ano_prev, month=mes_prev, day=1)
+        fim_prev = pd.Timestamp(year=ano_prev, month=mes_prev, day=ndias_prev)
+
+        header = f"Resumo mensal — {ini.strftime('%b/%Y').capitalize()} • vs {ini_prev.strftime('%b/%Y').capitalize()}"
+
+        df_cur  = df[(df["data"] >= ini) & (df["data"] <= fim)].copy()
+        df_prev = df[(df["data"] >= ini_prev) & (df["data"] <= fim_prev)].copy()
+
+    # ------------- KPIs & Deltas -------------
+    cur  = kpis(df_cur)
+    prev = kpis(df_prev)
+
+    d_com_pct = delta_pct(cur["com"],      prev["com"])
+    d_acc_pp  = delta_pp (cur["acc"],      prev["acc"])
+    d_rej_pp  = delta_pp (cur["rejp"],     prev["rejp"])
+    d_sh_pct  = delta_pct(cur["sh_h"],     prev["sh_h"])
+    d_ati_pct = delta_pct(cur["ativos"],   prev["ativos"])
+    d_uab_pct = delta_pct(cur["utr_abs"],  prev["utr_abs"])
+    d_ume_pct = delta_pct(cur["utr_med"],  prev["utr_med"])
+
+    # ------------- Texto final (parágrafos vazios) -------------
     linhas = [
         f"Completas: {fmt_int(cur['com'])} ({fmt_pct(d_com_pct)}) {arrow(d_com_pct, good_when_up=True)}",
-        f"Aceitação: {fmt_dec(cur['acc'])}% ({fmt_pp(d_acc_pp)}) {arrow(d_acc_pp, good_when_up=True)}",
+        f"Aceitação: {fmt_dec(cur['acc'])}% ({fmt_pp(d_acc_pp)}) {arrow(d_acc_pp,  good_when_up=True)}",
         f"Rejeição: {fmt_dec(cur['rejp'])}% ({fmt_pp(d_rej_pp)}) {arrow(d_rej_pp, good_when_up=False)}",
         f"Total SH: {_sec_to_hms(cur['seg'])} ({fmt_pct(d_sh_pct)}) {arrow(d_sh_pct, good_when_up=True)}",
         f"Ativos: {fmt_int(cur['ativos'])} ({fmt_pct(d_ati_pct)}) {arrow(d_ati_pct, good_when_up=True)}",
-        f"UTR (Abs.): {fmt_dec(cur['utr_abs'], 2)} ({fmt_pct(d_uab_pct)}) {arrow(d_uab_pct, good_when_up=True)}",
-        f"UTR (Médias): {fmt_dec(cur['utr_med'], 2)} ({fmt_pct(d_ume_pct)}) {arrow(d_ume_pct, good_when_up=True)}",
+        f"UTR (Abs.): {fmt_dec(cur['utr_abs'])} ({fmt_pct(d_uab_pct)}) {arrow(d_uab_pct, good_when_up=True)}",
+        f"UTR (Médias): {fmt_dec(cur['utr_med'])} ({fmt_pct(d_ume_pct)}) {arrow(d_ume_pct, good_when_up=True)}",
     ]
-
     texto = header + "\n\n" + "\n\n".join(linhas)
 
     st.subheader("📝 Texto pronto")
-    st.text_area("Copie e cole:", value=texto, height=280)
+    st.text_area("Copie e cole:", value=texto, height=300)
 
 
