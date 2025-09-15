@@ -1292,7 +1292,7 @@ if modo == "Perfil do Entregador":
 # -------------------------------------------------------------------
 # 🧾 Resumo (Mensal/Semanal) — texto pronto com setas por sinal (🟢⬆ / 🔴⬇ / ⚪)
 # -------------------------------------------------------------------
-if modo == "Resumo (Mensal/Semanal)":
+if modo == "Resumos":
     st.header("🧾 Resumo (Mensal/Semanal)")
 
     import pandas as pd
