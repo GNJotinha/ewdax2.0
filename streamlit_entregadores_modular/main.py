@@ -1036,6 +1036,9 @@ if modo == "Início":
 # -------------------------------------------------------------------
 # 👤 Perfil do Entregador (histórico completo, sem filtros extras)
 # -------------------------------------------------------------------
+# -------------------------------------------------------------------
+# 👤 Perfil do Entregador (histórico completo, sem filtros extras)
+# -------------------------------------------------------------------
 if modo == "Perfil do Entregador":
     st.header("👤 Perfil do Entregador")
 
@@ -1091,10 +1094,12 @@ if modo == "Perfil do Entregador":
     else:
         utr_medias_hist = 0.0
 
-    # Tempo online (0–1) -> exibir em %
+    # Tempo online médio: auto-normaliza (0–1 ou 0–100) para 0–100
     try:
         from utils import calcular_tempo_online
-        t_online_pct = calcular_tempo_online(df_e) * 100.0  # %
+        _t = float(calcular_tempo_online(df_e))
+        t_online_pct = _t if _t > 1.0001 else _t * 100.0
+        t_online_pct = max(0.0, min(100.0, t_online_pct))
     except Exception:
         t_online_pct = 0.0
 
@@ -1102,6 +1107,14 @@ if modo == "Perfil do Entregador":
     dias_ativos = int(df_e["data"].dt.date.nunique())
     ultima_atividade = df_e["data"].max()
     ultima_txt = ultima_atividade.strftime("%d/%m/%y") if pd.notna(ultima_atividade) else "—"
+
+    # --- Ajuste fino de UI nas métricas (opcional)
+    st.markdown("""
+    <style>
+      div[data-testid="stMetric"] > label { font-size: 0.90rem; color: #9aa4b2; }
+      div[data-testid="stMetric"] > div:nth-child(2) { font-size: 2rem; }
+    </style>
+    """, unsafe_allow_html=True)
 
     # ======================
     # KPIs — layout limpo + legendas %
@@ -1120,7 +1133,7 @@ if modo == "Perfil do Entregador":
         st.metric("Completas",      f"{completas:,}".replace(",","."))    # sem delta
         st.caption(f"Conclusão: {comp_pct:.2f}%")
 
-    # 2ª linha (4 colunas) — SH em HH:MM:SS
+    # 2ª linha (4 colunas) — Ofertadas, Rejeitadas, Online médio, SH (HH:MM:SS)
     c5, c6, c7, c8 = st.columns(4)
     with c5:
         st.metric("Ofertadas",      f"{ofertadas:,}".replace(",","."))    # sem delta
@@ -1128,15 +1141,16 @@ if modo == "Perfil do Entregador":
         st.metric("Rejeitadas",     f"{rejeitadas:,}".replace(",","."))   # sem delta
         st.caption(f"Rejeição: {rej_pct:.2f}%")
     with c7:
-        st.metric("SH (hist.)",     _sec_to_hms(horas_total * 3600))      # HH:MM:SS
-        st.caption(f"Tempo online médio: {t_online_pct:.2f}%")
+        st.metric("Online médio",   f"{t_online_pct:.2f}%")
     with c8:
-        st.metric("Dias ativos",    f"{dias_ativos}")
+        st.metric("SH (hist.)",     _sec_to_hms(horas_total * 3600))      # HH:MM:SS
 
-    # 3ª linha — data com coluna larga pra não cortar
-    dcol, _ = st.columns([1, 3])
-    with dcol:
-        st.metric("Últ. dia", ultima_txt)  # ex.: 14/09/25
+    # 3ª linha — Dias ativos + Últ. dia
+    c9, c10 = st.columns(2)
+    with c9:
+        st.metric("Dias ativos",    f"{dias_ativos}")
+    with c10:
+        st.metric("Últ. dia",       ultima_txt)  # ex.: 14/09/25
 
     # ============================
     # 📈 Evolução mensal (barras)
@@ -1270,3 +1284,4 @@ if modo == "Perfil do Entregador":
         )
     else:
         st.caption("—")
+
