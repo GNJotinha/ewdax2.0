@@ -204,6 +204,7 @@ MENU = {
         "Ver geral",
         "Simplificada (WhatsApp)",
         "Relatório Customizado",
+        "Perfil do Entregador",
     ],
     "Relatórios": [
         "Alertas de Faltas",
@@ -1114,5 +1115,189 @@ if modo == "Relatórios Subpraças":
         + f" • Período: **{periodo_txt}**"
     )
 
+if modo == "Perfil do Entregador":
+    st.header("👤 Perfil do Entregador")
+
+    # --- Filtros
+    entregadores_lista = sorted(df["pessoa_entregadora"].dropna().unique())
+    nome = st.selectbox("Selecione o entregador:", [None] + entregadores_lista, format_func=lambda x: "" if x is None else x)
+
+    tipo_periodo = st.radio("Período", ["Mês/Ano", "Período contínuo"], horizontal=True, index=0)
+    mes_sel = ano_sel = None
+    data_ini = data_fim = None
+
+    if tipo_periodo == "Mês/Ano":
+        c1, c2 = st.columns(2)
+        mes_sel = c1.selectbox("Mês", list(range(1, 12+1)))
+        ano_sel = c2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
+    else:
+        data_min = pd.to_datetime(df["data"]).min().date()
+        data_max = pd.to_datetime(df["data"]).max().date()
+        periodo = st.date_input("Intervalo:", [data_min, data_max], format="DD/MM/YYYY")
+        if len(periodo) == 2:
+            data_ini, data_fim = periodo[0], periodo[1]
+
+    turno_opts = ["Todos os turnos"]
+    if "periodo" in df.columns:
+        turno_opts += sorted([t for t in df["periodo"].dropna().unique()])
+    turno_sel = st.selectbox("Turno (para o gráfico diário)", turno_opts, index=0)
+
+    metodo_utr = st.radio("Método de UTR", ["Absoluto", "Médias"], horizontal=True, index=0)
+
+    gerar = st.button("Gerar perfil", type="primary", use_container_width=True)
+
+    if not (gerar and nome):
+        st.stop()
+
+    # --- Recorte da base do entregador
+    df_e = df[df["pessoa_entregadora"] == nome].copy()
+    if tipo_periodo == "Mês/Ano":
+        df_e = df_e[(df_e["mes"] == mes_sel) & (df_e["ano"] == ano_sel)]
+    else:
+        if data_ini and data_fim:
+            df_e = df_e[(pd.to_datetime(df_e["data"]).dt.date >= data_ini) &
+                        (pd.to_datetime(df_e["data"]).dt.date <= data_fim)]
+
+    if df_e.empty:
+        st.info("❌ Nenhum dado para esse entregador/período.")
+        st.stop()
+
+    # --- KPIs básicos
+    ofertadas  = int(pd.to_numeric(df_e.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
+    aceitas    = int(pd.to_numeric(df_e.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
+    rejeitadas = int(pd.to_numeric(df_e.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
+    completas  = int(pd.to_numeric(df_e.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0).sum())
+
+    acc_pct  = (aceitas   / ofertadas * 100) if ofertadas > 0 else 0.0
+    rej_pct  = (rejeitadas/ ofertadas * 100) if ofertadas > 0 else 0.0
+    comp_pct = (completas / aceitas   * 100) if aceitas   > 0 else 0.0
+
+    # horas (segundos_abs já existe; senão cai no helper do relatorios)
+    if "segundos_abs" in df_e.columns:
+        horas = df_e["segundos_abs"].sum() / 3600.0
+    else:
+        horas = _horas_from_abs(df_e)
+
+    # UTR do período
+    utr_abs = (ofertadas / horas) if horas > 0 else 0.0
+
+    # Tempo online médio em % (exibir coerente)
+    try:
+        from utils import calcular_tempo_online
+        t_online_ratio = calcular_tempo_online(df_e)  # 0.00–1.00
+        t_online_pct = t_online_ratio * 100.0
+    except Exception:
+        t_online_pct = 0.0
+
+    # Dias presentes/faltas no recorte
+    df_e["data"] = pd.to_datetime(df_e["data"]).dt.date
+    presentes = len(set(df_e["data"]))
+    if tipo_periodo == "Mês/Ano":
+        import calendar
+        ndias_mes = calendar.monthrange(ano_sel, mes_sel)[1]
+        faltas = ndias_mes - presentes
+    else:
+        if data_ini and data_fim:
+            total_dias = (data_fim - data_ini).days + 1
+            faltas = total_dias - presentes
+        else:
+            faltas = 0
+
+    # UTR "Médias": reusa sua base diária por pessoa/turno e faz média dos UTRs
+    base_u = utr_por_entregador_turno(df[df["pessoa_entregadora"] == nome])
+    if not base_u.empty:
+        base_u["data"] = pd.to_datetime(base_u["data"]).dt.date
+        if tipo_periodo == "Mês/Ano":
+            base_u = base_u[(pd.to_datetime(base_u["data"]).dt.month == mes_sel) &
+                            (pd.to_datetime(base_u["data"]).dt.year  == ano_sel)]
+        else:
+            if data_ini and data_fim:
+                base_u = base_u[(base_u["data"] >= data_ini) & (base_u["data"] <= data_fim)]
+        base_u = base_u[base_u["supply_hours"] > 0]
+        utr_medias = (base_u["corridas_ofertadas"] / base_u["supply_hours"]).mean() if not base_u.empty else 0.0
+    else:
+        utr_medias = 0.0
+
+    # --- Header de KPIs
+    k1,k2,k3,k4 = st.columns(4)
+    k1.metric("UTR (Absoluto)", f"{utr_abs:.2f}")
+    k2.metric("UTR (Médias)",   f"{utr_medias:.2f}")
+    k3.metric("Aceitas", f"{aceitas:,}".replace(",","."), f"{acc_pct:.1f}%")
+    k4.metric("Completas", f"{completas:,}".replace(",","."), f"{comp_pct:.1f}%")
+
+    k5,k6,k7,k8 = st.columns(4)
+    k5.metric("Ofertadas", f"{ofertadas:,}".replace(",","."), None)
+    k6.metric("Rejeitadas", f"{rejeitadas:,}".replace(",","."), f"{rej_pct:.1f}%")
+    k7.metric("Supply Hours", f"{horas:.1f} h")
+    k8.metric("Tempo online (médio)", f"{t_online_pct:.1f}%")
+
+    # --- Categoria (quando Mês/Ano)
+    if tipo_periodo == "Mês/Ano":
+        df_cat = classificar_entregadores(df, mes_sel, ano_sel)
+        df_cat = df_cat[df_cat["pessoa_entregadora"] == nome]
+        if not df_cat.empty:
+            cat = df_cat.iloc[0]["categoria"]
+            crit = df_cat.iloc[0]["criterios_atingidos"]
+            st.info(f"🏷️ Categoria no mês: **{cat}** — {crit}")
+
+    # --- UTR Diário (filtrado por turno para o gráfico)
+    base_plot = base_u.copy()
+    if turno_sel != "Todos os turnos" and "periodo" in base_plot.columns:
+        base_plot = base_plot[base_plot["periodo"] == turno_sel]
+
+    if base_plot.empty:
+        st.warning("Sem base diária para montar o gráfico de UTR.")
+    else:
+        serie = base_plot.copy()
+        serie["data"] = pd.to_datetime(serie["data"])
+        serie["dia_num"] = serie["data"].dt.day
+
+        import plotly.express as px
+        if metodo_utr.startswith("Méd"):
+            serie["utr_line"] = serie["corridas_ofertadas"] / serie["supply_hours"]
+            s_dia = serie.groupby("dia_num", as_index=False)["utr_line"].mean().rename(columns={"utr_line":"utr_val"})
+        else:
+            s_dia = serie.groupby("dia_num", as_index=False)\
+                         .agg(ofertadas=("corridas_ofertadas","sum"),
+                              horas=("supply_hours","sum"))
+            s_dia["utr_val"] = s_dia.apply(lambda r: (r["ofertadas"]/r["horas"]) if r["horas"]>0 else 0.0, axis=1)
+
+        fig = px.bar(
+            s_dia.sort_values("dia_num"),
+            x="dia_num", y="utr_val", text="utr_val",
+            title=f"UTR diário — {nome} • {metodo_utr}" + ("" if turno_sel=="Todos os turnos" else f" • {turno_sel}"),
+            labels={"dia_num":"Dia","utr_val":"UTR"}, template="plotly_dark",
+            color_discrete_sequence=["#00BFFF"]
+        )
+        fig.update_traces(texttemplate="<b>%{text:.2f}</b>", textposition="outside")
+        fig.update_layout(margin=dict(t=70,r=20,b=60,l=60), showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # --- Top subpraças do entregador no recorte
+    if "sub_praca" in df_e.columns:
+        top_reg = (df_e.groupby("sub_praca", as_index=False)
+                      .agg(ofertadas=("numero_de_corridas_ofertadas","sum"),
+                           seg=("segundos_abs","sum")))
+        if not top_reg.empty:
+            top_reg["horas"] = top_reg["seg"]/3600.0
+            top_reg = top_reg.sort_values("ofertadas", ascending=False).head(10)
+            st.subheader("🗺️ Onde ele mais atua (top subpraças)")
+            st.dataframe(top_reg[["sub_praca","ofertadas","horas"]].rename(columns={"ofertadas":"Corridas","horas":"Horas"}), use_container_width=True)
+
+    # --- Ações rápidas (texto e CSV)
+    from relatorios import gerar_dados
+    bloco = gerar_dados(nome, mes_sel, ano_sel, df_e) if tipo_periodo=="Mês/Ano" else gerar_dados(nome, None, None, df_e)
+    st.subheader("📲 Texto (WhatsApp)")
+    st.text_area("Copie e cole:", value=(bloco or "—"), height=220)
+
+    cols = ["data","periodo","corridas_ofertadas","supply_hours","UTR"]
+    if not base_u.empty:
+        exp = base_u.copy()
+        exp["data"] = pd.to_datetime(exp["data"]).dt.strftime("%d/%m/%Y")
+        exp = exp.rename(columns={"corridas_ofertadas":"corridas_ofertadas","supply_hours":"horas"})
+        exp["UTR"] = (pd.to_numeric(exp["UTR"], errors="coerce").round(2)).astype(str)
+        csv_bin = exp[["data","periodo","horas","corridas_ofertadas","UTR"]].to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Baixar CSV diário do entregador", data=csv_bin,
+                           file_name=f"perfil_{nome.replace(' ','_')}.csv", mime="text/csv")
 
 
