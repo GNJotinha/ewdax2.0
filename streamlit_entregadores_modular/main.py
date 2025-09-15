@@ -1202,40 +1202,76 @@ if modo == "Perfil do Entregador":
     #  - valores = SH (horas)
     #  - texto: % + horas; hover: completadas e acc%
     # ==========================
-    st.subheader("🧭 Distribuição por Turno (histórico)")
-    if "periodo" in df_e.columns:
-        base_turno = (df_e.groupby("periodo", as_index=False)
-                        .agg(seg=("segundos_abs","sum"),
-                             ofertadas=("numero_de_corridas_ofertadas","sum"),
-                             aceitas=("numero_de_corridas_aceitas","sum"),
-                             completas=("numero_de_corridas_completadas","sum")))
-        base_turno["horas"] = base_turno["seg"] / 3600.0
-        base_turno["acc_pct"] = base_turno.apply(
-            lambda r: (r["aceitas"]/r["ofertadas"]*100) if r["ofertadas"]>0 else 0.0, axis=1
+# ==========================
+# 🧭 Distribuição por Turno (pizza baseada em SH)
+# ==========================
+st.subheader("🧭 Distribuição por Turno (histórico)")
+if "periodo" in df_e.columns:
+    base_turno = (
+        df_e.groupby("periodo", as_index=False)
+            .agg(
+                seg=("segundos_abs", "sum"),
+                ofertadas=("numero_de_corridas_ofertadas", "sum"),
+                aceitas=("numero_de_corridas_aceitas", "sum"),
+                completas=("numero_de_corridas_completadas", "sum"),
+            )
+    )
+    base_turno["horas"] = base_turno["seg"] / 3600.0
+    base_turno["acc_pct"] = base_turno.apply(
+        lambda r: (r["aceitas"] / r["ofertadas"] * 100) if r["ofertadas"] > 0 else 0.0, axis=1
+    )
+
+    total_horas = float(base_turno["horas"].sum())
+    if total_horas > 0:
+        # Ordena por SH e agrupa fatias pequenas em "Outros"
+        top_k = 5  # ajuste se quiser mais/menos fatias
+        df_plot = base_turno.sort_values("horas", ascending=False).reset_index(drop=True)
+        if len(df_plot) > top_k:
+            head = df_plot.iloc[:top_k].copy()
+            tail = df_plot.iloc[top_k:].copy()
+            outros = {
+                "periodo": "Outros",
+                "seg": tail["seg"].sum(),
+                "ofertadas": tail["ofertadas"].sum(),
+                "aceitas": tail["aceitas"].sum(),
+                "completas": tail["completas"].sum(),
+                "horas": tail["horas"].sum(),
+                "acc_pct": (tail["aceitas"].sum() / tail["ofertadas"].sum() * 100) if tail["ofertadas"].sum() > 0 else 0.0,
+            }
+            import pandas as pd
+            df_plot = pd.concat([head, pd.DataFrame([outros])], ignore_index=True)
+
+        # Pizza baseada EM SH: valores = horas
+        fig_tn = px.pie(
+            df_plot,
+            names="periodo",
+            values="horas",
+            hole=0.45,  # donut pra dar respiro
+            title="Participação por Turno (base: Supply Hours)",
+            template="plotly_dark",
         )
-
-        if not base_turno.empty and base_turno["horas"].sum() > 0:
-            fig_tn = px.pie(
-                base_turno, names="periodo", values="horas",
-                title="Participação por Turno (base: Supply Hours)",
-                template="plotly_dark",
-            )
-            # adiciona completadas e acc% via customdata
-            fig_tn.update_traces(
-                customdata=base_turno[["completas","acc_pct"]].values,
-                texttemplate="%{label}: %{percent} (%{value:.1f}h)\n%{customdata[0]} comp (%{customdata[1]:.1f}%)",
-                textposition="inside",
-                hovertemplate=(
-                    "Turno: %{label}<br>"
-                    "SH: %{value:.1f}h (%{percent})<br>"
-                    "Completas: %{customdata[0]}<br>"
-                    "Acc: %{customdata[1]:.1f}%<extra></extra>"
-                )
-            )
-            st.plotly_chart(fig_tn, use_container_width=True)
-        else:
-            st.caption("—")
+        # Texto simples: só a porcentagem dentro da fatia — nomes ficam na legenda
+        fig_tn.update_traces(
+            sort=True,
+            textinfo="percent",
+            textposition="inside",
+            # hover com os detalhes (sem poluir rótulo da pizza)
+            customdata=df_plot[["horas", "completas", "acc_pct"]].values,
+            hovertemplate=(
+                "Turno: %{label}<br>"
+                "SH: %{customdata[0]:.1f}h (%{percent})<br>"
+                "Completas: %{customdata[1]}<br>"
+                "Acc: %{customdata[2]:.1f}%<extra></extra>"
+            ),
+        )
+        # Legenda ordenada por SH
+        fig_tn.update_layout(
+            showlegend=True,
+            legend_title_text="Turno",
+            margin=dict(t=60, r=20, b=20, l=20),
+        )
+        st.plotly_chart(fig_tn, use_container_width=True)
     else:
-        st.caption("—")
-
-    # — Itens removidos: tabelinhas de TOPs (subpraças/turnos), histograma por dia ativo, recordes, ranking —
+        st.caption("— (sem horas registradas)")
+else:
+    st.caption("—")
