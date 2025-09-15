@@ -1036,9 +1036,6 @@ if modo == "Início":
 # -------------------------------------------------------------------
 # 👤 Perfil do Entregador (histórico completo, sem filtros extras)
 # -------------------------------------------------------------------
-# -------------------------------------------------------------------
-# 👤 Perfil do Entregador (histórico completo, sem filtros extras)
-# -------------------------------------------------------------------
 if modo == "Perfil do Entregador":
     st.header("👤 Perfil do Entregador")
 
@@ -1059,6 +1056,17 @@ if modo == "Perfil do Entregador":
     df_e["data"] = pd.to_datetime(df_e["data"], errors="coerce")
     df_e["mes_ano"] = df_e["data"].dt.to_period("M").dt.to_timestamp()
 
+    # Helper: segundos -> HH:MM:SS (sem "dias")
+    def _sec_to_hms(sec_total: float | int) -> str:
+        try:
+            sec = int(round(float(sec_total)))
+        except Exception:
+            sec = 0
+        h = sec // 3600
+        m = (sec % 3600) // 60
+        s = sec % 60
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
     # ======================
     # KPIs (histórico total)
     # ======================
@@ -1071,16 +1079,11 @@ if modo == "Perfil do Entregador":
     rej_pct  = (rejeitadas/ ofertadas * 100) if ofertadas > 0 else 0.0
     comp_pct = (completas / aceitas   * 100) if aceitas   > 0 else 0.0
 
-    # Horas totais (segundos_abs blindado no carregador)
-    if "segundos_abs" in df_e.columns:
-        horas_total = df_e["segundos_abs"].sum() / 3600.0
-    else:
-        from relatorios import _horas_from_abs
-        horas_total = _horas_from_abs(df_e)
+    # Horas totais
+    horas_total = (df_e["segundos_abs"].sum() / 3600.0) if "segundos_abs" in df_e.columns else _horas_from_abs(df_e)
 
     # UTR (histórico) — Absoluto e Médias
     utr_abs_hist = (ofertadas / horas_total) if horas_total > 0 else 0.0
-    from relatorios import utr_por_entregador_turno
     base_u = utr_por_entregador_turno(df_e)
     if not base_u.empty:
         base_u = base_u[base_u["supply_hours"] > 0]
@@ -1104,12 +1107,12 @@ if modo == "Perfil do Entregador":
     k1,k2,k3,k4 = st.columns(4)
     k1.metric("UTR (Absoluto)", f"{utr_abs_hist:.2f}")
     k2.metric("UTR (Médias)",   f"{utr_medias_hist:.2f}")
-    k3.metric("Aceitas", f"{aceitas:,}".replace(",","."), f"{acc_pct:.1f}%")
-    k4.metric("Completas", f"{completas:,}".replace(",","."), f"{comp_pct:.1f}%")
+    k3.metric("Aceitas", f"{aceitas:,}".replace(",","."), f"{acc_pct:.2f}%")
+    k4.metric("Completas", f"{completas:,}".replace(",","."), f"{comp_pct:.2f}%")
 
     k5,k6,k7,k8,k9 = st.columns(5)
     k5.metric("Ofertadas", f"{ofertadas:,}".replace(",","."))  # sem delta
-    k6.metric("Rejeitadas", f"{rejeitadas:,}".replace(",","."), f"{rej_pct:.1f}%")
+    k6.metric("Rejeitadas", f"{rejeitadas:,}".replace(",","."), f"{rej_pct:.2f}%")
     k7.metric("Horas (hist.)", f"{horas_total:.1f} h")
     k8.metric("Dias ativos", f"{dias_ativos}")
     k9.metric("Últ. atividade", ultima_txt)
@@ -1125,7 +1128,7 @@ if modo == "Perfil do Entregador":
                    completas=("numero_de_corridas_completadas","sum")))
     mens["acc_pct"] = mens.apply(lambda r: (r["aceitas"]/r["ofertadas"]*100) if r["ofertadas"]>0 else 0.0, axis=1)
     mens["mes_rotulo"] = pd.to_datetime(mens["mes_ano"]).dt.strftime("%b/%y")
-    mens["__label_text__"] = mens.apply(lambda r: f"{int(r['completas'])} ({r['acc_pct']:.1f}%)", axis=1)
+    mens["__label_text__"] = mens.apply(lambda r: f"{int(r['completas'])} ({r['acc_pct']:.2f}%)", axis=1)
 
     fig_evo = px.bar(
         mens, x="mes_rotulo", y="completas", text="__label_text__",
@@ -1149,12 +1152,11 @@ if modo == "Perfil do Entregador":
     st.plotly_chart(fig_evo, use_container_width=True)
 
     # =======================================
-    # 🏷️ Histórico de categoria por mês (com SH)
+    # 🏷️ Histórico de categoria (por mês) — SH em HH:MM:SS
     # =======================================
     st.subheader("🏷️ Histórico de categoria (por mês)")
     meses_unicos = (df["mes_ano"].dropna().sort_values().unique().tolist())
     hist_cat = []
-    from relatorios import classificar_entregadores
     for ts in meses_unicos:
         ts = pd.to_datetime(ts)
         mes_i, ano_i = int(ts.month), int(ts.year)
@@ -1164,7 +1166,7 @@ if modo == "Perfil do Entregador":
             hist_cat.append({
                 "mes_ano": ts,
                 "categoria": str(row.iloc[0]["categoria"]),
-                "supply_hours": float(row.iloc[0]["supply_hours"]),
+                "supply_hours": float(row.iloc[0]["supply_hours"]),  # horas (float)
                 "aceitacao_%": float(row.iloc[0]["aceitacao_%"]),
                 "conclusao_%": float(row.iloc[0]["conclusao_%"]),
             })
@@ -1172,90 +1174,78 @@ if modo == "Perfil do Entregador":
     if hist_cat:
         cat_df = pd.DataFrame(hist_cat).sort_values("mes_ano")
         cat_df["mês"] = cat_df["mes_ano"].dt.strftime("%b/%y")
-        def _hms_from_hours(h):
-            try:
-                total_seconds = int(round(float(h) * 3600))
-                horas, resto = divmod(total_seconds, 3600)
-                minutos, segundos = divmod(resto, 60)
-                return f"{horas:02d}:{minutos:02d}:{segundos:02d}"
-            except Exception:
-                return "00:00:00"
-        cat_df["tempo_hms"] = cat_df["supply_hours"].apply(_hms_from_hours)
+        # converter horas (float) -> segundos -> HH:MM:SS
+        cat_df["Supply Hours (HH:MM:SS)"] = cat_df["supply_hours"].apply(lambda h: _sec_to_hms(h * 3600))
 
         st.dataframe(
-            cat_df[["mês","categoria","supply_hours","tempo_hms","aceitacao_%","conclusao_%"]]
+            cat_df[["mês","categoria","Supply Hours (HH:MM:SS)","aceitacao_%","conclusao_%"]]
                 .rename(columns={
                     "mês":"Mês",
                     "categoria":"Categoria",
-                    "supply_hours":"Supply Hours (h)",
-                    "tempo_hms":"Supply Hours (HH:MM:SS)",
                     "aceitacao_%":"Aceitação %",
                     "conclusao_%":"Conclusão %",
+                })
+                .style.format({
+                    "Aceitação %": "{:.2f}",
+                    "Conclusão %": "{:.2f}",
                 }),
             use_container_width=True
         )
     else:
         st.caption("Sem categoria calculada nos meses desse histórico.")
 
-# ==========================
-# 🏁 Top Turnos (histórico) — ordenado por nº de dias no turno
-# ==========================
-st.subheader("🏁 Top turnos (histórico)")
-if "periodo" in df_e.columns:
-    base_turno = df_e.copy()
-    base_turno["dia"] = base_turno["data"].dt.date  # p/ contar dias únicos por turno
+    # ==========================
+    # 🏁 Top turnos (histórico) — por nº de dias no turno, com SH em HH:MM:SS
+    # ==========================
+    st.subheader("🏁 Top turnos (histórico)")
+    if "periodo" in df_e.columns:
+        base_turno = df_e.copy()
+        base_turno["dia"] = base_turno["data"].dt.date  # contar dias únicos por turno
 
-    top_turnos = (
-        base_turno
-        .groupby("periodo", as_index=False)
-        .agg(
-            dias=("dia", "nunique"),
-            seg=("segundos_abs", "sum"),
-            ofertadas=("numero_de_corridas_ofertadas", "sum"),
-            aceitas=("numero_de_corridas_aceitas", "sum"),
-            completas=("numero_de_corridas_completadas", "sum"),
+        top_turnos = (
+            base_turno
+            .groupby("periodo", as_index=False)
+            .agg(
+                dias=("dia", "nunique"),
+                seg=("segundos_abs", "sum"),
+                ofertadas=("numero_de_corridas_ofertadas", "sum"),
+                aceitas=("numero_de_corridas_aceitas", "sum"),
+                completas=("numero_de_corridas_completadas", "sum"),
+            )
         )
-    )
 
-    # Supply Hours
-    top_turnos["horas"] = top_turnos["seg"] / 3600.0
-    top_turnos["tempo_hms"] = pd.to_timedelta(top_turnos["seg"], unit="s").astype(str)
+        # SH somente em HH:MM:SS (sem dias)
+        top_turnos["Supply Hours (HH:MM:SS)"] = top_turnos["seg"].apply(_sec_to_hms)
 
-    # % de aceitação (pra consulta rápida)
-    top_turnos["acc_pct"] = top_turnos.apply(
-        lambda r: (r["aceitas"] / r["ofertadas"] * 100) if r["ofertadas"] > 0 else 0.0,
-        axis=1
-    )
+        # % de aceitação com 2 casas
+        top_turnos["Aceitação %"] = top_turnos.apply(
+            lambda r: (r["aceitas"] / r["ofertadas"] * 100) if r["ofertadas"] > 0 else 0.0,
+            axis=1
+        )
 
-    # Ordena por nº de dias no turno desc; desempate por SH desc
-    top_turnos = top_turnos.sort_values(["dias", "horas"], ascending=[False, False]).reset_index(drop=True)
+        # Ordena por nº de dias desc; desempate por SH (segundos) desc
+        top_turnos = top_turnos.sort_values(["dias", "seg"], ascending=[False, False]).reset_index(drop=True)
 
-    cols_show = [
-        "periodo",
-        "dias",
-        "horas",
-        "tempo_hms",
-        "aceitas",
-        "completas",
-        "acc_pct",
-    ]
-    st.dataframe(
-        top_turnos[cols_show]
-        .rename(columns={
-            "periodo": "Turno",
-            "dias": "Dias ativos",
-            "horas": "Supply Hours (h)",
-            "tempo_hms": "Supply Hours (HH:MM:SS)",
-            "aceitas": "Aceitas",
-            "completas": "Completas",
-            "acc_pct": "Aceitação %",
-        })
-        .style.format({
-            "horas": "{:.1f}",
-            "acc_pct": "{:.1f}",
-        }),
-        use_container_width=True
-    )
-else:
-    st.caption("—")
-
+        cols_show = [
+            "periodo",
+            "dias",
+            "Supply Hours (HH:MM:SS)",
+            "aceitas",
+            "completas",
+            "Aceitação %",
+        ]
+        st.dataframe(
+            top_turnos[cols_show]
+            .rename(columns={
+                "periodo": "Turno",
+                "dias": "Dias ativos",
+                "aceitas": "Aceitas",
+                "completas": "Completas",
+            })
+            .style.format({
+                "Aceitação %": "{:.2f}",
+            }),
+            use_container_width=True
+        )
+    else:
+        st.caption("—")
