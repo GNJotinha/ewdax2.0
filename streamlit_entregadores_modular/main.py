@@ -1197,81 +1197,65 @@ if modo == "Perfil do Entregador":
     else:
         st.caption("Sem categoria calculada nos meses desse histórico.")
 
-    # ==========================
-    # 🧭 Distribuição por Turno (pizza com SH)
-    #  - valores = SH (horas)
-    #  - texto: % + horas; hover: completadas e acc%
-    # ==========================
 # ==========================
-# 🧭 Distribuição por Turno (pizza baseada em SH)
+# 🏁 Top Turnos (histórico) — ordenado por nº de dias no turno
 # ==========================
-st.subheader("🧭 Distribuição por Turno (histórico)")
+st.subheader("🏁 Top turnos (histórico)")
 if "periodo" in df_e.columns:
-    base_turno = (
-        df_e.groupby("periodo", as_index=False)
-            .agg(
-                seg=("segundos_abs", "sum"),
-                ofertadas=("numero_de_corridas_ofertadas", "sum"),
-                aceitas=("numero_de_corridas_aceitas", "sum"),
-                completas=("numero_de_corridas_completadas", "sum"),
-            )
-    )
-    base_turno["horas"] = base_turno["seg"] / 3600.0
-    base_turno["acc_pct"] = base_turno.apply(
-        lambda r: (r["aceitas"] / r["ofertadas"] * 100) if r["ofertadas"] > 0 else 0.0, axis=1
+    base_turno = df_e.copy()
+    base_turno["dia"] = base_turno["data"].dt.date  # p/ contar dias únicos por turno
+
+    top_turnos = (
+        base_turno
+        .groupby("periodo", as_index=False)
+        .agg(
+            dias=("dia", "nunique"),
+            seg=("segundos_abs", "sum"),
+            ofertadas=("numero_de_corridas_ofertadas", "sum"),
+            aceitas=("numero_de_corridas_aceitas", "sum"),
+            completas=("numero_de_corridas_completadas", "sum"),
+        )
     )
 
-    total_horas = float(base_turno["horas"].sum())
-    if total_horas > 0:
-        # Ordena por SH e agrupa fatias pequenas em "Outros"
-        top_k = 5  # ajuste se quiser mais/menos fatias
-        df_plot = base_turno.sort_values("horas", ascending=False).reset_index(drop=True)
-        if len(df_plot) > top_k:
-            head = df_plot.iloc[:top_k].copy()
-            tail = df_plot.iloc[top_k:].copy()
-            outros = {
-                "periodo": "Outros",
-                "seg": tail["seg"].sum(),
-                "ofertadas": tail["ofertadas"].sum(),
-                "aceitas": tail["aceitas"].sum(),
-                "completas": tail["completas"].sum(),
-                "horas": tail["horas"].sum(),
-                "acc_pct": (tail["aceitas"].sum() / tail["ofertadas"].sum() * 100) if tail["ofertadas"].sum() > 0 else 0.0,
-            }
-            import pandas as pd
-            df_plot = pd.concat([head, pd.DataFrame([outros])], ignore_index=True)
+    # Supply Hours
+    top_turnos["horas"] = top_turnos["seg"] / 3600.0
+    top_turnos["tempo_hms"] = pd.to_timedelta(top_turnos["seg"], unit="s").astype(str)
 
-        # Pizza baseada EM SH: valores = horas
-        fig_tn = px.pie(
-            df_plot,
-            names="periodo",
-            values="horas",
-            hole=0.45,  # donut pra dar respiro
-            title="Participação por Turno (base: Supply Hours)",
-            template="plotly_dark",
-        )
-        # Texto simples: só a porcentagem dentro da fatia — nomes ficam na legenda
-        fig_tn.update_traces(
-            sort=True,
-            textinfo="percent",
-            textposition="inside",
-            # hover com os detalhes (sem poluir rótulo da pizza)
-            customdata=df_plot[["horas", "completas", "acc_pct"]].values,
-            hovertemplate=(
-                "Turno: %{label}<br>"
-                "SH: %{customdata[0]:.1f}h (%{percent})<br>"
-                "Completas: %{customdata[1]}<br>"
-                "Acc: %{customdata[2]:.1f}%<extra></extra>"
-            ),
-        )
-        # Legenda ordenada por SH
-        fig_tn.update_layout(
-            showlegend=True,
-            legend_title_text="Turno",
-            margin=dict(t=60, r=20, b=20, l=20),
-        )
-        st.plotly_chart(fig_tn, use_container_width=True)
-    else:
-        st.caption("— (sem horas registradas)")
+    # % de aceitação (pra consulta rápida)
+    top_turnos["acc_pct"] = top_turnos.apply(
+        lambda r: (r["aceitas"] / r["ofertadas"] * 100) if r["ofertadas"] > 0 else 0.0,
+        axis=1
+    )
+
+    # Ordena por nº de dias no turno desc; desempate por SH desc
+    top_turnos = top_turnos.sort_values(["dias", "horas"], ascending=[False, False]).reset_index(drop=True)
+
+    cols_show = [
+        "periodo",
+        "dias",
+        "horas",
+        "tempo_hms",
+        "aceitas",
+        "completas",
+        "acc_pct",
+    ]
+    st.dataframe(
+        top_turnos[cols_show]
+        .rename(columns={
+            "periodo": "Turno",
+            "dias": "Dias ativos",
+            "horas": "Supply Hours (h)",
+            "tempo_hms": "Supply Hours (HH:MM:SS)",
+            "aceitas": "Aceitas",
+            "completas": "Completas",
+            "acc_pct": "Aceitação %",
+        })
+        .style.format({
+            "horas": "{:.1f}",
+            "acc_pct": "{:.1f}",
+        }),
+        use_container_width=True
+    )
 else:
     st.caption("—")
+
