@@ -1417,7 +1417,7 @@ if modo == "Resumos":
         fim_prev = fim - pd.Timedelta(days=7)
 
         semana_label = f"Semana {int(ref_ts.isocalendar().week)}"
-        header = f"Resumo semanal — {semana_label} ({ini.strftime('%d/%m')}–{fim.strftime('%d/%m')})"
+        header = f"Resumo semanal — {semana_label} ({ini.strftime('%d/%m')}–{fim.strftime('%d/%m')}) l "
 
         df_cur  = df[(df["data"] >= ini) & (df["data"] <= fim)].copy()
         df_prev = df[(df["data"] >= ini_prev) & (df["data"] <= fim_prev)].copy()
