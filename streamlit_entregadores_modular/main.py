@@ -23,8 +23,8 @@ from data_loader import carregar_dados
 
 import pandas as pd
 
-SENTINELA_PRACA = "(Sem praça)"
-SENTINELA_SUBPRACA = "(Sem subpraça)"
+# === Sentinelas e helpers pra lidar com valores vazios (NaN/"") ===
+SENTINELA_SUBPRACA = "Livre"  # rótulo pra "sem subpraça"
 
 def _opts_coluna(df: pd.DataFrame, col: str, sentinela: str):
     if col not in df.columns:
@@ -32,7 +32,7 @@ def _opts_coluna(df: pd.DataFrame, col: str, sentinela: str):
     s = df[col]
     tem_na = s.isna().any()
     tem_vazio = s.astype(str).str.strip().eq("").any()
-    # opções = valores não nulos e não vazios
+    # valores não nulos e não vazios
     opts = sorted([x for x in s.dropna().unique() if str(x).strip() != ""])
     # se houver NaN ou vazio, adiciona sentinela no topo
     if tem_na or tem_vazio:
@@ -53,16 +53,6 @@ def _filtrar_por_opcoes(df: pd.DataFrame, col: str, selecionadas: list, sentinel
             return df[mask_vazias]
     else:
         return df[df[col].isin(sel)]
-
-
-def _hms_from_hours(h):
-    try:
-        total_seconds = int(round(float(h) * 3600))
-        horas, resto = divmod(total_seconds, 3600)
-        minutos, segundos = divmod(resto, 60)
-        return f"{horas:02d}:{minutos:02d}:{segundos:02d}"
-    except Exception:
-        return "00:00:00"
 
 
 # ========= HELPERS P/ UTR =========
