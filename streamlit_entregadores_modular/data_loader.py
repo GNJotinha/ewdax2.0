@@ -73,16 +73,7 @@ def _ler(path: Path) -> pd.DataFrame:
     df["pessoa_entregadora_normalizado"] = df["pessoa_entregadora"].apply(normalizar)
     df["mes_ano"] = df["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
 
-    
-    if "sub_praca" in df.columns:
-        df["sub_praca"] = (
-            pd.Series(df["sub_praca"], dtype="string")
-              .str.replace("\u00A0", " ", regex=False)
-              .str.strip()
-              .replace({"": pd.NA})
-              .fillna("Praça Livre")
-        )
-    
+
 
         # ID único do entregador
     if "id_da_pessoa_entregadora" in df.columns:
