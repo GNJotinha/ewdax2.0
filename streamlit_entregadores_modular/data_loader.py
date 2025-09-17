@@ -74,18 +74,16 @@ def _ler(path: Path) -> pd.DataFrame:
     df["mes_ano"] = df["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
 
     
-    # 🔒 Padroniza subpraça: vazio/NaN/espacinho -> "Praça Livre"
     if "sub_praca" in df.columns:
         df["sub_praca"] = (
-            df["sub_praca"]
-            .astype("string")
-            .str.replace("\u00A0", " ", regex=False)  # quebra NBSP do Excel
-            .str.strip()
-            .replace({"": pd.NA})
-            .fillna("Praça Livre")
+            pd.Series(df["sub_praca"], dtype="string")
+              .str.replace("\u00A0", " ", regex=False)
+              .str.strip()
+              .replace({"": pd.NA})
+              .fillna("Praça Livre")
         )
-
     
+
         # ID único do entregador
     if "id_da_pessoa_entregadora" in df.columns:
         df["uuid"] = df["id_da_pessoa_entregadora"].astype(str)
