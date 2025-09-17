@@ -21,6 +21,39 @@ from relatorios import (
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 
+import pandas as pd
+
+SENTINELA_PRACA = "(Sem praça)"
+SENTINELA_SUBPRACA = "(Sem subpraça)"
+
+def _opts_coluna(df: pd.DataFrame, col: str, sentinela: str):
+    if col not in df.columns:
+        return []
+    s = df[col]
+    tem_na = s.isna().any()
+    tem_vazio = s.astype(str).str.strip().eq("").any()
+    # opções = valores não nulos e não vazios
+    opts = sorted([x for x in s.dropna().unique() if str(x).strip() != ""])
+    # se houver NaN ou vazio, adiciona sentinela no topo
+    if tem_na or tem_vazio:
+        return [sentinela] + opts
+    return opts
+
+def _filtrar_por_opcoes(df: pd.DataFrame, col: str, selecionadas: list, sentinela: str):
+    if not selecionadas or col not in df.columns:
+        return df
+    sel = list(selecionadas)
+    inclui_sentinela = sentinela in sel
+    if inclui_sentinela:
+        sel = [x for x in sel if x != sentinela]
+        mask_vazias = df[col].isna() | df[col].astype(str).str.strip().eq("")
+        if sel:
+            return df[mask_vazias | df[col].isin(sel)]
+        else:
+            return df[mask_vazias]
+    else:
+        return df[df[col].isin(sel)]
+
 
 def _hms_from_hours(h):
     try:
@@ -703,8 +736,10 @@ if modo == "Relatório Customizado":
     entregador = st.selectbox("🔎 Selecione o entregador:", [None] + entregadores_lista,
                               format_func=lambda x: "" if x is None else x)
 
-    subpracas = sorted(df["sub_praca"].dropna().unique())
+    subpracas = _opts_coluna(df, "sub_praca", SENTINELA_SUBPRACA)
     filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
+    ...
+    df_filt = _filtrar_por_opcoes(df_filt, "sub_praca", filtro_subpraca, SENTINELA_SUBPRACA)
 
     turnos = sorted(df["periodo"].dropna().unique())
     filtro_turno = st.multiselect("Filtrar por turno:", turnos)
