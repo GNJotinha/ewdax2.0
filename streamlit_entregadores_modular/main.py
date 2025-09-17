@@ -23,6 +23,22 @@ from data_loader import carregar_dados
 
 import pandas as pd
 
+# ---- Helpers de tempo ----
+def _hms_from_hours(horas_float) -> str:
+    """Converte horas (float) -> 'HH:MM:SS' (sem dias), robusto a NaN/strings."""
+    try:
+        h = float(horas_float)
+        if h < 0 or not (h == h):  # NaN
+            h = 0.0
+    except Exception:
+        h = 0.0
+    total_seg = int(round(h * 3600))
+    hh = total_seg // 3600
+    mm = (total_seg % 3600) // 60
+    ss = total_seg % 60
+    return f"{hh:02d}:{mm:02d}:{ss:02d}"
+
+
 
 # ========= HELPERS P/ UTR =========
 
