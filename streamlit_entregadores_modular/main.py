@@ -726,10 +726,7 @@ if modo == "Relatório Customizado":
     entregador = st.selectbox("🔎 Selecione o entregador:", [None] + entregadores_lista,
                               format_func=lambda x: "" if x is None else x)
 
-    df_filt = df[df["pessoa_entregadora"] == entregador]
-    df_filt = _filtrar_por_opcoes(df_filt, "sub_praca", filtro_subpraca, SENTINELA_SUBPRACA)
-    ...
-    df_filt = _filtrar_por_opcoes(df_filt, "sub_praca", filtro_subpraca, SENTINELA_SUBPRACA)
+    df_filt = _filtrar_por_opcoes(df_filt, "sub_praca", (filtro_subpraca or []), SENTINELA_SUBPRACA)
 
     turnos = sorted(df["periodo"].dropna().unique())
     filtro_turno = st.multiselect("Filtrar por turno:", turnos)
