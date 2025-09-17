@@ -357,7 +357,7 @@ if modo == "Indicadores Gerais":
             "Corridas rejeitadas",
             "Corridas completadas",
             "Horas realizadas",
-            "Entregadores Ativos",
+            "Entregadores ativos",
         ],
         index=0,
         horizontal=True,
