@@ -1655,7 +1655,7 @@ if modo == "Relatórios Subpraças":
 # Ativos do Mês (UUID)
 # -------------------------------------------------------------------
 if modo == "Lista de Ativos":
-    st.header("👤 Entregadores ativos no mês (nome + UUID)")
+    st.header("👤 Entregadores ativos no mês")
 
     # Fallback local: garante 'uuid' mesmo se o loader não criou
     if "uuid" not in df.columns and "id_da_pessoa_entregadora" in df.columns:
