@@ -1650,28 +1650,32 @@ if modo == "Relatórios Subpraças":
         + f" • Período: **{periodo_txt}**"
     )
 
+
 # -------------------------------------------------------------------
 # Ativos do Mês (UUID)
 # -------------------------------------------------------------------
-if modo == "Lista de Ativos":
+if modo == "Ativos do Mês (UUID)":
     st.header("👤 Entregadores ativos no mês (nome + UUID)")
 
-    # Seleção de mês/ano
+    # Fallback local: garante 'uuid' mesmo se o loader não criou
+    if "uuid" not in df.columns and "id_da_pessoa_entregadora" in df.columns:
+        df["uuid"] = df["id_da_pessoa_entregadora"].astype(str)
+
     col1, col2 = st.columns(2)
     mes_sel = col1.selectbox("Mês", list(range(1, 13)))
     ano_sel = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
 
-    # (Opcional) Filtros rápidos
     with st.expander("Filtros opcionais"):
         subpracas = sorted([x for x in df.get("sub_praca", pd.Series(dtype=object)).dropna().unique()]) if "sub_praca" in df.columns else []
         turnos = sorted([x for x in df.get("periodo", pd.Series(dtype=object)).dropna().unique()]) if "periodo" in df.columns else []
         f_sub = st.multiselect("Subpraça", subpracas)
         f_turno = st.multiselect("Turno", turnos)
 
-    # Base do mês
     base = df[(df["mes"] == mes_sel) & (df["ano"] == ano_sel)].copy()
 
-    # Aplicar filtros (se houver)
+    # Se quiser “ativo = teve completas no mês”, descomenta a linha abaixo:
+    # base = base[pd.to_numeric(base.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0) > 0]
+
     if f_sub and "sub_praca" in base.columns:
         base = base[base["sub_praca"].isin(f_sub)]
     if f_turno and "periodo" in base.columns:
@@ -1681,11 +1685,11 @@ if modo == "Lista de Ativos":
         st.info("❌ Nenhum entregador ativo para os filtros selecionados.")
         st.stop()
 
-    # Seleciona nome + uuid, remove duplicados
     cols_ok = ["pessoa_entregadora", "uuid"]
     for c in cols_ok:
         if c not in base.columns:
             base[c] = ""
+
     lista = (
         base[cols_ok]
         .dropna(subset=["pessoa_entregadora"])
@@ -1694,25 +1698,15 @@ if modo == "Lista de Ativos":
         .reset_index(drop=True)
     )
 
-    # KPIs
-    total_ativos = len(lista)
-    total_unicos_id = lista["uuid"].nunique()
     c1, c2 = st.columns(2)
-    c1.metric("Ativos (nomes únicos)", total_ativos)
-    c2.metric("UUIDs únicos", total_unicos_id)
+    c1.metric("Ativos (nomes únicos)", len(lista))
+    c2.metric("UUIDs únicos", lista["uuid"].nunique())
 
-    # Tabela
     st.subheader(f"Lista de ativos – {mes_sel:02d}/{ano_sel}")
     st.dataframe(lista, use_container_width=True)
 
-    # Export CSV
     csv_bin = lista.to_csv(index=False).encode("utf-8")
-    fname = f"ativos_nome_uuid_{ano_sel}_{mes_sel:02d}.csv"
-    st.download_button("⬇️ Baixar CSV", data=csv_bin, file_name=fname, mime="text/csv")
+    st.download_button("⬇️ Baixar CSV", data=csv_bin, file_name=f"ativos_nome_uuid_{ano_sel}_{mes_sel:02d}.csv", mime="text/csv")
 
-    # Ajuda
-    st.caption(
-        "Dica: 'ativo no mês' = possui pelo menos um registro no período selecionado. "
-        "Use os filtros para restringir por subpraça ou turno, se quiser."
-    )
+    st.caption("Definição: 'ativo no mês' = pelo menos um registro no período selecionado (use o filtro de completas se preferir).")
 
