@@ -1460,10 +1460,13 @@ if modo == "Resumos":
     d_ati_pct = delta_pct(cur["ativos"],   prev["ativos"])
     d_uab_pct = delta_pct(cur["utr_abs"],  prev["utr_abs"])
     d_ume_pct = delta_pct(cur["utr_med"],  prev["utr_med"])
+    d_ofe_pct = delta_pct(cur["ofe"],      prev["ofe"])
+
 
     # ------------- Texto final (parágrafos vazios) -------------
     linhas = [
         f"Completas: {fmt_int(cur['com'])} ({fmt_pct(d_com_pct)}) {arrow(d_com_pct)}",
+        f"Ofertadas: {fmt_int(cur['ofe'])} ({fmt_pct(d_ofe_pct)}) {arrow(d_ofe_pct)}",
         f"Aceitação: {fmt_dec(cur['acc'])}% ({fmt_pct(d_acc_pct)}) {arrow(d_acc_pct)}",
         f"Rejeição: {fmt_dec(cur['rejp'])}% ({fmt_pct(d_rej_pct)}) {arrow(d_rej_pct)}",
         f"Total SH: {_sec_to_hms(cur['seg'])} ({fmt_pct(d_sh_pct)}) {arrow(d_sh_pct)}",
