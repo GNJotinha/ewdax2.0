@@ -23,37 +23,6 @@ from data_loader import carregar_dados
 
 import pandas as pd
 
-# === Sentinelas e helpers pra lidar com valores vazios (NaN/"") ===
-SENTINELA_SUBPRACA = "Livre"  # rótulo pra "sem subpraça"
-
-def _opts_coluna(df: pd.DataFrame, col: str, sentinela: str):
-    if col not in df.columns:
-        return []
-    s = df[col]
-    tem_na = s.isna().any()
-    tem_vazio = s.astype(str).str.strip().eq("").any()
-    # valores não nulos e não vazios
-    opts = sorted([x for x in s.dropna().unique() if str(x).strip() != ""])
-    # se houver NaN ou vazio, adiciona sentinela no topo
-    if tem_na or tem_vazio:
-        return [sentinela] + opts
-    return opts
-
-def _filtrar_por_opcoes(df: pd.DataFrame, col: str, selecionadas: list, sentinela: str):
-    if not selecionadas or col not in df.columns:
-        return df
-    sel = list(selecionadas)
-    inclui_sentinela = sentinela in sel
-    if inclui_sentinela:
-        sel = [x for x in sel if x != sentinela]
-        mask_vazias = df[col].isna() | df[col].astype(str).str.strip().eq("")
-        if sel:
-            return df[mask_vazias | df[col].isin(sel)]
-        else:
-            return df[mask_vazias]
-    else:
-        return df[df[col].isin(sel)]
-
 
 # ========= HELPERS P/ UTR =========
 
@@ -726,7 +695,7 @@ if modo == "Relatório Customizado":
     entregador = st.selectbox("🔎 Selecione o entregador:", [None] + entregadores_lista,
                               format_func=lambda x: "" if x is None else x)
 
-    subpracas = _opts_coluna(df, "sub_praca", SENTINELA_SUBPRACA)
+    subpracas = sorted(df["sub_praca"].dropna().unique())
     filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
     
     turnos = sorted(df["periodo"].dropna().unique())
