@@ -1699,7 +1699,6 @@ if modo == "Lista de Ativos":
     )
 
     c1, c2 = st.columns(2)
-    c1.metric("Ativos (nomes únicos)", len(lista))
     c2.metric("UUIDs únicos", lista["uuid"].nunique())
 
     st.subheader(f"Lista de ativos – {mes_sel:02d}/{ano_sel}")
@@ -1708,5 +1707,4 @@ if modo == "Lista de Ativos":
     csv_bin = lista.to_csv(index=False).encode("utf-8")
     st.download_button("⬇️ Baixar CSV", data=csv_bin, file_name=f"ativos_nome_uuid_{ano_sel}_{mes_sel:02d}.csv", mime="text/csv")
 
-    st.caption("Definição: 'ativo no mês' = pelo menos um registro no período selecionado (use o filtro de completas se preferir).")
 
