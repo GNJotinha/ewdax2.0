@@ -1570,8 +1570,12 @@ if modo == "Relatórios Subpraças":
         st.stop()
 
     # ===== Filtros =====
-    subpracas = sorted(df["sub_praca"].dropna().unique())
-    sub_sel = st.selectbox("Selecione a subpraça:", subpracas)
+    subpracas = (
+        pd.Series(df["sub_praca"], dtype="string")
+          .str.replace("\u00A0"," ", regex=False).str.strip()
+          .replace({"": pd.NA}).fillna("Praça Livre")
+          .drop_duplicates().sort_values().tolist()
+    )
 
     turnos = sorted(df["periodo"].dropna().unique())
     turnos_sel = st.multiselect("Filtrar por turnos:", turnos)
