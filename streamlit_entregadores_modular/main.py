@@ -343,105 +343,7 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
                 t2 = gerar_simplicado(nome, mes2, ano2, df)
                 st.text_area("Resultado:", value="\n\n".join([t for t in [t1, t2] if t]), height=600)
 
-# -------------------------------------------------------------------
-# 📊 Indicadores Gerais (com % e UTR alinhado)
-# -------------------------------------------------------------------
-# --- Entregadores ativos (mensal e diário) --------------------------
-if modo == "Indicadores Gerais":
-    st.subheader("🔎 Escolha o indicador que deseja visualizar:")
 
-    tipo_grafico = st.radio(
-        "Tipo de gráfico:",
-        [
-            "Corridas ofertadas",
-            "Corridas aceitas",
-            "Corridas rejeitadas",
-            "Corridas completadas",
-            "Horas realizadas",
-            "Entregadores ativos",   # 👈 novo
-        ],
-        index=0,
-        horizontal=True,
-    )
-
-    mes_atual = pd.Timestamp.today().month
-    ano_atual = pd.Timestamp.today().year
-    df_mes_atual = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)]
-
-    # --- Horas realizadas
-    if tipo_grafico == "Horas realizadas":
-        # ... (seu bloco atual de horas realizadas)
-        st.stop()
-
-    # --- Entregadores ativos (NOVO)
-    elif tipo_grafico == "Entregadores ativos":
-        mensal_ents = (
-            df.groupby("mes_ano", as_index=False)["pessoa_entregadora"]
-              .nunique()
-              .rename(columns={"pessoa_entregadora": "entregadores"})
-        )
-        mensal_ents["mes_rotulo"] = mensal_ents["mes_ano"].dt.strftime("%b/%y")
-
-        fig_mensal = px.bar(
-            mensal_ents, x="mes_rotulo", y="entregadores", text="entregadores",
-            title="Entregadores ativos por mês",
-            labels={"mes_rotulo": "Mês/Ano", "entregadores": "Entregadores ativos"},
-            template="plotly_dark", color_discrete_sequence=["#00BFFF"],
-        )
-        fig_mensal.update_traces(
-            texttemplate="<b>%{text}</b>", textposition="outside",
-            textfont=dict(size=16, color="white"),
-            marker_line_color="rgba(255,255,255,0.25)", marker_line_width=0.5,
-        )
-        fig_mensal.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="white"), title_font=dict(size=22),
-            xaxis=dict(showgrid=False, tickfont=dict(size=14)),
-            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)", tickfont=dict(size=14)),
-            bargap=0.25, margin=dict(t=70, r=20, b=60, l=60), showlegend=False,
-        )
-        st.plotly_chart(fig_mensal, use_container_width=True)
-
-        if not df_mes_atual.empty:
-            por_dia_ent = (
-                df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-                            .groupby("dia", as_index=False)["pessoa_entregadora"]
-                            .nunique()
-                            .rename(columns={"pessoa_entregadora": "entregadores"})
-                            .sort_values("dia")
-            )
-            fig_dia = px.line(
-                por_dia_ent, x="dia", y="entregadores",
-                title="📈 Entregadores ativos por dia (mês atual)",
-                labels={"dia": "Dia", "entregadores": "Entregadores ativos"},
-                template="plotly_dark",
-            )
-            fig_dia.update_traces(mode="lines+markers", line_shape="spline",
-                                  hovertemplate="Dia %{x}<br>%{y} entregadores<extra></extra>")
-            fig_dia.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="white"), title_font=dict(size=22),
-                xaxis=dict(showgrid=False, tickmode="linear", dtick=1),
-                yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
-                margin=dict(t=60, r=20, b=60, l=60),
-            )
-            total_unicos_mes = int(df_mes_atual["pessoa_entregadora"].dropna().nunique())
-            st.metric("👤 Entregadores ativos no mês", total_unicos_mes)
-            st.plotly_chart(fig_dia, use_container_width=True)
-        else:
-            st.info("Sem dados no mês atual para plotar entregadores por dia.")
-        st.stop()
-
-    # --- Corridas ofertadas
-    elif tipo_grafico == "Corridas ofertadas":
-        # ... (bloco já existente)
-        st.stop()
-
-    # --- Aceitas / Rejeitadas / Completadas
-    else:
-        # ... (bloco já existente genérico)
-
-# -------------------------------------------------------------------
 if modo == "Categorias de Entregadores":
     st.header("📚 Categorias de Entregadores")
 
@@ -1344,6 +1246,99 @@ if modo == "Relatórios Subpraças":
         + f" • Período: **{periodo_txt}**"
     )
 
+if modo == "Indicadores Gerais":
+    st.subheader("🔎 Escolha o indicador que deseja visualizar:")
+
+    tipo_grafico = st.radio(
+        "Tipo de gráfico:",
+        [
+            "Corridas ofertadas",
+            "Corridas aceitas",
+            "Corridas rejeitadas",
+            "Corridas completadas",
+            "Horas realizadas",
+            "Entregadores ativos",   # 👈 novo
+        ],
+        index=0,
+        horizontal=True,
+    )
+
+    mes_atual = pd.Timestamp.today().month
+    ano_atual = pd.Timestamp.today().year
+    df_mes_atual = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)]
+
+    # --- Horas realizadas
+    if tipo_grafico == "Horas realizadas":
+        # ... (seu bloco atual de horas realizadas)
+        st.stop()
+
+    # --- Entregadores ativos (NOVO)
+    elif tipo_grafico == "Entregadores ativos":
+        mensal_ents = (
+            df.groupby("mes_ano", as_index=False)["pessoa_entregadora"]
+              .nunique()
+              .rename(columns={"pessoa_entregadora": "entregadores"})
+        )
+        mensal_ents["mes_rotulo"] = mensal_ents["mes_ano"].dt.strftime("%b/%y")
+
+        fig_mensal = px.bar(
+            mensal_ents, x="mes_rotulo", y="entregadores", text="entregadores",
+            title="Entregadores ativos por mês",
+            labels={"mes_rotulo": "Mês/Ano", "entregadores": "Entregadores ativos"},
+            template="plotly_dark", color_discrete_sequence=["#00BFFF"],
+        )
+        fig_mensal.update_traces(
+            texttemplate="<b>%{text}</b>", textposition="outside",
+            textfont=dict(size=16, color="white"),
+            marker_line_color="rgba(255,255,255,0.25)", marker_line_width=0.5,
+        )
+        fig_mensal.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="white"), title_font=dict(size=22),
+            xaxis=dict(showgrid=False, tickfont=dict(size=14)),
+            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)", tickfont=dict(size=14)),
+            bargap=0.25, margin=dict(t=70, r=20, b=60, l=60), showlegend=False,
+        )
+        st.plotly_chart(fig_mensal, use_container_width=True)
+
+        if not df_mes_atual.empty:
+            por_dia_ent = (
+                df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
+                            .groupby("dia", as_index=False)["pessoa_entregadora"]
+                            .nunique()
+                            .rename(columns={"pessoa_entregadora": "entregadores"})
+                            .sort_values("dia")
+            )
+            fig_dia = px.line(
+                por_dia_ent, x="dia", y="entregadores",
+                title="📈 Entregadores ativos por dia (mês atual)",
+                labels={"dia": "Dia", "entregadores": "Entregadores ativos"},
+                template="plotly_dark",
+            )
+            fig_dia.update_traces(mode="lines+markers", line_shape="spline",
+                                  hovertemplate="Dia %{x}<br>%{y} entregadores<extra></extra>")
+            fig_dia.update_layout(
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="white"), title_font=dict(size=22),
+                xaxis=dict(showgrid=False, tickmode="linear", dtick=1),
+                yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
+                margin=dict(t=60, r=20, b=60, l=60),
+            )
+            total_unicos_mes = int(df_mes_atual["pessoa_entregadora"].dropna().nunique())
+            st.metric("👤 Entregadores ativos no mês", total_unicos_mes)
+            st.plotly_chart(fig_dia, use_container_width=True)
+        else:
+            st.info("Sem dados no mês atual para plotar entregadores por dia.")
+        st.stop()
+
+    # --- Corridas ofertadas
+    elif tipo_grafico == "Corridas ofertadas":
+        # ... (bloco já existente)
+        st.stop()
+
+    # --- Aceitas / Rejeitadas / Completadas
+    else:
+        # ... (bloco já existente genérico)
 
 
 
