@@ -73,14 +73,19 @@ def _ler(path: Path) -> pd.DataFrame:
     df["pessoa_entregadora_normalizado"] = df["pessoa_entregadora"].apply(normalizar)
     df["mes_ano"] = df["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
 
-
-        # Padroniza 'sub_praca': vazio/NaN -> "Praça Livre"
-    if "sub_praca" in df.columns:
-        s = df["sub_praca"].astype("string").str.strip()  # remove espaços
-        s = s.replace({"": pd.NA})                        # "" -> <NA> (nulo pandas)
-        df["sub_praca"] = s.fillna("Praça Livre")         # nulos -> "Praça Livre"
     
-        
+    # 🔒 Padroniza subpraça: vazio/NaN/espacinho -> "Praça Livre"
+    if "sub_praca" in df.columns:
+        df["sub_praca"] = (
+            df["sub_praca"]
+            .astype("string")
+            .str.replace("\u00A0", " ", regex=False)  # quebra NBSP do Excel
+            .str.strip()
+            .replace({"": pd.NA})
+            .fillna("Praça Livre")
+        )
+
+    
         # ID único do entregador
     if "id_da_pessoa_entregadora" in df.columns:
         df["uuid"] = df["id_da_pessoa_entregadora"].astype(str)
