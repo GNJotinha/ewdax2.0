@@ -1698,9 +1698,6 @@ if modo == "Lista de Ativos":
         .reset_index(drop=True)
     )
 
-    c1, c2 = st.columns(2)
-    c2.metric("UUIDs únicos", lista["uuid"].nunique())
-
     st.subheader(f"Lista de ativos – {mes_sel:02d}/{ano_sel}")
     st.dataframe(lista, use_container_width=True)
 
