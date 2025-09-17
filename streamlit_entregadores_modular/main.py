@@ -344,6 +344,9 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
 # -------------------------------------------------------------------
 # 📊 Indicadores Gerais (com % e UTR alinhado)
 # -------------------------------------------------------------------
+# -------------------------------------------------------------------
+# 📊 Indicadores Gerais (com % e UTR alinhado)
+# -------------------------------------------------------------------
 if modo == "Indicadores Gerais":
     st.subheader("🔎 Escolha o indicador que deseja visualizar:")
 
@@ -367,10 +370,68 @@ if modo == "Indicadores Gerais":
 
     # --- Horas realizadas
     if tipo_grafico == "Horas realizadas":
-        # ... (seu bloco atual de horas realizadas)
+        mensal_horas = (
+            df.groupby("mes_ano", as_index=False)["segundos_abs"].sum()
+              .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
+        )
+        mensal_horas["mes_rotulo"] = mensal_horas["mes_ano"].dt.strftime("%b/%y")
+
+        fig_mensal = px.bar(
+            mensal_horas,
+            x="mes_rotulo",
+            y="horas",
+            text="horas",
+            title="Horas realizadas por mês",
+            labels={"mes_rotulo": "Mês/Ano", "horas": "Horas"},
+            template="plotly_dark",
+            color_discrete_sequence=["#00BFFF"],
+        )
+        fig_mensal.update_traces(
+            texttemplate="<b>%{text:.1f}h</b>",
+            textposition="outside",
+            textfont=dict(size=16, color="white"),
+            marker_line_color="rgba(255,255,255,0.25)",
+            marker_line_width=0.5,
+        )
+        fig_mensal.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="white"), title_font=dict(size=22),
+            xaxis=dict(showgrid=False, tickfont=dict(size=14)),
+            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)", tickfont=dict(size=14)),
+            bargap=0.25, margin=dict(t=70, r=20, b=60, l=60), showlegend=False,
+        )
+        st.plotly_chart(fig_mensal, use_container_width=True)
+
+        if not df_mes_atual.empty:
+            por_dia_h = (
+                df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
+                           .groupby("dia", as_index=False)["segundos_abs"].sum()
+                           .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
+                           .sort_values("dia")
+            )
+            fig_linha = px.line(
+                por_dia_h, x="dia", y="horas",
+                title="📈 Horas realizadas por dia (mês atual)",
+                labels={"dia": "Dia", "horas": "Horas"},
+                template="plotly_dark",
+            )
+            fig_linha.update_traces(mode="lines", line_shape="spline",
+                                    hovertemplate="Dia %{x}<br>%{y:.2f}h<extra></extra>")
+            fig_linha.update_layout(
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="white"), title_font=dict(size=22),
+                xaxis=dict(showgrid=False, tickmode="linear", dtick=1),
+                yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
+                margin=dict(t=60, r=20, b=60, l=60),
+            )
+            total_horas_mes = por_dia_h["horas"].sum()
+            st.metric("⏱️ Horas realizadas no mês", _hms_from_hours(total_horas_mes))
+            st.plotly_chart(fig_linha, use_container_width=True)
+        else:
+            st.info("Sem dados no mês atual para plotar as horas diárias.")
         st.stop()
 
-    # --- Entregadores ativos (NOVO)
+    # --- Entregadores ativos
     elif tipo_grafico == "Entregadores ativos":
         mensal_ents = (
             df.groupby("mes_ano", as_index=False)["pessoa_entregadora"]
@@ -431,13 +492,22 @@ if modo == "Indicadores Gerais":
 
     # --- Corridas ofertadas
     elif tipo_grafico == "Corridas ofertadas":
-        # ... (bloco já existente)
+        # (seu bloco atual de ofertadas fica aqui)
         st.stop()
 
-    # --- Aceitas / Rejeitadas / Completadas
+    # --- Aceitas / Rejeitadas / Completadas (genérico)
     else:
-        # ... (bloco já existente genérico)
+        coluna_map = {
+            "Corridas aceitas": ("numero_de_corridas_aceitas", "Corridas aceitas por mês", "Corridas Aceitas"),
+            "Corridas rejeitadas": ("numero_de_corridas_rejeitadas", "Corridas rejeitadas por mês", "Corridas Rejeitadas"),
+            "Corridas completadas": ("numero_de_corridas_completadas", "Corridas completadas por mês", "Corridas Completadas"),
+        }
+        if tipo_grafico not in coluna_map:
+            st.warning("Tipo de gráfico inválido.")
+            st.stop()
 
+        col, titulo, label = coluna_map[tipo_grafico]
+        # (resto do bloco genérico que já existe)
 
 # -------------------------------------------------------------------
 # Alertas de Faltas
