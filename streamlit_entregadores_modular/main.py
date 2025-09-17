@@ -1654,7 +1654,7 @@ if modo == "Relatórios Subpraças":
 # -------------------------------------------------------------------
 # Ativos do Mês (UUID)
 # -------------------------------------------------------------------
-if modo == "lista de Ativos":
+if modo == "Lista de Ativos":
     st.header("👤 Entregadores ativos no mês (nome + UUID)")
 
     # Fallback local: garante 'uuid' mesmo se o loader não criou
