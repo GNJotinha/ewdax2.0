@@ -576,7 +576,7 @@ if modo == "Indicadores Gerais":
     st.metric(f"🚗 {label} no mês", total_mes)
     st.plotly_chart(fig_dia, use_container_width=True)
 # --- Entregadores ativos (mensal e diário) --------------------------
-    if tipo_grafico == "Entregadores ativos":
+    if tipo_grafico == "Entregadores ativoss":
         # Mensal: entregadores únicos por mes_ano
         mensal_ents = (
             df.groupby("mes_ano", as_index=False)["pessoa_entregadora"]
