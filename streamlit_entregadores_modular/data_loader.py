@@ -72,9 +72,7 @@ def _ler(path: Path) -> pd.DataFrame:
     df["ano"] = df["data_do_periodo"].dt.year
     df["pessoa_entregadora_normalizado"] = df["pessoa_entregadora"].apply(normalizar)
     df["mes_ano"] = df["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
-
-
-
+    
         # ID único do entregador
     if "id_da_pessoa_entregadora" in df.columns:
         df["uuid"] = df["id_da_pessoa_entregadora"].astype(str)
