@@ -210,6 +210,7 @@ MENU = {
         "Categorias de Entregadores",
         "Relatórios Subpraças",
         "Resumos",
+        "Lista de Ativos",
     ],
     "Dashboards": [
         "UTR",
@@ -1648,3 +1649,70 @@ if modo == "Relatórios Subpraças":
         + (f" • Turnos: {', '.join(turnos_sel)}" if turnos_sel else " • Todos os turnos")
         + f" • Período: **{periodo_txt}**"
     )
+
+# -------------------------------------------------------------------
+# Ativos do Mês (UUID)
+# -------------------------------------------------------------------
+if modo == "Lista de Ativos":
+    st.header("👤 Entregadores ativos no mês (nome + UUID)")
+
+    # Seleção de mês/ano
+    col1, col2 = st.columns(2)
+    mes_sel = col1.selectbox("Mês", list(range(1, 13)))
+    ano_sel = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
+
+    # (Opcional) Filtros rápidos
+    with st.expander("Filtros opcionais"):
+        subpracas = sorted([x for x in df.get("sub_praca", pd.Series(dtype=object)).dropna().unique()]) if "sub_praca" in df.columns else []
+        turnos = sorted([x for x in df.get("periodo", pd.Series(dtype=object)).dropna().unique()]) if "periodo" in df.columns else []
+        f_sub = st.multiselect("Subpraça", subpracas)
+        f_turno = st.multiselect("Turno", turnos)
+
+    # Base do mês
+    base = df[(df["mes"] == mes_sel) & (df["ano"] == ano_sel)].copy()
+
+    # Aplicar filtros (se houver)
+    if f_sub and "sub_praca" in base.columns:
+        base = base[base["sub_praca"].isin(f_sub)]
+    if f_turno and "periodo" in base.columns:
+        base = base[base["periodo"].isin(f_turno)]
+
+    if base.empty:
+        st.info("❌ Nenhum entregador ativo para os filtros selecionados.")
+        st.stop()
+
+    # Seleciona nome + uuid, remove duplicados
+    cols_ok = ["pessoa_entregadora", "uuid"]
+    for c in cols_ok:
+        if c not in base.columns:
+            base[c] = ""
+    lista = (
+        base[cols_ok]
+        .dropna(subset=["pessoa_entregadora"])
+        .drop_duplicates()
+        .sort_values("pessoa_entregadora")
+        .reset_index(drop=True)
+    )
+
+    # KPIs
+    total_ativos = len(lista)
+    total_unicos_id = lista["uuid"].nunique()
+    c1, c2 = st.columns(2)
+    c1.metric("Ativos (nomes únicos)", total_ativos)
+    c2.metric("UUIDs únicos", total_unicos_id)
+
+    # Tabela
+    st.subheader(f"Lista de ativos – {mes_sel:02d}/{ano_sel}")
+    st.dataframe(lista, use_container_width=True)
+
+    # Export CSV
+    csv_bin = lista.to_csv(index=False).encode("utf-8")
+    fname = f"ativos_nome_uuid_{ano_sel}_{mes_sel:02d}.csv"
+    st.download_button("⬇️ Baixar CSV", data=csv_bin, file_name=fname, mime="text/csv")
+
+    # Ajuda
+    st.caption(
+        "Dica: 'ativo no mês' = possui pelo menos um registro no período selecionado. "
+        "Use os filtros para restringir por subpraça ou turno, se quiser."
+    )
+
