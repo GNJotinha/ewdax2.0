@@ -346,173 +346,79 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
 # -------------------------------------------------------------------
 # 📊 Indicadores Gerais (com % e UTR alinhado)
 # -------------------------------------------------------------------
-if modo == "Indicadores Gerais":
-    st.subheader("🔎 Escolha o indicador que deseja visualizar:")
-
-    tipo_grafico = st.radio(
-        "Tipo de gráfico:",
-        [
-            "Corridas ofertadas",
-            "Corridas aceitas",
-            "Corridas rejeitadas",
-            "Corridas completadas",
-            "Horas realizadas",
-            "Entregadores ativos",
-        ],
-        index=0,
-        horizontal=True,
+# --- Entregadores ativos (mensal e diário) --------------------------
+if tipo_grafico == "Entregadores ativos":
+    # Mensal: entregadores únicos por mes_ano
+    mensal_ents = (
+        df.groupby("mes_ano", as_index=False)["pessoa_entregadora"]
+          .nunique()
+          .rename(columns={"pessoa_entregadora": "entregadores"})
     )
+    mensal_ents["mes_rotulo"] = mensal_ents["mes_ano"].dt.strftime("%b/%y")
 
+    fig_mensal = px.bar(
+        mensal_ents,
+        x="mes_rotulo",
+        y="entregadores",
+        text="entregadores",
+        title="Entregadores ativos por mês",
+        labels={"mes_rotulo": "Mês/Ano", "entregadores": "Entregadores ativos"},
+        template="plotly_dark",
+        color_discrete_sequence=["#00BFFF"],
+    )
+    fig_mensal.update_traces(
+        texttemplate="<b>%{text}</b>",
+        textposition="outside",
+        textfont=dict(size=16, color="white"),
+        marker_line_color="rgba(255,255,255,0.25)",
+        marker_line_width=0.5,
+    )
+    fig_mensal.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white"), title_font=dict(size=22),
+        xaxis=dict(showgrid=False, tickfont=dict(size=14)),
+        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)", tickfont=dict(size=14)),
+        bargap=0.25, margin=dict(t=70, r=20, b=60, l=60), showlegend=False,
+    )
+    st.plotly_chart(fig_mensal, use_container_width=True)
+
+    # Diário (mês atual): entregadores únicos por dia
     mes_atual = pd.Timestamp.today().month
     ano_atual = pd.Timestamp.today().year
     df_mes_atual = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)]
 
-    # --- Horas realizadas
-    if tipo_grafico == "Horas realizadas":
-        mensal_horas = (
-            df.groupby("mes_ano", as_index=False)["segundos_abs"].sum()
-              .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
-        )
-        mensal_horas["mes_rotulo"] = mensal_horas["mes_ano"].dt.strftime("%b/%y")
-
-        fig_mensal = px.bar(
-            mensal_horas,
-            x="mes_rotulo",
-            y="horas",
-            text="horas",
-            title="Horas realizadas por mês",
-            labels={"mes_rotulo": "Mês/Ano", "horas": "Horas"},
-            template="plotly_dark",
-            color_discrete_sequence=["#00BFFF"],
-        )
-        fig_mensal.update_traces(
-            texttemplate="<b>%{text:.1f}h</b>",
-            textposition="outside",
-            textfont=dict(size=16, color="white"),
-            marker_line_color="rgba(255,255,255,0.25)",
-            marker_line_width=0.5,
-        )
-        fig_mensal.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="white"), title_font=dict(size=22),
-            xaxis=dict(showgrid=False, tickfont=dict(size=14)),
-            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)", tickfont=dict(size=14)),
-            bargap=0.25, margin=dict(t=70, r=20, b=60, l=60), showlegend=False,
-        )
-        st.plotly_chart(fig_mensal, use_container_width=True)
-
-        if not df_mes_atual.empty:
-            por_dia_h = (
-                df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-                           .groupby("dia", as_index=False)["segundos_abs"].sum()
-                           .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
-                           .sort_values("dia")
-            )
-            fig_linha = px.line(
-                por_dia_h, x="dia", y="horas",
-                title="📈 Horas realizadas por dia (mês atual)",
-                labels={"dia": "Dia", "horas": "Horas"},
-                template="plotly_dark",
-            )
-            fig_linha.update_traces(mode="lines", line_shape="spline",
-                                    hovertemplate="Dia %{x}<br>%{y:.2f}h<extra></extra>")
-            fig_linha.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="white"), title_font=dict(size=22),
-                xaxis=dict(showgrid=False, tickmode="linear", dtick=1),
-                yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
-                margin=dict(t=60, r=20, b=60, l=60),
-            )
-            total_horas_mes = por_dia_h["horas"].sum()
-            st.metric("⏱️ Horas realizadas no mês", _hms_from_hours(total_horas_mes))
-            st.plotly_chart(fig_linha, use_container_width=True)
-        else:
-            st.info("Sem dados no mês atual para plotar as horas diárias.")
-        st.stop()
-
-    # --- Demais gráficos (com tratamento especial para Corridas ofertadas)
-    
-    
-    if tipo_grafico == "Corridas ofertadas":
-        metodo_utr = st.radio(
-            "Método",
-            ["Absoluto", "Médias"],
-            horizontal=True,
-            index=0,
-            help="Absoluto = soma de ofertadas ÷ soma de horas. Médias = média simples dos UTRs por entregador/dia."
-        )
-
-        mensal = df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
-        mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
-
-        if _is_absoluto(metodo_utr):
-            mensal = mensal.merge(horas_mensais, on="mes_ano", how="left")
-            mensal["UTR_calc"] = mensal.apply(
-                lambda r: (float(r["numero_de_corridas_ofertadas"]) / float(r["horas"]))
-                if (pd.notna(r["horas"]) and float(r["horas"]) > 0) else 0.0,
-                axis=1
-            )
-        else:
-            utr_mmm = _utr_mensal_media_das_medias(df)  # ['mes_ano','utr_mmm']
-            mensal = mensal.merge(utr_mmm, on="mes_ano", how="left")
-            mensal["UTR_calc"] = mensal["utr_mmm"].fillna(0.0)
-
-        mensal["__label_text__"] = mensal.apply(
-            lambda r: f"{int(r['numero_de_corridas_ofertadas'])}\nUTR {float(r['UTR_calc']):.2f}",
-            axis=1
-        )
-
-        fig = px.bar(
-            mensal,
-            x="mes_rotulo",
-            y="numero_de_corridas_ofertadas",
-            text="__label_text__",
-            title=f"Corridas ofertadas por mês • {metodo_utr}",
-            labels={"numero_de_corridas_ofertadas": "Corridas", "mes_rotulo": "Mês/Ano"},
-            template="plotly_dark",
-            color_discrete_sequence=["#00BFFF"]
-        )
-        fig.update_traces(
-            texttemplate="%{text}",
-            textposition="outside",
-            textfont=dict(size=16, color="white"),
-            marker_line_color="rgba(255,255,255,0.25)",
-            marker_line_width=0.5,
-        )
-        fig.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="white"), title_font=dict(size=22),
-            xaxis=dict(showgrid=False),
-            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
-            bargap=0.25, margin=dict(t=80, r=20, b=60, l=60), showlegend=False,
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        # diário (quantidade de ofertadas no mês atual)
-        por_dia = (
+    if not df_mes_atual.empty:
+        por_dia_ent = (
             df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-                        .groupby("dia", as_index=False)["numero_de_corridas_ofertadas"].sum()
+                        .groupby("dia", as_index=False)["pessoa_entregadora"]
+                        .nunique()
+                        .rename(columns={"pessoa_entregadora": "entregadores"})
                         .sort_values("dia")
         )
         fig_dia = px.line(
-            por_dia, x="dia", y="numero_de_corridas_ofertadas",
-            title="📈 Corridas ofertadas por dia (mês atual)",
-            labels={"dia": "Dia", "numero_de_corridas_ofertadas": "Corridas"},
-            template="plotly_dark"
+            por_dia_ent, x="dia", y="entregadores",
+            title="📈 Entregadores ativos por dia (mês atual)",
+            labels={"dia": "Dia", "entregadores": "Entregadores ativos"},
+            template="plotly_dark",
         )
-        fig_dia.update_traces(line_shape="spline", mode="lines+markers")
-        total_mes = int(por_dia["numero_de_corridas_ofertadas"].sum())
-        st.metric("🚗 Corridas ofertadas no mês", total_mes)
+        fig_dia.update_traces(
+            mode="lines+markers", line_shape="spline",
+            hovertemplate="Dia %{x}<br>%{y} entregadores<extra></extra>"
+        )
+        fig_dia.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="white"), title_font=dict(size=22),
+            xaxis=dict(showgrid=False, tickmode="linear", dtick=1),
+            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.15)"),
+            margin=dict(t=60, r=20, b=60, l=60),
+        )
+        total_unicos_mes = int(df_mes_atual["pessoa_entregadora"].dropna().nunique())
+        st.metric("👤 Entregadores ativos no mês", total_unicos_mes)
         st.plotly_chart(fig_dia, use_container_width=True)
+    else:
+        st.info("Sem dados no mês atual para plotar entregadores por dia.")
+    st.stop()
 
-        st.stop()
-
-    # --- Genérico para aceitas / rejeitadas / completadas (com % no rótulo)
-    coluna_map = {
-        "Corridas aceitas": ("numero_de_corridas_aceitas", "Corridas aceitas por mês", "Corridas Aceitas"),
-        "Corridas rejeitadas": ("numero_de_corridas_rejeitadas", "Corridas rejeitadas por mês", "Corridas Rejeitadas"),
-        "Corridas completadas": ("numero_de_corridas_completadas", "Corridas completadas por mês", "Corridas Completadas"),
-    }
     if tipo_grafico not in coluna_map:
         st.warning("Tipo de gráfico inválido.")
         st.stop()
