@@ -7,7 +7,7 @@ from utils import normalizar, tempo_para_segundos
 
 SHEET = "Base 2025"
 
-@st.cache_data(show_spinner=False)  # 👈 evita ficar mostrando "Running..." toda hor
+@st.cache_data(show_spinner=False)  # 👈 evita ficar mostrando "Running..." toda hora
 def carregar_dados(prefer_drive: bool = False, _ts: float | None = None):
     """
     Carrega a base com 3 estratégias:
