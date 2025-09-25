@@ -353,12 +353,7 @@ if modo in ["Ver geral", "Simplificada (WhatsApp)"]:
 # -------------------------------------------------------------------
 # 📊 Indicadores Gerais (com % e UTR alinhado)
 # -------------------------------------------------------------------
-# -------------------------------------------------------------------
-# 📊 Indicadores Gerais (com % e UTR alinhado)
-# -------------------------------------------------------------------
-# -------------------------------------------------------------------
-# 📊 Indicadores Gerais (com % e UTR alinhado)
-# -------------------------------------------------------------------
+
 if modo == "Indicadores Gerais":
     st.subheader("🔎 Escolha o indicador que deseja visualizar:")
 
@@ -586,6 +581,9 @@ if modo == "Indicadores Gerais":
     # ================================================================
     # 4) Genérico: Aceitas / Rejeitadas / Completadas (mensal + diário)
     # ================================================================
+    # ================================================================
+    # 4) Genérico: Aceitas / Rejeitadas / Completadas (mensal + diário)
+    # ================================================================
     else:
         coluna_map = {
             "Corridas aceitas": ("numero_de_corridas_aceitas", "Corridas aceitas por mês", "Corridas Aceitas"),
@@ -598,15 +596,38 @@ if modo == "Indicadores Gerais":
 
         col, titulo, label = coluna_map[tipo_grafico]
 
+        # 🔀 Toggle de base para COMPLETADAS
+        if tipo_grafico == "Corridas completadas":
+            base_pct = st.radio(
+                "Base de cálculo da %:",
+                ["Aceitas", "Ofertadas"],
+                index=0,
+                horizontal=True,
+                help="Escolha se a % de completas será em cima das Aceitas (taxa de conclusão) ou das Ofertadas."
+            )
+        else:
+            base_pct = "Ofertadas"
+
+        # ---- Mensal
         mensal = df.groupby("mes_ano", as_index=False)[col].sum()
         mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
 
-        # % sobre ofertadas (quando faz sentido)
+        # Denominadores possíveis
         mensal_ofert = (
             df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum()
               .rename(columns={"numero_de_corridas_ofertadas": "ofertadas_total"})
         )
         mensal = mensal.merge(mensal_ofert, on="mes_ano", how="left")
+
+        if tipo_grafico == "Corridas completadas" and base_pct == "Aceitas":
+            mensal_aceitas = (
+                df.groupby("mes_ano", as_index=False)["numero_de_corridas_aceitas"].sum()
+                  .rename(columns={"numero_de_corridas_aceitas": "aceitas_total"})
+            )
+            mensal = mensal.merge(mensal_aceitas, on="mes_ano", how="left")
+            denom_col = "aceitas_total"
+        else:
+            denom_col = "ofertadas_total"
 
         def _pct(v, base):
             try:
@@ -616,12 +637,12 @@ if modo == "Indicadores Gerais":
                 return "0.0%"
 
         mensal["__label_text__"] = mensal.apply(
-            lambda r: f"{int(r[col])} ({_pct(r[col], r.get('ofertadas_total', 0))})",
+            lambda r: f"{int(r[col])} ({_pct(r[col], r.get(denom_col, 0))})",
             axis=1
         )
 
         fig = px.bar(
-            mensal, x="mes_rotulo", y=col, text="__label_text__", title=titulo,
+            mensal, x="mes_rotulo", y=col, text="__label_text__", title=titulo + (f" • Base: {base_pct}" if tipo_grafico=="Corridas completadas" else ""),
             labels={col: label, "mes_rotulo": "Mês/Ano"},
             template="plotly_dark", color_discrete_sequence=["#00BFFF"]
         )
@@ -640,7 +661,7 @@ if modo == "Indicadores Gerais":
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # diário do mês atual (quantidade)
+        # ---- Diário (mês atual)
         por_dia = (
             df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
                         .groupby("dia", as_index=False)[col].sum()
@@ -648,7 +669,7 @@ if modo == "Indicadores Gerais":
         )
         fig_dia = px.line(
             por_dia, x="dia", y=col,
-            title=f"📈 {label} por dia (mês atual)",
+            title=f"📈 {label} por dia (mês atual)" + (f" • Base: {base_pct}" if tipo_grafico=="Corridas completadas" else ""),
             labels={"dia": "Dia", col: label},
             template="plotly_dark"
         )
@@ -658,6 +679,7 @@ if modo == "Indicadores Gerais":
         st.plotly_chart(fig_dia, use_container_width=True)
 
         st.stop()
+
 
 
 # -------------------------------------------------------------------
