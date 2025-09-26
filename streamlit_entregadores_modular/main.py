@@ -1739,17 +1739,17 @@ if modo == "Lista de Ativos":
 # -------------------------------------------------------------------
 # Quem NÃO atuou no mês atual (seleciona 1+ meses de origem; união)
 # -------------------------------------------------------------------
-if modo == "Comparar ativos":
+if modo == "Quem não atuou este mês":
     st.header("🚫 Quem NÃO atuou no mês atual")
 
-    # Garante UUID (fallback, caso loader não tenha setado)
+    # Garante UUID (fallback)
     if "uuid" not in df.columns:
         if "id_da_pessoa_entregadora" in df.columns:
             df["uuid"] = df["id_da_pessoa_entregadora"].astype(str)
         else:
             df["uuid"] = ""
 
-    # Garante data em datetime pra achar o mês atual da base
+    # Define mês atual pela última data na base
     df["data"] = pd.to_datetime(df.get("data"), errors="coerce")
     last_day = pd.to_datetime(df["data"]).max()
     if pd.isna(last_day):
@@ -1759,7 +1759,7 @@ if modo == "Comparar ativos":
     mes_atual = int(last_day.month)
     ano_atual = int(last_day.year)
 
-    # Meses/anos disponíveis na base (evita oferecer mês vazio)
+    # Monta lista de meses disponíveis (exceto o atual)
     meses_labels = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]
     base_meses = (
         df.dropna(subset=["data"])
@@ -1768,11 +1768,8 @@ if modo == "Comparar ativos":
           .size()
           .sort_values(["ano","mes"], ascending=[False, False])
     )
-
-    # Remove o mês atual das opções de origem
     base_meses = base_meses[~((base_meses["ano"] == ano_atual) & (base_meses["mes"] == mes_atual))]
 
-    # Opções legíveis "MM/YYYY - Mês"
     def _fmt_opt(row):
         return f"{int(row['mes']):02d}/{int(row['ano'])} - {meses_labels[int(row['mes'])-1]}"
 
@@ -1780,7 +1777,7 @@ if modo == "Comparar ativos":
     pares  = [(int(r["ano"]), int(r["mes"])) for _, r in base_meses.iterrows()]
     mapa_label_para_par = dict(zip(opcoes, pares))
 
-    st.caption(f"Mês atual de comparação (pela base): **{mes_atual:02d}/{ano_atual} - {meses_labels[mes_atual-1]}**")
+    st.caption(f"Mês atual de comparação: **{mes_atual:02d}/{ano_atual} - {meses_labels[mes_atual-1]}**")
 
     # Multiselect de 1+ meses de origem
     escolhidos = st.multiselect(
@@ -1789,28 +1786,15 @@ if modo == "Comparar ativos":
         help="Vamos pegar quem atuou em QUALQUER um desses meses e checar quem NÃO atuou no mês atual."
     )
 
-    # Filtros e critério de 'ativo'
-    with st.expander("Filtros / Critério"):
-        subs = sorted(df.get("sub_praca", pd.Series(dtype=object)).dropna().unique().tolist()) if "sub_praca" in df.columns else []
-        turns = sorted(df.get("periodo",   pd.Series(dtype=object)).dropna().unique().tolist()) if "periodo"   in df.columns else []
-        f_sub = st.multiselect("Filtrar por subpraça:", subs)
-        f_turn = st.multiselect("Filtrar por turno:", turns)
-        only_completed = st.checkbox(
-            "Ativo = completou > 0 (senão: qualquer atividade)",
-            value=False
-        )
+    # Critério de ativo
+    only_completed = st.checkbox(
+        "Ativo = completou > 0 (senão: qualquer atividade)",
+        value=False
+    )
 
-    # Helpers
-    def _filtra(df_base, mes, ano, f_sub, f_turn):
+    # Helper para calcular ativos em um mês
+    def _ativos(df_base, mes, ano, only_completed):
         d = df_base[(df_base["mes"] == mes) & (df_base["ano"] == ano)].copy()
-        if f_sub and "sub_praca" in d.columns:
-            d = d[d["sub_praca"].isin(f_sub)]
-        if f_turn and "periodo" in d.columns:
-            d = d[d["periodo"].isin(f_turn)]
-        return d
-
-    def _ativos(df_base, mes, ano, only_completed, f_sub, f_turn):
-        d = _filtra(df_base, mes, ano, f_sub, f_turn)
         if d.empty:
             return set()
 
@@ -1837,27 +1821,25 @@ if modo == "Comparar ativos":
 
     # Botão
     disabled = (len(escolhidos) == 0)
-    if st.button("Gerar lista de quem NÃO atuou no mês atual", type="primary", use_container_width=True, disabled=disabled):
-        # Conjunto do mês atual
-        ativos_atual = _ativos(df, mes_atual, ano_atual, only_completed, f_sub, f_turn)
+    if st.button("Gerar lista", type="primary", use_container_width=True, disabled=disabled):
+        # Ativos no mês atual
+        ativos_atual = _ativos(df, mes_atual, ano_atual, only_completed)
 
-        # Conjuntos dos meses escolhidos (origens)
+        # Ativos nos meses escolhidos (UNIÃO)
         conjuntos = []
         for label in escolhidos:
             ano_i, mes_i = mapa_label_para_par[label]
-            conjuntos.append(_ativos(df, mes_i, ano_i, only_completed, f_sub, f_turn))
-
-        # Combinação fixa: UNIÃO (qualquer um dos meses)
+            conjuntos.append(_ativos(df, mes_i, ano_i, only_completed))
         origem = set.union(*conjuntos) if conjuntos else set()
 
-        # Quem estava na(s) origem(ns) e NÃO atuou no mês atual
+        # Diferença
         nao_atuou_no_atual = origem - ativos_atual
 
         # Métricas
         c1,c2,c3 = st.columns(3)
-        c1.metric("Total na(s) origem(ns)", len(origem))
-        c2.metric("Ativos no mês atual", len(ativos_atual))
-        c3.metric("Não atuaram no mês atual", len(nao_atuou_no_atual))
+        c1.metric("Total nas origens", len(origem))
+        c2.metric("Ativos no atual", len(ativos_atual))
+        c3.metric("Não atuaram no atual", len(nao_atuou_no_atual))
 
         st.divider()
 
@@ -1867,7 +1849,7 @@ if modo == "Comparar ativos":
         st.subheader("🚫 Lista – Não atuaram no mês atual")
         df_out = _to_df(nao_atuou_no_atual)
         if df_out.empty:
-            st.success("Todo mundo da(s) origem(ns) atuou no mês atual. 🔥")
+            st.success("Todos da(s) origem(ns) atuaram no mês atual. 🔥")
         else:
             st.dataframe(df_out, use_container_width=True)
             st.download_button(
@@ -1879,4 +1861,5 @@ if modo == "Comparar ativos":
     else:
         if disabled:
             st.info("Selecione pelo menos **1** mês de origem para habilitar o botão.")
+
 
