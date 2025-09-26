@@ -1780,11 +1780,6 @@ if modo == "Comparar ativos":
         help="Vamos pegar quem atuou em QUALQUER um desses meses e checar quem NÃO atuou no mês atual."
     )
 
-    # Critério de ativo
-    only_completed = st.checkbox(
-        "Ativo = completou > 0 (senão: qualquer atividade)",
-        value=False
-    )
 
     # Helper para calcular ativos em um mês
     def _ativos(df_base, mes, ano, only_completed):
