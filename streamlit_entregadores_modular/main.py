@@ -1680,7 +1680,7 @@ if modo == "Relatórios Subpraças":
 # Quem NÃO atuou no mês atual (seleciona 1+ meses de origem; união)
 # -------------------------------------------------------------------
 
-if modo == "Lista de ativos":
+if modo == "Comparar ativos":
     st.header("🚫 Quem NÃO atuou no mês atual")
 
     # Garante UUID
