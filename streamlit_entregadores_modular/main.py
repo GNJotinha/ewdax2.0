@@ -1144,12 +1144,6 @@ if modo == "Início":
 # -------------------------------------------------------------------
 # 👤 Perfil do Entregador (histórico completo, sem filtros extras)
 # -------------------------------------------------------------------
-# -------------------------------------------------------------------
-# 👤 Perfil do Entregador (histórico completo, sem filtros extras)
-# -------------------------------------------------------------------
-# -------------------------------------------------------------------
-# 👤 Perfil do Entregador (histórico completo, sem filtros extras)
-# -------------------------------------------------------------------
 if modo == "Perfil do Entregador":
     st.header("👤 Perfil do Entregador")
 
@@ -1739,7 +1733,7 @@ if modo == "Lista de Ativos":
 # -------------------------------------------------------------------
 # Quem NÃO atuou no mês atual (seleciona 1+ meses de origem; união)
 # -------------------------------------------------------------------
-if modo == "Quem não atuou este mês":
+if modo == "Comparar ativos":
     st.header("🚫 Quem NÃO atuou no mês atual")
 
     # Garante UUID (fallback)
