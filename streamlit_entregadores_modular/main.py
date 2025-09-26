@@ -219,6 +219,7 @@ MENU = {
         "Relatórios Subpraças",
         "Resumos",
         "Lista de Ativos",
+        "Comparar ativos",
     ],
     "Dashboards": [
         "UTR",
@@ -1733,5 +1734,116 @@ if modo == "Lista de Ativos":
 
     csv_bin = lista.to_csv(index=False).encode("utf-8")
     st.download_button("⬇️ Baixar CSV", data=csv_bin, file_name=f"ativos_nome_uuid_{ano_sel}_{mes_sel:02d}.csv", mime="text/csv")
+
+# -------------------------------------------------------------------
+# Interseção 2 meses (A ∩ B) vs 1 mês (C) — quem sumiu no C
+# -------------------------------------------------------------------
+if modo == "Comparar ativos":
+    st.header("👥 Interseção (2 meses) → quem não atuou no 3º mês")
+
+    # Garantir UUID (fallback — seu loader já cria, mas por segurança)
+    if "uuid" not in df.columns:
+        if "id_da_pessoa_entregadora" in df.columns:
+            df["uuid"] = df["id_da_pessoa_entregadora"].astype(str)
+        else:
+            df["uuid"] = ""
+
+    # ------ Seletores de meses/anos ------
+    anos_disp = sorted(df["ano"].dropna().unique().tolist(), reverse=True)
+    meses_disp = list(range(1, 13))
+
+    cA1, cA2 = st.columns(2)
+    mesA = cA1.selectbox("Mês A", meses_disp, index=max(0, pd.Timestamp.today().month-2))
+    anoA = cA2.selectbox("Ano A", anos_disp, index=0)
+
+    cB1, cB2 = st.columns(2)
+    mesB = cB1.selectbox("Mês B", meses_disp, index=max(0, pd.Timestamp.today().month-2))
+    anoB = cB2.selectbox("Ano B", anos_disp, index=0)
+
+    cC1, cC2 = st.columns(2)
+    mesC = cC1.selectbox("Mês C (comparação)", meses_disp, index=max(0, pd.Timestamp.today().month-1))
+    anoC = cC2.selectbox("Ano C (comparação)", anos_disp, index=0)
+
+    with st.expander("Filtros opcionais"):
+        subpracas_opts = sorted([x for x in df.get("sub_praca", pd.Series(dtype=object)).dropna().unique()]) if "sub_praca" in df.columns else []
+        periodos_opts  = sorted([x for x in df.get("periodo",   pd.Series(dtype=object)).dropna().unique()]) if "periodo"   in df.columns else []
+        f_sub  = st.multiselect("Subpraça", subpracas_opts)
+        f_turn = st.multiselect("Turno", periodos_opts)
+        usar_completas = st.checkbox("Considerar 'ativo' somente se completou > 0", value=False,
+                                     help="Marcado: ativo = completou > 0 no mês. Desmarcado: qualquer atividade no mês.")
+
+    # ------ Helpers ------
+    def _filtro_base(df_base, mes, ano, f_sub, f_turn):
+        d = df_base[(df_base["mes"] == mes) & (df_base["ano"] == ano)].copy()
+        if f_sub and "sub_praca" in d.columns:
+            d = d[d["sub_praca"].isin(f_sub)]
+        if f_turn and "periodo" in d.columns:
+            d = d[d["periodo"].isin(f_turn)]
+        return d
+
+    def _ativos_set(df_base, mes, ano, f_sub, f_turn, only_completed=False):
+        d = _filtro_base(df_base, mes, ano, f_sub, f_turn)
+        if d.empty:
+            return set()
+        if only_completed:
+            d = d[pd.to_numeric(d.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0) > 0]
+        else:
+            # qualquer atividade (segundos, ofertadas, aceitas, completadas)
+            soma = d[["segundos_abs",
+                      "numero_de_corridas_ofertadas",
+                      "numero_de_corridas_aceitas",
+                      "numero_de_corridas_completadas"]].fillna(0).sum(axis=1)
+            d = d[soma > 0]
+        if d.empty:
+            return set()
+        # nome + uuid
+        d = d[["pessoa_entregadora", "uuid"]].dropna(subset=["pessoa_entregadora"]).drop_duplicates()
+        # garante uuid string
+        d["uuid"] = d["uuid"].astype(str)
+        return set(zip(d["pessoa_entregadora"], d["uuid"]))
+
+    # ------ Lógica ------
+    ativos_A = _ativos_set(df, mesA, anoA, f_sub, f_turn, usar_completas)
+    ativos_B = _ativos_set(df, mesB, anoB, f_sub, f_turn, usar_completas)
+    ativos_C = _ativos_set(df, mesC, anoC, f_sub, f_turn, usar_completas)
+
+    intersec_AB = ativos_A & ativos_B
+    sumidos = intersec_AB - ativos_C
+
+    # ------ Saída ------
+    st.markdown("### Resultado")
+    st.caption(
+        f"A∩B contém **{len(intersec_AB)}** entregadores; "
+        f"não atuaram em C: **{len(sumidos)}**."
+    )
+
+    df_inter = pd.DataFrame(sorted(list(intersec_AB)), columns=["pessoa_entregadora","uuid"])
+    df_out   = pd.DataFrame(sorted(list(sumidos)),     columns=["pessoa_entregadora","uuid"])
+
+    st.subheader("A ∩ B — quem atuou nos 2 meses")
+    if df_inter.empty:
+        st.info("Nenhum entregador em comum entre os meses A e B com os filtros atuais.")
+    else:
+        st.dataframe(df_inter, use_container_width=True)
+        st.download_button(
+            "⬇️ Baixar CSV (A∩B)",
+            data=df_inter.to_csv(index=False).encode("utf-8"),
+            file_name=f"intersec_{anoA}_{mesA:02d}_{anoB}_{mesB:02d}.csv",
+            mime="text/csv"
+        )
+
+    st.subheader("A ∩ B que **não** atuou em C")
+    if df_out.empty:
+        st.success("✅ Ninguém sumiu no mês C — todo mundo do A∩B atuou em C.")
+    else:
+        st.warning(f"⚠️ {len(df_out)} entregadores do A∩B não atuaram no mês C.")
+        st.dataframe(df_out, use_container_width=True)
+        st.download_button(
+            "⬇️ Baixar CSV (sumidos em C)",
+            data=df_out.to_csv(index=False).encode("utf-8"),
+            file_name=f"sumidos_{anoA}_{mesA:02d}_{anoB}_{mesB:02d}_vs_{anoC}_{mesC:02d}.csv",
+            mime="text/csv"
+        )
+
 
 
