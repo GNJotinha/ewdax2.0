@@ -1797,16 +1797,7 @@ if modo == "Comparar ativos":
         turns = sorted(df.get("periodo",   pd.Series(dtype=object)).dropna().unique().tolist()) if "periodo"   in df.columns else []
         f_sub = st.multiselect("Filtrar por subpraça:", subs)
         f_turn = st.multiselect("Filtrar por turno:", turns)
-        only_completed = st.checkbox(
-            "Considerar 'ativo' somente se completou > 0",
-            value=False,
-            help="Marcado: ativo = número_de_corridas_completadas > 0; desmarcado: qualquer atividade (horas/ofertadas/aceitas/completas)."
-        )
-        criterio = st.radio(
-            "Critério de presença nos meses selecionados:",
-            ["Em TODOS os meses (interseção)", "Em QUALQUER um dos meses (união)"],
-            horizontal=True
-        )
+
 
     # Helpers
     def _filtra(df_base, mes, ano):
