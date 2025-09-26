@@ -1786,7 +1786,7 @@ if modo == "Comparar ativos":
 
     # Multiselect de 1+ meses de origem
     escolhidos = st.multiselect(
-        "Selecione 1 ou mais meses de ORIGEM (quem esteve presente neles):",
+        "Selecione 1 ou mais meses:",
         options=opcoes,
         help="Vamos comparar quem estava nesses meses com o mês atual da base."
     )
@@ -1837,7 +1837,7 @@ if modo == "Comparar ativos":
 
     # Botão
     disabled = (len(escolhidos) == 0)
-    if st.button("Gerar lista de quem NÃO atuou no mês atual", type="primary", use_container_width=True, disabled=disabled):
+    if st.button("Quem não autou nesse mês ainda", type="primary", use_container_width=True, disabled=disabled):
         # Conjunto do mês atual
         ativos_atual = _ativos(df, mes_atual, ano_atual)
 
@@ -1861,7 +1861,7 @@ if modo == "Comparar ativos":
 
         # Métricas
         c1,c2,c3 = st.columns(3)
-        c1.metric("Total na(s) origem(ns)", len(origem))
+        c1.metric("Total", len(origem))
         c2.metric("Ativos no mês atual", len(ativos_atual))
         c3.metric("Não atuaram no mês atual", len(nao_atuou_no_atual))
 
@@ -1870,10 +1870,10 @@ if modo == "Comparar ativos":
         # Tabela
         def _to_df(s): return pd.DataFrame(sorted(list(s)), columns=["Nome","UUID"])
 
-        st.subheader("🚫 Lista – Não atuaram no mês atual")
+        st.subheader("Não atuaram no mês atual")
         df_out = _to_df(nao_atuou_no_atual)
         if df_out.empty:
-            st.success("Todo mundo da(s) origem(ns) atuou no mês atual. 🔥")
+            st.success("Todo mundo da origem atuou no mês atual. 🔥")
         else:
             st.dataframe(df_out, use_container_width=True)
             st.download_button(
