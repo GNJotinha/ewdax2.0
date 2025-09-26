@@ -1677,73 +1677,20 @@ if modo == "Relatórios Subpraças":
 
 
 # -------------------------------------------------------------------
-# Ativos do Mês (UUID)
-# -------------------------------------------------------------------
-if modo == "Lista de Ativos":
-    st.header("👤 Entregadores ativos no mês")
-
-    # Fallback local: garante 'uuid' mesmo se o loader não criou
-    if "uuid" not in df.columns and "id_da_pessoa_entregadora" in df.columns:
-        df["uuid"] = df["id_da_pessoa_entregadora"].astype(str)
-
-    col1, col2 = st.columns(2)
-    mes_sel = col1.selectbox("Mês", list(range(1, 13)))
-    ano_sel = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
-
-    with st.expander("Filtros opcionais"):
-        subpracas = sorted([x for x in df.get("sub_praca", pd.Series(dtype=object)).dropna().unique()]) if "sub_praca" in df.columns else []
-        turnos = sorted([x for x in df.get("periodo", pd.Series(dtype=object)).dropna().unique()]) if "periodo" in df.columns else []
-        f_sub = st.multiselect("Subpraça", subpracas)
-        f_turno = st.multiselect("Turno", turnos)
-
-    base = df[(df["mes"] == mes_sel) & (df["ano"] == ano_sel)].copy()
-
-    # Se quiser “ativo = teve completas no mês”, descomenta a linha abaixo:
-    # base = base[pd.to_numeric(base.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0) > 0]
-
-    if f_sub and "sub_praca" in base.columns:
-        base = base[base["sub_praca"].isin(f_sub)]
-    if f_turno and "periodo" in base.columns:
-        base = base[base["periodo"].isin(f_turno)]
-
-    if base.empty:
-        st.info("❌ Nenhum entregador ativo para os filtros selecionados.")
-        st.stop()
-
-    cols_ok = ["pessoa_entregadora", "uuid"]
-    for c in cols_ok:
-        if c not in base.columns:
-            base[c] = ""
-
-    lista = (
-        base[cols_ok]
-        .dropna(subset=["pessoa_entregadora"])
-        .drop_duplicates()
-        .sort_values("pessoa_entregadora")
-        .reset_index(drop=True)
-    )
-
-    st.subheader(f"Lista de ativos – {mes_sel:02d}/{ano_sel}")
-    st.dataframe(lista, use_container_width=True)
-
-    csv_bin = lista.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Baixar CSV", data=csv_bin, file_name=f"ativos_nome_uuid_{ano_sel}_{mes_sel:02d}.csv", mime="text/csv")
-
-
-# -------------------------------------------------------------------
 # Quem NÃO atuou no mês atual (seleciona 1+ meses de origem; união)
 # -------------------------------------------------------------------
-if modo == "Comparar ativos":
+
+if modo == "Lista de ativos":
     st.header("🚫 Quem NÃO atuou no mês atual")
 
-    # Garante UUID (fallback)
+    # Garante UUID
     if "uuid" not in df.columns:
         if "id_da_pessoa_entregadora" in df.columns:
             df["uuid"] = df["id_da_pessoa_entregadora"].astype(str)
         else:
             df["uuid"] = ""
 
-    # Define mês atual pela última data na base
+    # Define mês atual pela última data da base
     df["data"] = pd.to_datetime(df.get("data"), errors="coerce")
     last_day = pd.to_datetime(df["data"]).max()
     if pd.isna(last_day):
@@ -1777,26 +1724,22 @@ if modo == "Comparar ativos":
     escolhidos = st.multiselect(
         "Selecione 1 ou mais meses de ORIGEM:",
         options=opcoes,
-        help="Vamos pegar quem atuou em QUALQUER um desses meses e checar quem NÃO atuou no mês atual."
+        help="Mostra quem atuou em QUALQUER um desses meses e não atuou no mês atual."
     )
 
-
-    # Helper para calcular ativos em um mês
-    def _ativos(df_base, mes, ano, only_completed):
+    # Helper para calcular ativos
+    def _ativos(df_base, mes, ano):
         d = df_base[(df_base["mes"] == mes) & (df_base["ano"] == ano)].copy()
         if d.empty:
             return set()
 
-        if only_completed:
-            d = d[pd.to_numeric(d.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0) > 0]
-        else:
-            soma = (
-                pd.to_numeric(d.get("segundos_abs", 0), errors="coerce").fillna(0)
-              + pd.to_numeric(d.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0)
-              + pd.to_numeric(d.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0)
-              + pd.to_numeric(d.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0)
-            )
-            d = d.loc[soma > 0]
+        soma = (
+            pd.to_numeric(d.get("segundos_abs", 0), errors="coerce").fillna(0)
+          + pd.to_numeric(d.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0)
+          + pd.to_numeric(d.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0)
+          + pd.to_numeric(d.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0)
+        )
+        d = d.loc[soma > 0]
 
         if d.empty:
             return set()
@@ -1812,13 +1755,13 @@ if modo == "Comparar ativos":
     disabled = (len(escolhidos) == 0)
     if st.button("Gerar lista", type="primary", use_container_width=True, disabled=disabled):
         # Ativos no mês atual
-        ativos_atual = _ativos(df, mes_atual, ano_atual, only_completed)
+        ativos_atual = _ativos(df, mes_atual, ano_atual)
 
-        # Ativos nos meses escolhidos (UNIÃO)
+        # Ativos nos meses de origem (UNIÃO)
         conjuntos = []
         for label in escolhidos:
             ano_i, mes_i = mapa_label_para_par[label]
-            conjuntos.append(_ativos(df, mes_i, ano_i, only_completed))
+            conjuntos.append(_ativos(df, mes_i, ano_i))
         origem = set.union(*conjuntos) if conjuntos else set()
 
         # Diferença
