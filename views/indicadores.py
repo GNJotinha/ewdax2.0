@@ -56,13 +56,15 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         )
         mensal["mes_rotulo"] = pd.to_datetime(mensal["mes_ano"]).dt.strftime("%b/%y")
     
-        fig = px.bar(
-            mensal, x="mes_rotulo", y="entregadores", text="entregadores",
-            title="Entregadores ativos por mês", template="plotly_dark",
-            color_discrete_sequence=["#00BFFF"]
-        )
-        fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
-        st.plotly_chart(fig, use_container_width=True)
+    fig = px.bar(
+        mensal, x="mes_rotulo", y="entregadores", text="entregadores",
+        title="Entregadores ativos por mês", template="plotly_dark",
+        color_discrete_sequence=["#00BFFF"]
+    )
+    fig.update_traces(texttemplate="<b>%{text}</b>", textposition="outside")
+    fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
+    st.plotly_chart(fig, use_container_width=True)
+
     
         if not df_mes_atual.empty:
             por_dia = (
