@@ -40,6 +40,37 @@ def _hms_from_hours(horas_float) -> str:
 
 
 
+
+# ==== Helpers de Subpraça (LIVRE) ====
+def _sub_options_with_livre(df_slice: pd.DataFrame, praca_scope: str = "SAO PAULO") -> list[str]:
+    """
+    Retorna lista de subpraças para UI. Se existir linha sem sub_praca dentro da praca_scope,
+    inclui 'LIVRE' como opção.
+    """
+    subs_col = df_slice.get("sub_praca", pd.Series(dtype=object))
+    subs_validas = sorted([x for x in subs_col.dropna().unique()])
+    tem_livre = ((df_slice.get("praca") == praca_scope) & (subs_col.isna())).any()
+    return (["LIVRE"] + subs_validas) if tem_livre else subs_validas
+
+def _apply_sub_filter(df_base: pd.DataFrame, selecionadas: list[str], praca_scope: str = "SAO PAULO") -> pd.DataFrame:
+    """
+    Aplica filtro de subpraça considerando 'LIVRE' como (praca==scope & sub_praca IS NULL).
+    Mantém o df original caso nenhuma sub seja selecionada.
+    """
+    if not selecionadas:
+        return df_base
+    mask = pd.Series(False, index=df_base.index)
+
+    reais = [s for s in selecionadas if s != "LIVRE"]
+    if reais:
+        mask |= df_base.get("sub_praca").isin(reais)
+
+    if "LIVRE" in selecionadas:
+        mask |= ((df_base.get("praca") == praca_scope) & (df_base.get("sub_praca").isna()))
+
+    return df_base[mask]
+
+
 # ========= HELPERS P/ UTR =========
 
 def _is_medias(texto: str) -> bool:
@@ -766,8 +797,7 @@ if modo == "Relatório Customizado":
 
     if gerar_custom and entregador:
         df_filt = df[df["pessoa_entregadora"] == entregador]
-        if filtro_subpraca:
-            df_filt = df_filt[df_filt["sub_praca"].isin(filtro_subpraca)]
+        df_filt = _apply_sub_filter(df_filt, filtro_subpraca, praca_scope="SAO PAULO")
         if filtro_turno:
             df_filt = df_filt[df_filt["periodo"].isin(filtro_turno)]
         if dias_escolhidos:
@@ -827,25 +857,18 @@ if modo == "UTR":
     mes_sel = col1.selectbox("Mês", list(range(1, 13)))
     ano_sel = col2.selectbox("Ano", sorted(df["ano"].unique(), reverse=True))
 
-    # 🔎 Subpraça (opcional)
-    # lista de subpraças relevantes para o recorte mês/ano (se tiver)
-    df_mm = df[(df["mes"] == mes_sel) & (df["ano"] == ano_sel)]
-    if "sub_praca" in df.columns:
-        subpracas_opts = sorted([x for x in df_mm.get("sub_praca", pd.Series(dtype=object)).dropna().unique()])
-        subpraca_sel = st.multiselect("Filtrar por subpraça (opcional):", subpracas_opts)
-    else:
-        subpraca_sel = []
+    # 🔎 Subpraça (opcional)\n
+# 🔎 Subpraça (opcional) — inclui LIVRE
+df_mm = df[(df["mes"] == mes_sel) & (df["ano"] == ano_sel)]
+if "sub_praca" in df.columns:
+    subpracas_opts = _sub_options_with_livre(df_mm, praca_scope="SAO PAULO")
+    subpraca_sel = st.multiselect("Filtrar por subpraça (opcional):", subpracas_opts)
+else:
+    subpraca_sel = []
 
-    # aplica filtro de subpraça ANTES de montar a base do UTR
-    df_base = df.copy()
-    if subpraca_sel:
-        if "sub_praca" not in df_base.columns:
-            st.warning("⚠️ Coluna 'sub_praca' não encontrada na base.")
-        else:
-            df_base = df_base[df_base["sub_praca"].isin(subpraca_sel)]
-
-    # monta base UTR já com filtros aplicados
-    base_full = utr_por_entregador_turno(df_base, mes_sel, ano_sel)
+# aplica filtro (com LIVRE) ANTES de montar a base do UTR
+df_base = _apply_sub_filter(df.copy(), subpraca_sel, praca_scope="SAO PAULO")
+\nbase_full = utr_por_entregador_turno(df_base, mes_sel, ano_sel)
     if base_full.empty:
         st.info("Nenhum dado encontrado para o período e filtros selecionados.")
         st.stop()
@@ -976,7 +999,7 @@ if modo == "Relação de Entregadores":
     df_filtros["data_do_periodo"] = pd.to_datetime(df_filtros["data_do_periodo"], errors="coerce")
     df_filtros["data"] = df_filtros["data_do_periodo"].dt.date
 
-    subpracas = sorted([x for x in df_filtros["sub_praca"].dropna().unique()])
+    subpracas = _sub_options_with_livre(df_filtros, praca_scope="SAO PAULO")
     filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
 
     turnos = sorted([x for x in df_filtros["periodo"].dropna().unique()])
@@ -1005,8 +1028,7 @@ if modo == "Relação de Entregadores":
 
     if gerar:
         df_sel = df_filtros.copy()
-        if filtro_subpraca:
-            df_sel = df_sel[df_sel["sub_praca"].isin(filtro_subpraca)]
+        df_sel = _apply_sub_filter(df_sel, filtro_subpraca, praca_scope="SAO PAULO")
         if filtro_turno:
             df_sel = df_sel[df_sel["periodo"].isin(filtro_turno)]
         if dias_escolhidos:
@@ -1610,7 +1632,10 @@ if modo == "Relatórios Subpraças":
     turnos_sel = st.multiselect("Filtrar por turnos:", turnos)
 
     # ===== Base filtrada =====
-    df_area = df[df["sub_praca"] == sub_sel].copy()
+    if sub_sel == "LIVRE":
+        df_area = df[(df["praca"] == "SAO PAULO") & (df["sub_praca"].isna())].copy()
+    else:
+        df_area = df[df["sub_praca"] == sub_sel].copy()
     if turnos_sel:
         df_area = df_area[df_area["periodo"].isin(turnos_sel)]
 
