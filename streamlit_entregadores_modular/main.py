@@ -859,16 +859,18 @@ if modo == "UTR":
 
     # 🔎 Subpraça (opcional)\n
 # 🔎 Subpraça (opcional) — inclui LIVRE
+# 🔎 Subpraça (opcional) — inclui LIVRE
 df_mm = df[(df["mes"] == mes_sel) & (df["ano"] == ano_sel)]
-if "sub_praca" in df.columns:
-    subpracas_opts = _sub_options_with_livre(df_mm, praca_scope="SAO PAULO")
-    subpraca_sel = st.multiselect("Filtrar por subpraça (opcional):", subpracas_opts)
-else:
-    subpraca_sel = []
-
-# aplica filtro (com LIVRE) ANTES de montar a base do UTR
-df_base = _apply_sub_filter(df.copy(), subpraca_sel, praca_scope="SAO PAULO")
-base_full = utr_por_entregador_turno(df_base, mes_sel, ano_sel)
+    if "sub_praca" in df.columns:
+        subpracas_opts = _sub_options_with_livre(df_mm, praca_scope="SAO PAULO")
+        subpraca_sel = st.multiselect("Filtrar por subpraça (opcional):", subpracas_opts)
+    else:
+        subpraca_sel = []
+    
+    # aplica filtro (com LIVRE) ANTES de montar a base do UTR
+    df_base = _apply_sub_filter(df.copy(), subpraca_sel, praca_scope="SAO PAULO")
+    
+    base_full = utr_por_entregador_turno(df_base, mes_sel, ano_sel)
     if base_full.empty:
         st.info("Nenhum dado encontrado para o período e filtros selecionados.")
         st.stop()
