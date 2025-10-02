@@ -1,15 +1,39 @@
-import streamlit as st
 import importlib
+import streamlit as st
+
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 
-st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
+# ---------------------------------------------------------
+# Config
+# ---------------------------------------------------------
+st.set_page_config(page_title="Painel de Entregadores", page_icon="📋", layout="wide")
 
-# Auth
+# CSSzinho pra deixar a sidebar mais bonita
+st.markdown("""
+<style>
+section[data-testid="stSidebar"] button { border-radius: 12px; padding: .6rem .75rem; }
+section[data-testid="stSidebar"] h3, section[data-testid="stSidebar"] h2 { margin:.25rem 0 .5rem 0; }
+</style>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# Estado inicial
+# ---------------------------------------------------------
 if "logado" not in st.session_state:
     st.session_state.logado = False
     st.session_state.usuario = ""
 
+if "module" not in st.session_state:
+    # default = Home
+    st.session_state.module = "views.home"
+
+if "open_cat" not in st.session_state:
+    st.session_state.open_cat = None
+
+# ---------------------------------------------------------
+# Login
+# ---------------------------------------------------------
 if not st.session_state.logado:
     st.title("🔐 Login do Painel")
     usuario = st.text_input("Usuário")
@@ -25,8 +49,10 @@ if not st.session_state.logado:
 
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
+# ---------------------------------------------------------
+# Menu (sem item duplicado de Início)
+# ---------------------------------------------------------
 MENU = {
-    "Início": "views.home",
     "Desempenho do Entregador": {
         "Ver geral": "views.ver_geral",
         "Simplificada (WhatsApp)": "views.simplificada",
@@ -48,24 +74,19 @@ MENU = {
     },
 }
 
-if "modo" not in st.session_state:
-    st.session_state.modo = "Início"
-if "module" not in st.session_state:
-    st.session_state.module = "views.home"
-if "open_cat" not in st.session_state:
-    st.session_state.open_cat = None
-
 with st.sidebar:
     st.markdown("### Navegação")
+    # Botão Home dedicado
     if st.button("🏠 Início", use_container_width=True):
-        st.session_state.modo = "Início"
         st.session_state.module = "views.home"
         st.session_state.open_cat = None
         st.rerun()
+
+    # Submenus
     for cat, opts in MENU.items():
         if isinstance(opts, str):
+            # (não usamos item único aqui, mas já deixo compatível)
             if st.button(cat, use_container_width=True):
-                st.session_state.modo = cat
                 st.session_state.module = opts
                 st.session_state.open_cat = None
                 st.rerun()
@@ -74,17 +95,24 @@ with st.sidebar:
             with st.expander(cat, expanded=expanded):
                 for label, module in opts.items():
                     if st.button(label, key=f"btn_{cat}_{label}", use_container_width=True):
-                        st.session_state.modo = label
                         st.session_state.module = module
                         st.session_state.open_cat = cat
                         st.rerun()
 
-# Carrega dados (1x por render). Suporta refresh via botão da Home.
+# ---------------------------------------------------------
+# Dados (suporta refresh disparado pela Home)
+# ---------------------------------------------------------
 df = carregar_dados(prefer_drive=st.session_state.pop("force_refresh", False))
 
 if st.session_state.pop("just_refreshed", False):
     st.success("✅ Base atualizada a partir do Google Drive.")
 
-# Roteia
-page = importlib.import_module(st.session_state.module)
-page.render(df, USUARIOS)
+# ---------------------------------------------------------
+# Roteador
+# ---------------------------------------------------------
+try:
+    page = importlib.import_module(st.session_state.module)
+except Exception as e:
+    st.error(f"Erro ao carregar módulo **{st.session_state.module}**: {e}")
+else:
+    page.render(df, USUARIOS)
