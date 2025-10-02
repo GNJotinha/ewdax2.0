@@ -868,7 +868,7 @@ else:
 
 # aplica filtro (com LIVRE) ANTES de montar a base do UTR
 df_base = _apply_sub_filter(df.copy(), subpraca_sel, praca_scope="SAO PAULO")
-\nbase_full = utr_por_entregador_turno(df_base, mes_sel, ano_sel)
+base_full = utr_por_entregador_turno(df_base, mes_sel, ano_sel)
     if base_full.empty:
         st.info("Nenhum dado encontrado para o período e filtros selecionados.")
         st.stop()
