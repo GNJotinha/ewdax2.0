@@ -1813,6 +1813,7 @@ if modo == "Comparar ativos":
 # -------------------------------------------------------------------
 # Lista de Ativos — quem atuou no período selecionado
 # -------------------------------------------------------------------
+
 if modo == "Lista de Ativos":
     st.header("👤 Lista de Entregadores Ativos")
 
@@ -1866,8 +1867,10 @@ if modo == "Lista de Ativos":
                 .drop_duplicates()
                 .sort_values("pessoa_entregadora"))
         st.metric("Total de ativos no período", int(base.shape[0]))
-        st.dataframe(base.rename(columns={"pessoa_entregadora": "Nome", "uuid": "UUID"}),
-                     use_container_width=True)
+        st.dataframe(
+            base.rename(columns={"pessoa_entregadora": "Nome", "uuid": "UUID"}).reset_index(drop=True),
+            use_container_width=True
+        )
         st.download_button(
             "⬇️ Baixar CSV",
             data=base.to_csv(index=False).encode("utf-8"),
