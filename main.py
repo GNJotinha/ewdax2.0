@@ -9,11 +9,25 @@ from data_loader import carregar_dados
 # ---------------------------------------------------------
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋", layout="wide")
 
-# CSSzinho pra deixar a sidebar mais bonita
+# CSS para estilizar apenas os botões da sidebar
 st.markdown("""
 <style>
-section[data-testid="stSidebar"] button { border-radius: 12px; padding: .6rem .75rem; }
-section[data-testid="stSidebar"] h3, section[data-testid="stSidebar"] h2 { margin:.25rem 0 .5rem 0; }
+/* Botões da sidebar */
+section[data-testid="stSidebar"] button {
+    background-color: #00BFFF !important;  /* azul principal */
+    color: white !important;
+    border: none !important;
+    border-radius: 12px !important;
+    padding: 0.6rem 0.75rem !important;
+    font-weight: 600 !important;
+    margin-bottom: 0.3rem !important;
+}
+section[data-testid="stSidebar"] button:hover {
+    background-color: #1E90FF !important; /* hover azul mais escuro */
+}
+section[data-testid="stSidebar"] h3, section[data-testid="stSidebar"] h2 {
+    margin:.25rem 0 .5rem 0;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -77,7 +91,7 @@ MENU = {
 with st.sidebar:
     st.markdown("### Navegação")
     # Botão Home dedicado
-    if st.button("🏠 Início", use_container_width=True):
+    if st.button("Início", use_container_width=True):
         st.session_state.module = "views.home"
         st.session_state.open_cat = None
         st.rerun()
@@ -85,7 +99,6 @@ with st.sidebar:
     # Submenus
     for cat, opts in MENU.items():
         if isinstance(opts, str):
-            # (não usamos item único aqui, mas já deixo compatível)
             if st.button(cat, use_container_width=True):
                 st.session_state.module = opts
                 st.session_state.open_cat = None
