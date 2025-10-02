@@ -4,151 +4,87 @@ import streamlit as st
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 
-# ---------------------------------------------------------
-# Config
-# ---------------------------------------------------------
-st.set_page_config(page_title="Painel de Entregadores", page_icon="📋", layout="wide")
-
-# THEME CSS — cola inteiro abaixo do set_page_config
 st.markdown("""
 <style>
 :root{
-  --bg:#0E1117;
-  --bg-2:#151A24;
-  --sidebar:#1B212D;
-  --accent:#00BFFF;   /* cor principal */
-  --accent-2:#1E90FF; /* hover */
-  --text:#F5F7FA;
+  /* troque só aqui se quiser outra paleta */
+  --accent:#12A4F7;      /* azul suave principal */
+  --accent-hover:#0F8EDB;/* hover */
+  --chip:#1E2A38;        /* contorno/realce sutil */
+  --bg:#0E1117;          /* fundo */
+  --text:#F4F7FA;        /* texto */
   --muted:#9AA4B2;
-  --card:#0F1520;
-  --border:#232B3A;
-  --shadow:0 10px 30px rgba(0,0,0,.35);
+  --border:#223047;
+  --shadow:0 8px 28px rgba(0,0,0,.35);
 }
 
-/* fundo geral */
+/* fundo e textos */
 html, body, [data-testid="stAppViewContainer"]{
-  background: var(--bg) !important;
-  color: var(--text) !important;
+  background: var(--bg) !important; color: var(--text) !important;
 }
 
-/* topo do app */
-header[data-testid="stHeader"]{
-  background: linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,0)) !important;
-  border-bottom: 1px solid var(--border) !important;
-}
-
-/* sidebar */
+/* SIDEBAR */
 section[data-testid="stSidebar"]{
-  background: var(--sidebar) !important;
-  border-right: 1px solid var(--border) !important;
+  background: #16202C !important; border-right:1px solid var(--border)!important;
 }
 section[data-testid="stSidebar"] .stAlert{
-  background: linear-gradient(180deg, #1f2937 0%, #111827 100%) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 14px !important;
-}
-section[data-testid="stSidebar"] h1, 
-section[data-testid="stSidebar"] h2, 
-section[data-testid="stSidebar"] h3{
-  color: var(--text) !important;
+  background: linear-gradient(180deg,#1f2937 0%,#111827 100%)!important;
+  border:1px solid var(--border)!important; border-radius:14px!important;
 }
 
-/* botões genéricos */
+/* BOTÕES GERAIS (página) */
 .stButton>button{
-  background: var(--accent) !important;
-  color: #ffffff !important;
-  border: 0 !important;
-  border-radius: 14px !important;
-  padding: .75rem 1rem !important;
-  font-weight: 700 !important;
-  box-shadow: var(--shadow) !important;
-  transition: all .15s ease-in-out !important;
+  background: var(--accent) !important; color:#fff!important; border:0!important;
+  border-radius:14px!important; padding:.65rem 1rem!important; font-weight:700!important;
+  box-shadow: var(--shadow) !important; transition: all .15s ease-in-out!important;
 }
-.stButton>button:hover{ background: var(--accent-2) !important; transform: translateY(-1px); }
+.stButton>button:hover{ background: var(--accent-hover)!important; transform: translateY(-1px); }
 .stButton>button:active{ transform: translateY(0); }
 
-/* botões da sidebar (inclui os dentro de expanders) */
-section[data-testid="stSidebar"] .stButton>button{
-  width: 100% !important;
-  margin-bottom: .35rem !important;
-  background: linear-gradient(180deg, var(--accent) 0%, #00a6ff 100%) !important;
+/* BOTÕES DA SIDEBAR — INATIVOS = ghost elegante */
+section[data-testid="stSidebar"] .stButton > button{
+  width:100% !important; margin-bottom:.4rem!important; 
+  background: transparent !important; color: var(--text)!important;
+  border:1px solid var(--chip)!important; box-shadow:none!important;
 }
+
+/* “Ativo” (quando botão recebe focus por clique) ganha preenchido */
+section[data-testid="stSidebar"] .stButton > button:focus,
+section[data-testid="stSidebar"] .stButton > button:focus-visible{
+  background: var(--accent)!important; color:#fff!important; outline:none!important;
+  border-color: var(--accent)!important; box-shadow: var(--shadow)!important;
+}
+
+/* EXPANDERS DO MENU */
 section[data-testid="stSidebar"] [data-testid="stExpander"]{
-  background: var(--bg-2) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 14px !important;
+  background:#121a24!important; border:1px solid var(--chip)!important; border-radius:14px!important;
 }
-section[data-testid="stSidebar"] [data-testid="stExpander"] summary{
-  color: var(--text) !important;
-  font-weight: 700 !important;
+section[data-testid="stSidebar"] [data-testid="stExpander"] summary{ font-weight:700!important; }
+
+/* INPUTS */
+.stTextInput>div>div>input, .stPassword>div>div>input, .stSelectbox>div>div>div{
+  background:#0f1520!important; color:var(--text)!important; border:1px solid var(--border)!important;
+  border-radius:12px!important;
 }
 
-/* inputs / selects */
-.stTextInput>div>div>input,
-.stPassword>div>div>input,
-.stSelectbox>div>div>div{
-  background: var(--bg-2) !important;
-  color: var(--text) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 12px !important;
-}
-
-/* métricas mais elegantes */
+/* MÉTRICAS EM “CARD” */
 [data-testid="stMetric"]{
-  background: var(--card) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 16px !important;
-  padding: .9rem .95rem !important;
-  box-shadow: var(--shadow);
+  background:#0f1520!important; border:1px solid var(--border)!important; border-radius:16px!important;
+  padding:.9rem .95rem!important; box-shadow: var(--shadow);
 }
-[data-testid="stMetricLabel"]{ color: var(--muted) !important; font-weight:600!important;}
-[data-testid="stMetricValue"]{ color: #ffffff !important; font-weight:800!important; letter-spacing:.2px;}
+[data-testid="stMetricLabel"]{ color:var(--muted)!important; font-weight:600!important; }
+[data-testid="stMetricValue"]{ color:#fff!important; font-weight:800!important; letter-spacing:.2px; }
 
-/* separadores */
-hr{ border-color: var(--border) !important; }
-
-/* tabelas */
-[data-testid="stDataFrame"]{
-  background: var(--card) !important;
-  border-radius: 14px !important;
-  border: 1px solid var(--border) !important;
-}
-
-/* alerts/info */
-.stAlert{
-  border-radius: 14px !important;
-  border: 1px solid var(--border) !important;
-  background: var(--bg-2) !important;
-}
-
-/* títulos principais */
-h1, h2, h3{
-  color: var(--text) !important;
-  text-shadow: 0 2px 24px rgba(0,0,0,.35);
-}
-
-/* espaçamento compacto */
-.block-container{ padding-top: 1.2rem !important; }
-
-/* botão download */
+/* DOWNLOAD “outline” */
 .stDownloadButton>button{
-  background: transparent !important;
-  color: var(--accent) !important;
-  border: 1px solid var(--accent) !important;
+  background:transparent!important; color:var(--accent)!important; border:1px solid var(--accent)!important;
+  border-radius:12px!important;
 }
-.stDownloadButton>button:hover{
-  background: var(--accent) !important;
-  color: #0E1117 !important;
-}
+.stDownloadButton>button:hover{ background:var(--accent)!important; color:#0E1117!important; }
 
-/* cards leves para colunas (usa st.container) */
-.card{
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 1rem 1.1rem;
-  box-shadow: var(--shadow);
-}
+/* separadores e tabelas */
+hr{ border-color: var(--border)!important; }
+[data-testid="stDataFrame"]{ background:#0f1520!important; border:1px solid var(--border)!important; border-radius:14px!important; }
 </style>
 """, unsafe_allow_html=True)
 
