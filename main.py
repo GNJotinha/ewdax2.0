@@ -4,20 +4,19 @@ import streamlit as st
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 
-# THEME — clean e funcional (sem .streamlit/config)
 st.markdown("""
 <style>
 :root{
-  /* paleta sóbria */
-  --bg:#0E1117;           /* fundo */
-  --sidebar:#141B25;      /* fundo sidebar */
-  --card:#0F1520;         /* cartões/métricas */
-  --text:#E6E9EE;         /* texto */
-  --muted:#9AA4B2;        /* texto secundário */
-  --border:#1F2A3A;       /* borda sutil */
+  --bg:#0E1117;         /* fundo */
+  --sidebar:#141B25;    /* sidebar */
+  --card:#0F1520;       /* cartões */
+  --text:#E6E9EE;       /* texto */
+  --muted:#9AA4B2;      /* texto secundário */
+  --border:#1F2A3A;
 
-  --accent:#3B82F6;       /* azul discreto */
+  --accent:#3B82F6;     /* azul principal (botões) */
   --accent-hover:#2563EB; /* hover */
+  --metric-h: 130px;    /* ALTURA dos cards/metrics (ajuste aqui) */
 }
 
 /*** base ***/
@@ -25,7 +24,7 @@ html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important;colo
 header[data-testid="stHeader"]{background:transparent!important;border-bottom:1px solid rgba(255,255,255,.04)!important;}
 .block-container{padding-top:1.2rem!important}
 
-/*** sidebar ***/
+/*** SIDEBAR ***/
 section[data-testid="stSidebar"]{
   background:var(--sidebar)!important;border-right:1px solid var(--border)!important;
 }
@@ -34,24 +33,22 @@ section[data-testid="stSidebar"] .stAlert{
   border:1px solid var(--border)!important;border-radius:12px!important;
 }
 
-/* botões da SIDEBAR: ghost elegante (sem preenchido azul) */
+/* BOTÕES DA SIDEBAR — agora PREENCHIDOS */
 section[data-testid="stSidebar"] .stButton>button{
-  width:100%!important;margin-bottom:.40rem!important;
-  background:transparent!important;color:var(--text)!important;
-  border:1px solid var(--border)!important;border-radius:12px!important;
-  padding:.60rem .8rem!important;font-weight:600!important;box-shadow:none!important;
+  width:100%!important;margin-bottom:.45rem!important;
+  background:var(--accent)!important;color:#fff!important;border:0!important;
+  border-radius:12px!important;padding:.65rem .85rem!important;font-weight:700!important;
+  box-shadow:0 6px 20px rgba(0,0,0,.25)!important;transition:.12s ease-in-out!important;
 }
-section[data-testid="stSidebar"] .stButton>button:hover{
-  background:#182233!important;border-color:#2A3A52!important;
-}
-
-/* expanders do menu */
+section[data-testid="stSidebar"] .stButton>button:hover{background:var(--accent-hover)!important;transform:translateY(-1px);}
+section[data-testid="stSidebar"] .stButton>button:active{transform:translateY(0)}
+/* Expanders do menu */
 section[data-testid="stSidebar"] [data-testid="stExpander"]{
   background:#111823!important;border:1px solid var(--border)!important;border-radius:12px!important;
 }
 section[data-testid="stSidebar"] [data-testid="stExpander"] summary{font-weight:700!important}
 
-/*** botões NA PÁGINA: primários (azul discreto) ***/
+/*** BOTÕES NA PÁGINA ***/
 [data-testid="stAppViewContainer"] .stButton>button{
   background:var(--accent)!important;color:#fff!important;border:0!important;
   border-radius:14px!important;padding:.70rem 1rem!important;font-weight:700!important;
@@ -60,24 +57,27 @@ section[data-testid="stSidebar"] [data-testid="stExpander"] summary{font-weight:
 [data-testid="stAppViewContainer"] .stButton>button:hover{background:var(--accent-hover)!important;transform:translateY(-1px);}
 [data-testid="stAppViewContainer"] .stButton>button:active{transform:translateY(0);}
 
-/*** inputs ***/
+/*** INPUTS ***/
 .stTextInput>div>div>input,.stPassword>div>div>input,.stSelectbox>div>div>div{
   background:#0f1520!important;color:var(--text)!important;border:1px solid var(--border)!important;border-radius:12px!important;
 }
 
-/*** métricas em “card” ***/
+/*** MÉTRICAS — tamanho uniforme ***/
 [data-testid="stMetric"]{
   background:var(--card)!important;border:1px solid var(--border)!important;border-radius:14px!important;
   padding:.9rem .95rem!important;box-shadow:0 10px 30px rgba(0,0,0,.25);
+  min-height: var(--metric-h) !important;  /* força mesma altura */
+  display:flex;flex-direction:column;justify-content:center;
 }
 [data-testid="stMetricLabel"]{color:var(--muted)!important;font-weight:600!important}
 [data-testid="stMetricValue"]{color:#fff!important;font-weight:800!important;letter-spacing:.2px}
 
-/*** tabelas & separadores ***/
+/*** TABELAS & SEPARADORES ***/
 [data-testid="stDataFrame"]{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:12px!important}
 hr{border-color:var(--border)!important}
 </style>
 """, unsafe_allow_html=True)
+
 
 
 
