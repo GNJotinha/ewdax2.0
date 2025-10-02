@@ -17,7 +17,14 @@ def hms_from_hours(horas_float) -> str:
 def sub_options_with_livre(df_slice: pd.DataFrame, praca_scope: str = "SAO PAULO") -> list[str]:
     subs_col = df_slice.get("sub_praca", pd.Series(dtype=object))
     subs_validas = sorted([x for x in subs_col.dropna().unique()])
-    tem_livre = ((df_slice.get("praca") == praca_scope) & (subs_col.isna())).any()
+
+    # Torna robusto quando 'praca' não existir
+    praca_series = df_slice.get("praca")
+    if praca_series is None:
+        tem_livre = False
+    else:
+        tem_livre = ((praca_series == praca_scope) & (subs_col.isna())).any()
+
     return (["LIVRE"] + subs_validas) if tem_livre else subs_validas
 
 def apply_sub_filter(df_base: pd.DataFrame, selecionadas: list[str], praca_scope: str = "SAO PAULO") -> pd.DataFrame:
