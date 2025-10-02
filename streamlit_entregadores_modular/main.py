@@ -43,31 +43,22 @@ def _hms_from_hours(horas_float) -> str:
 
 # ==== Helpers de Subpraça (LIVRE) ====
 def _sub_options_with_livre(df_slice: pd.DataFrame, praca_scope: str = "SAO PAULO") -> list[str]:
-    """
-    Retorna lista de subpraças para UI. Se existir linha sem sub_praca dentro da praca_scope,
-    inclui 'LIVRE' como opção.
-    """
+    """Retorna lista de subpraças para UI; inclui 'LIVRE' se houver linhas na praca_scope com sub_praca vazia."""
     subs_col = df_slice.get("sub_praca", pd.Series(dtype=object))
     subs_validas = sorted([x for x in subs_col.dropna().unique()])
     tem_livre = ((df_slice.get("praca") == praca_scope) & (subs_col.isna())).any()
     return (["LIVRE"] + subs_validas) if tem_livre else subs_validas
 
 def _apply_sub_filter(df_base: pd.DataFrame, selecionadas: list[str], praca_scope: str = "SAO PAULO") -> pd.DataFrame:
-    """
-    Aplica filtro de subpraça considerando 'LIVRE' como (praca==scope & sub_praca IS NULL).
-    Mantém o df original caso nenhuma sub seja selecionada.
-    """
+    """Aplica filtro de subpraça considerando 'LIVRE' como (praca==scope & sub_praca IS NULL)."""
     if not selecionadas:
         return df_base
     mask = pd.Series(False, index=df_base.index)
-
     reais = [s for s in selecionadas if s != "LIVRE"]
     if reais:
         mask |= df_base.get("sub_praca").isin(reais)
-
     if "LIVRE" in selecionadas:
         mask |= ((df_base.get("praca") == praca_scope) & (df_base.get("sub_praca").isna()))
-
     return df_base[mask]
 
 
@@ -765,7 +756,7 @@ if modo == "Relatório Customizado":
     entregador = st.selectbox("🔎 Selecione o entregador:", [None] + entregadores_lista,
                               format_func=lambda x: "" if x is None else x)
 
-    subpracas = sorted(df["sub_praca"].dropna().unique())
+    subpracas = _sub_options_with_livre(df, praca_scope="SAO PAULO")
     filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
     
     turnos = sorted(df["periodo"].dropna().unique())
@@ -872,7 +863,6 @@ if modo == "UTR":
     if base_full.empty:
         st.info("Nenhum dado encontrado para o período e filtros selecionados.")
         st.stop()
-
 
     if "supply_hours" in base_full.columns:
         base_full["tempo_hms"] = base_full["supply_hours"].apply(_hms_from_hours)
@@ -1626,7 +1616,7 @@ if modo == "Relatórios Subpraças":
         st.stop()
 
     # ===== Filtros =====
-    subpracas = sorted(df["sub_praca"].dropna().unique())
+    subpracas = _sub_options_with_livre(df, praca_scope="SAO PAULO")
     sub_sel = st.selectbox("Selecione a subpraça:", subpracas)
 
     turnos = sorted(df["periodo"].dropna().unique())
