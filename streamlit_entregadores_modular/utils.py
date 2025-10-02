@@ -23,5 +23,3 @@ def calcular_tempo_online(df_filtrado):
         return 0.0
     media_pct = df_valid["tempo_disponivel_escalado"].mean()
     return round(media_pct / 100, 2)
-
-

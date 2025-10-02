@@ -359,6 +359,3 @@ def utr_pivot_por_entregador(df, mes=None, ano=None):
     piv = piv.sort_values("__media__", ascending=False).drop(columns="__media__")
 
     return piv.round(2)
-
-
-
