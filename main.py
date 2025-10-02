@@ -26,32 +26,32 @@ if not st.session_state.logado:
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
 MENU = {
-    "Início": "pages.home",
+    "Início": "views.home",
     "Desempenho do Entregador": {
-        "Ver geral": "pages.ver_geral",
-        "Simplificada (WhatsApp)": "pages.simplificada",
-        "Relatório Customizado": "pages.relatorio_custom",
-        "Perfil do Entregador": "pages.perfil_entregador",
+        "Ver geral": "views.ver_geral",
+        "Simplificada (WhatsApp)": "views.simplificada",
+        "Relatório Customizado": "views.relatorio_custom",
+        "Perfil do Entregador": "views.perfil_entregador",
     },
     "Relatórios": {
-        "Alertas de Faltas": "pages.faltas",
-        "Relação de Entregadores": "pages.relacao",
-        "Categorias de Entregadores": "pages.categorias",
-        "Relatórios Subpraças": "pages.rel_subpraca",
-        "Resumos": "pages.resumos",
-        "Lista de Ativos": "pages.lista_ativos",
-        "Comparar ativos": "pages.comparar",
+        "Alertas de Faltas": "views.faltas",
+        "Relação de Entregadores": "views.relacao",
+        "Categorias de Entregadores": "views.categorias",
+        "Relatórios Subpraças": "views.rel_subpraca",
+        "Resumos": "views.resumos",
+        "Lista de Ativos": "views.lista_ativos",
+        "Comparar ativos": "views.comparar",
     },
     "Dashboards": {
-        "UTR": "pages.utr",
-        "Indicadores Gerais": "pages.indicadores",
+        "UTR": "views.utr",
+        "Indicadores Gerais": "views.indicadores",
     },
 }
 
 if "modo" not in st.session_state:
     st.session_state.modo = "Início"
 if "module" not in st.session_state:
-    st.session_state.module = "pages.home"
+    st.session_state.module = "views.home"
 if "open_cat" not in st.session_state:
     st.session_state.open_cat = None
 
@@ -59,7 +59,7 @@ with st.sidebar:
     st.markdown("### Navegação")
     if st.button("🏠 Início", use_container_width=True):
         st.session_state.modo = "Início"
-        st.session_state.module = "pages.home"
+        st.session_state.module = "views.home"
         st.session_state.open_cat = None
         st.rerun()
     for cat, opts in MENU.items():
