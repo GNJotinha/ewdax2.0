@@ -1,4 +1,4 @@
-# views/faltas.py
+# views/faltas.py — robusto e rápido
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -6,41 +6,41 @@ from datetime import datetime, timedelta
 def render(df: pd.DataFrame, _USUARIOS: dict):
     st.header("⚠️ Entregadores com 3+ faltas consecutivas (rápido)")
 
-    # ------ Pré-checagens ------
+    # ------ Pré-checagens mínimas ------
     if "pessoa_entregadora_normalizado" not in df.columns:
         st.error("Coluna 'pessoa_entregadora_normalizado' ausente na base.")
         return
     if "pessoa_entregadora" not in df.columns:
-        st.error("Coluna 'pessoa_entregadora' ausente na base.")
-        return
-    if "data" not in df.columns and "data_do_periodo" not in df.columns:
-        st.error("Coluna de data ausente (espere 'data' ou 'data_do_periodo').")
-        return
+        st.warning("Coluna 'pessoa_entregadora' ausente; vou exibir o nome normalizado.")
+    tem_nome_original = "pessoa_entregadora" in df.columns
 
-    # ------ Datas & janela ------
-    hoje = datetime.now().date()
-    ontem = hoje - timedelta(days=1)
-    corte_60d = hoje - timedelta(days=60)  # janela suficiente pro alerta
-    corte_15d = hoje - timedelta(days=15)  # critério de "ativo" recente
-
-    # Normaliza coluna de data para tipo date
+    # ------ Normaliza data para 'data' (tipo date) ------
     df = df.copy()
     if "data" in df.columns:
         df["data"] = pd.to_datetime(df["data"], errors="coerce").dt.date
-    else:
+    elif "data_do_periodo" in df.columns:
         df["data"] = pd.to_datetime(df["data_do_periodo"], errors="coerce").dt.date
+    else:
+        st.error("Coluna de data ausente (espere 'data' ou 'data_do_periodo').")
+        return
+
     df = df[df["data"].notna()]
     if df.empty:
         st.success("✅ Sem dados de presença/ausência.")
         return
 
-    # Restrição da janela (performance)
+    # ------ Janela e critérios ------
+    hoje = datetime.now().date()
+    ontem = hoje - timedelta(days=1)
+    corte_60d = hoje - timedelta(days=60)  # janela suficiente pro alerta
+    corte_15d = hoje - timedelta(days=15)  # critério de "ativo" recente
+
     df_janela = df[df["data"] >= corte_60d].copy()
     if df_janela.empty:
         st.success("✅ Nada na janela dos últimos 60 dias.")
         return
 
-    # ------ Quem é "ativo" (teve presença nos últimos 15 dias) ------
+    # Quem é "ativo" (teve presença nos últimos 15 dias)
     ativos_norm = (
         df_janela.loc[df_janela["data"] >= corte_15d, "pessoa_entregadora_normalizado"]
         .dropna()
@@ -51,28 +51,26 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.success("✅ Nenhum entregador ativo nos últimos 15 dias.")
         return
 
-    # ------ Última presença por entregador ------
+    # ------ Última presença por entregador (sem ['data'].max()) ------
     ultimas = (
-        df_janela.groupby("pessoa_entregadora_normalizado", dropna=True, as_index=False)["data"]
-        .max()
-        .rename(columns={"data": "ultima_presenca"})
+        df_janela
+        .groupby("pessoa_entregadora_normalizado", dropna=True, as_index=False)
+        .agg(ultima_presenca=("data", "max"))
     )
 
-    # Cria coluna datetime auxiliar para idxmax
-    df_janela = df_janela.copy()
+    # Para recuperar o nome “bonito”, cria coluna datetime e usa idxmax no PRÓPRIO índice
     df_janela["data_dt"] = pd.to_datetime(df_janela["data"], errors="coerce")
-
-    # Índices das últimas presenças (um por entregador)
     base_idx = (
         df_janela.dropna(subset=["pessoa_entregadora_normalizado", "data_dt"])
                  .groupby("pessoa_entregadora_normalizado")["data_dt"]
                  .idxmax()
     )
 
-    nomes_rec = df_janela.loc[base_idx, ["pessoa_entregadora_normalizado", "pessoa_entregadora"]]
-    ultimas = ultimas.merge(nomes_rec, on="pessoa_entregadora_normalizado", how="left")
+    if tem_nome_original:
+        nomes_rec = df_janela.loc[base_idx, ["pessoa_entregadora_normalizado", "pessoa_entregadora"]]
+        ultimas = ultimas.merge(nomes_rec, on="pessoa_entregadora_normalizado", how="left")
 
-    # Mantém apenas os considerados "ativos"
+    # Mantém apenas ativos
     ultimas = ultimas[ultimas["pessoa_entregadora_normalizado"].isin(ativos_norm)].copy()
     if ultimas.empty:
         st.success("✅ Nenhum entregador ativo com presenças na janela de 60 dias.")
@@ -95,7 +93,10 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         return
 
     alertas["ultima_presenca_fmt"] = pd.to_datetime(alertas["ultima_presenca"]).dt.strftime("%d/%m")
-    alertas["nome_exibir"] = alertas["pessoa_entregadora"].fillna(alertas["pessoa_entregadora_normalizado"])
+    if tem_nome_original:
+        alertas["nome_exibir"] = alertas["pessoa_entregadora"].fillna(alertas["pessoa_entregadora_normalizado"])
+    else:
+        alertas["nome_exibir"] = alertas["pessoa_entregadora_normalizado"]
 
     # ------ Saídas ------
     linhas = [
