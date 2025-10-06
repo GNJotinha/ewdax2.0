@@ -9,9 +9,20 @@ SHEET = "Base 2025"  # só mantido pra compat, não é mais usado
 # Conexão (lazy) com Supabase
 # ----------------------------
 @st.cache_resource(show_spinner=False)
-def _get_client() -> Client:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_ANON_KEY"]
+def _get_client():
+    import os
+    url = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
+    key = st.secrets.get("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_ANON_KEY")
+
+    if not url or not key:
+        st.error(
+            "❌ Supabase não configurado.\n\n"
+            "Defina SUPABASE_URL e SUPABASE_ANON_KEY em `st.secrets` "
+            "ou como variáveis de ambiente."
+        )
+        st.stop()
+
+    from supabase import create_client
     return create_client(url, key)
 
 # ----------------------------
