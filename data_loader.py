@@ -66,39 +66,57 @@ def _baixar_drive(file_id: str, out: Path) -> bool:
 
 def _ler(path: Path) -> pd.DataFrame:
     df = pd.read_excel(path, sheet_name=SHEET)
+
+    # Datas básicas
     df["data_do_periodo"] = pd.to_datetime(df["data_do_periodo"], errors="coerce")
     df["data"] = df["data_do_periodo"].dt.date
     df["mes"] = df["data_do_periodo"].dt.month
     df["ano"] = df["data_do_periodo"].dt.year
-    df["pessoa_entregadora_normalizado"] = df["pessoa_entregadora"].apply(normalizar)
     df["mes_ano"] = df["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
 
-        # ID único do entregador
+    # Nome normalizado
+    df["pessoa_entregadora_normalizado"] = df["pessoa_entregadora"].apply(normalizar)
+
+    # ID único do entregador
     if "id_da_pessoa_entregadora" in df.columns:
         df["uuid"] = df["id_da_pessoa_entregadora"].astype(str)
     else:
         df["uuid"] = ""
 
-    # segundos_abs blindado
+    # -----------------------------------------------
+    # segundos_abs_raw: versão original (pode ser negativa)
+    # segundos_abs: versão CLIPADA (negativos viram 0) p/ SH/UTR/online
+    # -----------------------------------------------
     if "tempo_disponivel_absoluto" in df.columns:
         s = df["tempo_disponivel_absoluto"]
         try:
             if pd.api.types.is_timedelta64_dtype(s):
-                df["segundos_abs"] = s.dt.total_seconds().fillna(0).astype(int)
+                df["segundos_abs_raw"] = s.dt.total_seconds().fillna(0).astype(int)
             elif pd.api.types.is_numeric_dtype(s):
-                df["segundos_abs"] = pd.to_numeric(s, errors="coerce").fillna(0).astype(int)
+                df["segundos_abs_raw"] = pd.to_numeric(s, errors="coerce").fillna(0).astype(int)
             else:
+                # tenta parser timedelta; se não der, usa nosso parser robusto
                 td = pd.to_timedelta(s.astype(str).str.strip(), errors="coerce")
                 if td.notna().any():
-                    df["segundos_abs"] = td.dt.total_seconds().fillna(0).astype(int)
+                    df["segundos_abs_raw"] = td.dt.total_seconds().fillna(0).astype(int)
                 else:
-                    df["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
+                    df["segundos_abs_raw"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
         except Exception:
-            df["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
+            df["segundos_abs_raw"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
     else:
-        df["segundos_abs"] = 0
+        df["segundos_abs_raw"] = 0
 
-    # normaliza numéricos
+    # Flag só pra auditoria (útil pra debug/QA)
+    df["segundos_negativos_flag"] = df["segundos_abs_raw"] < 0
+
+    # CLIP: qualquer negativo vira 0 para não contaminar supply_hours/online
+    # (inclui o caso específico de -10:00 = -600s)
+    seg_raw = pd.to_numeric(df["segundos_abs_raw"], errors="coerce").fillna(0)
+    df["segundos_abs"] = seg_raw.where(seg_raw >= 0, 0).astype(int)
+
+    # -----------------------------------------------
+    # Normalização numérica de colunas-chave
+    # -----------------------------------------------
     for c in [
         "numero_de_corridas_ofertadas",
         "numero_de_corridas_aceitas",
