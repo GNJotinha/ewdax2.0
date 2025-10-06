@@ -1,7 +1,12 @@
-import base64, json, re, socket, time
+from __future__ import annotations
+
+import os, math, base64, json, re, socket, time
+import pandas as pd
 import httpx
 import streamlit as st
 from supabase import create_client
+
+from utils import normalizar, tempo_para_segundos
 
 def _b64url_decode(s: str) -> bytes:
     s = s.replace("-", "+").replace("_", "/")
