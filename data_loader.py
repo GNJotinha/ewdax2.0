@@ -8,6 +8,7 @@ from supabase import create_client
 from utils import normalizar, tempo_para_segundos
 
 TBL = "Desempenho"
+DEBUG_MODE = bool(st.secrets.get("DEBUG_MODE", False))
 
 # ==================== helpers: secrets/env ====================
 def _get_secret(name: str, default: str = "") -> str:
@@ -27,7 +28,8 @@ def _ler_supabase(url: str, key: str) -> pd.DataFrame:
     (sem autodetect .co/.in, do jeitinho que está no Project URL).
     """
     base_url = url.strip().rstrip("/")
-    st.caption(f"✅ Supabase base URL: {base_url}")
+    if DEBUG_MODE:
+        st.caption(f"✅ Supabase base URL: {base_url}")
 
     client = create_client(base_url, key)
     frames: list[pd.DataFrame] = []
@@ -77,21 +79,26 @@ def _ler_supabase(url: str, key: str) -> pd.DataFrame:
 # ==================== pós-processamento ====================
 def _pos_processar(df: pd.DataFrame) -> pd.DataFrame:
     # Datas e partições
+    # Se tua data vier BR (DD/MM/YYYY), troca para: dayfirst=True
     df["data_do_periodo"] = pd.to_datetime(df.get("data_do_periodo"), errors="coerce")
     df["data"] = df["data_do_periodo"].dt.date
     df["mes"] = df["data_do_periodo"].dt.month
     df["ano"] = df["data_do_periodo"].dt.year
     df["mes_ano"] = df["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
 
-    # Nome e uuid
-    df["pessoa_entregadora_normalizado"] = df.get("pessoa_entregadora", "").apply(normalizar)
+    # Nome e uuid (robusto quando não há coluna)
+    if "pessoa_entregadora" in df.columns:
+        df["pessoa_entregadora_normalizado"] = df["pessoa_entregadora"].apply(normalizar)
+    else:
+        df["pessoa_entregadora_normalizado"] = ""
+
     if "id_da_pessoa_entregadora" in df.columns:
         df["uuid"] = df["id_da_pessoa_entregadora"].astype(str)
     else:
         df["uuid"] = ""
 
     # ---------- segundos_abs (COMPORTAMENTO ANTIGO) ----------
-    # Nada de clipe: mantém o valor "cru", inclusive negativos (-10:00 → -600)
+    # Mantém o valor "cru", inclusive negativos (-10:00 → -600)
     if "tempo_disponivel_absoluto" in df.columns:
         s = df["tempo_disponivel_absoluto"]
         try:
@@ -137,4 +144,25 @@ def carregar_dados(prefer_drive: bool = False, _ts: float | None = None) -> pd.D
     url = _get_secret("SUPABASE_URL")
     key = _get_secret("SUPABASE_KEY")
     if not url or not key:
-        st.error("❌ SUPABASE_URL/SUPABASE_KEY
+        st.error("❌ SUPABASE_URL/SUPABASE_KEY não configurados em st.secrets ou variáveis de ambiente.")
+        return pd.DataFrame()
+
+    try:
+        bruto = _ler_supabase(url, key)
+        if bruto is None or bruto.empty:
+            st.warning("⚠️ Supabase retornou vazio.")
+            return pd.DataFrame()
+
+        df = _pos_processar(bruto)
+
+        # padroniza 'periodo' se vier com outro nome
+        if "periodo" not in df.columns:
+            if "turno" in df.columns:
+                df["periodo"] = df["turno"]
+            else:
+                df["periodo"] = None
+
+        return df
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar do Supabase: {e}")
+        return pd.DataFrame()
