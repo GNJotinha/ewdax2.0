@@ -5,8 +5,11 @@ import os, math
 import pandas as pd
 import streamlit as st
 from supabase import create_client
+from urllib.parse import urlparse
+
 from utils import normalizar, tempo_para_segundos
 
+# -------------------- constantes --------------------
 TBL = "Desempenho"
 DEBUG_MODE = bool(st.secrets.get("DEBUG_MODE", False))
 
@@ -21,15 +24,38 @@ def _get_secret(name: str, default: str = "") -> str:
         pass
     return os.environ.get(name, default).strip()
 
+def _normalize_supabase_url(raw: str) -> str:
+    """
+    Normaliza/valida a URL do Supabase para evitar erros tipo:
+    [Errno -2] Name or service not known (DNS).
+    """
+    raw = (raw or "").strip().strip("'").strip('"')
+    if not raw:
+        raise ValueError("SUPABASE_URL vazio.")
+
+    # tolerante a falta de esquema
+    if not (raw.startswith("http://") or raw.startswith("https://")):
+        raw = "https://" + raw
+
+    u = urlparse(raw)
+    if not u.scheme or not u.netloc:
+        raise ValueError(f"SUPABASE_URL inválido: {raw!r}")
+
+    if not (u.netloc.endswith(".supabase.co") or u.netloc.endswith(".supabase.in")):
+        raise ValueError(f"Domínio inesperado para SUPABASE_URL: {u.netloc!r}")
+
+    # retorna só scheme+host (sem path), que é o que o client espera
+    return f"{u.scheme}://{u.netloc}"
+
 # ==================== leitura Supabase ====================
 def _ler_supabase(url: str, key: str) -> pd.DataFrame:
     """
-    Lê a tabela do Supabase usando EXATAMENTE a URL dos secrets
-    (sem autodetect .co/.in, do jeitinho que está no Project URL).
+    Lê a tabela do Supabase usando EXATAMENTE a URL dos secrets,
+    com validação/normalização.
     """
-    base_url = url.strip().rstrip("/")
+    base_url = _normalize_supabase_url(url)
     if DEBUG_MODE:
-        st.caption(f"✅ Supabase base URL: {base_url}")
+        st.caption(f"🔌 Supabase base URL normalizada: {base_url}")
 
     client = create_client(base_url, key)
     frames: list[pd.DataFrame] = []
@@ -41,6 +67,7 @@ def _ler_supabase(url: str, key: str) -> pd.DataFrame:
         resp = client.table(TBL).select("id", count="exact").execute()
         total = getattr(resp, "count", None)
     except Exception:
+        # sem count; vamos paginar até acabar
         pass
 
     def _paged(start: int, end: int):
@@ -78,46 +105,56 @@ def _ler_supabase(url: str, key: str) -> pd.DataFrame:
 
 # ==================== pós-processamento ====================
 def _pos_processar(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Padroniza colunas esperadas pelo app.
+    - Datas/partições: data, mes, ano, mes_ano
+    - Nome normalizado e uuid
+    - segundos_abs preservando negativos (ex: -10min)
+    - Coerção de numéricos chave
+    """
+    d = df.copy()
+
     # Datas e partições
-    # Se tua data vier BR (DD/MM/YYYY), troca para: dayfirst=True
-    df["data_do_periodo"] = pd.to_datetime(df.get("data_do_periodo"), errors="coerce")
-    df["data"] = df["data_do_periodo"].dt.date
-    df["mes"] = df["data_do_periodo"].dt.month
-    df["ano"] = df["data_do_periodo"].dt.year
-    df["mes_ano"] = df["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
+    # (na sua tabela, data_do_periodo é DATE; errors='coerce' mantém robustez)
+    d["data_do_periodo"] = pd.to_datetime(d.get("data_do_periodo"), errors="coerce")
+    d["data"] = d["data_do_periodo"].dt.date
+    d["mes"] = d["data_do_periodo"].dt.month
+    d["ano"] = d["data_do_periodo"].dt.year
+    d["mes_ano"] = d["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
 
     # Nome e uuid (robusto quando não há coluna)
-    if "pessoa_entregadora" in df.columns:
-        df["pessoa_entregadora_normalizado"] = df["pessoa_entregadora"].apply(normalizar)
+    if "pessoa_entregadora" in d.columns:
+        d["pessoa_entregadora_normalizado"] = d["pessoa_entregadora"].apply(normalizar)
     else:
-        df["pessoa_entregadora_normalizado"] = ""
+        d["pessoa_entregadora_normalizado"] = ""
 
-    if "id_da_pessoa_entregadora" in df.columns:
-        df["uuid"] = df["id_da_pessoa_entregadora"].astype(str)
+    if "id_da_pessoa_entregadora" in d.columns:
+        d["uuid"] = d["id_da_pessoa_entregadora"].astype(str)
     else:
-        df["uuid"] = ""
+        d["uuid"] = ""
 
     # ---------- segundos_abs (COMPORTAMENTO ANTIGO) ----------
     # Mantém o valor "cru", inclusive negativos (-10:00 → -600)
-    if "tempo_disponivel_absoluto" in df.columns:
-        s = df["tempo_disponivel_absoluto"]
+    if "tempo_disponivel_absoluto" in d.columns:
+        s = d["tempo_disponivel_absoluto"]
         try:
             if pd.api.types.is_timedelta64_dtype(s):
-                df["segundos_abs"] = s.dt.total_seconds().fillna(0).astype(int)
+                d["segundos_abs"] = s.dt.total_seconds().fillna(0).astype(int)
             elif pd.api.types.is_numeric_dtype(s):
-                df["segundos_abs"] = pd.to_numeric(s, errors="coerce").fillna(0).astype(int)
+                d["segundos_abs"] = pd.to_numeric(s, errors="coerce").fillna(0).astype(int)
             else:
+                # tenta parse como timedelta; se falhar, usa parser custom
                 td = pd.to_timedelta(s.astype(str).str.strip(), errors="coerce")
                 if td.notna().any():
-                    df["segundos_abs"] = td.dt.total_seconds().fillna(0).astype(int)
+                    d["segundos_abs"] = td.dt.total_seconds().fillna(0).astype(int)
                 else:
-                    df["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
+                    d["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
         except Exception:
-            df["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
+            d["segundos_abs"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
     else:
-        df["segundos_abs"] = 0
+        d["segundos_abs"] = 0
 
-    # Numéricos chave
+    # Numéricos chave (coerção)
     for c in [
         "numero_de_corridas_ofertadas",
         "numero_de_corridas_aceitas",
@@ -129,10 +166,17 @@ def _pos_processar(df: pd.DataFrame) -> pd.DataFrame:
         "soma_das_taxas_das_corridas_aceitas",
         "numero_minimo_de_entregadores_regulares_na_escala",
     ]:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+        if c in d.columns:
+            d[c] = pd.to_numeric(d[c], errors="coerce").fillna(0)
 
-    return df
+    # Padroniza 'periodo' se vier com outro nome
+    if "periodo" not in d.columns:
+        if "turno" in d.columns:
+            d["periodo"] = d["turno"]
+        else:
+            d["periodo"] = None
+
+    return d
 
 # ==================== entrada pública ====================
 @st.cache_data(show_spinner=False)
@@ -149,20 +193,27 @@ def carregar_dados(prefer_drive: bool = False, _ts: float | None = None) -> pd.D
 
     try:
         bruto = _ler_supabase(url, key)
-        if bruto is None or bruto.empty:
+        if not isinstance(bruto, pd.DataFrame) or bruto.empty:
             st.warning("⚠️ Supabase retornou vazio.")
             return pd.DataFrame()
 
         df = _pos_processar(bruto)
 
-        # padroniza 'periodo' se vier com outro nome
-        if "periodo" not in df.columns:
-            if "turno" in df.columns:
-                df["periodo"] = df["turno"]
-            else:
-                df["periodo"] = None
+        if DEBUG_MODE:
+            try:
+                dmin = pd.to_datetime(df.get("data_do_periodo"), errors="coerce").min()
+                dmax = pd.to_datetime(df.get("data_do_periodo"), errors="coerce").max()
+                st.caption(f"📦 DF carregado: {len(df)} linhas • {dmin} → {dmax}")
+            except Exception:
+                pass
 
         return df
+
+    except ValueError as ve:
+        # erros “bonitos” de configuração (ex.: URL inválida)
+        st.error(f"❌ Configuração inválida do Supabase: {ve}")
+        return pd.DataFrame()
     except Exception as e:
-        st.error(f"❌ Erro ao carregar do Supabase: {e}")
+        # erros de rede/conexão/API
+        st.error(f"❌ Erro de conexão com Supabase: {e}")
         return pd.DataFrame()
