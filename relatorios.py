@@ -38,8 +38,7 @@ def gerar_dados(nome, mes, ano, df):
     nome_norm = normalizar(nome)
     dados = df[(df["pessoa_entregadora_normalizado"] == nome_norm)]
     if mes and ano:
-        # FIX: filtra sobre 'dados' (não sobre df)
-        dados = dados[(dados["mes"] == mes) & (dados["ano"] == ano)]
+        dados = dados[(df["mes"] == mes) & (df["ano"] == ano)]
     if dados.empty:
         return None
 
@@ -153,9 +152,8 @@ def gerar_por_praca_data_turno(df, nome=None, praca=None, data_inicio=None, data
     elif data_inicio and data_fim:
         df = df[(df["data"] >= data_inicio) & (df["data"] <= data_fim)]
 
-    # FIX: usar 'periodo' (nomenclatura padrão do app)
-    if turno and "periodo" in df.columns:
-        df = df[df["periodo"] == turno]
+    if turno and "turno" in df.columns:
+        df = df[df["turno"] == turno]
 
     if df.empty:
         return "❌ Nenhum dado encontrado com os filtros aplicados."
