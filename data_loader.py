@@ -1,92 +1,122 @@
-# data_loader.py — FULL SUPABASE
-import math
-import pandas as pd
+import base64, json, re, socket, time
+import httpx
 import streamlit as st
-from utils import normalizar, tempo_para_segundos
+from supabase import create_client
 
-TBL = 'Desempenho'  # noe exato da sua tabela
+def _b64url_decode(s: str) -> bytes:
+    s = s.replace("-", "+").replace("_", "/")
+    pad = "=" * ((4 - len(s) % 4) % 4)
+    return base64.b64decode(s + pad)
 
-# ---------------------------------------------------------
-# Entrada principal (com cache)
-# ---------------------------------------------------------
-@st.cache_data(show_spinner=False)
-def carregar_dados(prefer_drive: bool = False, _ts: float | None = None) -> pd.DataFrame:
+def _extract_ref_from_jwt(key: str) -> str | None:
+    # JWT: header.payload.signature
+    try:
+        parts = key.split(".")
+        if len(parts) < 2:
+            return None
+        payload = json.loads(_b64url_decode(parts[1]).decode("utf-8"))
+        return payload.get("ref")
+    except Exception:
+        return None
+
+def _candidate_urls(url: str, key: str) -> list[str]:
     """
-    Lê 100% do Supabase, pagina em lotes e padroniza as colunas
-    para o restante do app. O parâmetro prefer_drive é ignorado
-    (mantido só pra compatibilidade com main.py).
+    Monta uma lista de URLs candidatas:
+      - a que veio no secrets (sanitizada)
+      - https://<ref>.supabase.co
+      - https://<ref>.supabase.in
+    (remove duplicadas e espaços)
     """
-    url = st.secrets.get("SUPABASE_URL", "")
-    key = st.secrets.get("SUPABASE_KEY", "")
-    if not url or not key:
-        st.error("❌ SUPABASE_URL/SUPABASE_KEY ausentes em st.secrets.")
-        st.stop()
+    out = []
+    if url:
+        u = url.strip().rstrip("/")
+        # garante esquema
+        if not re.match(r"^https?://", u, flags=re.I):
+            u = "https://" + u
+        out.append(u)
 
-    df = _ler_supabase(url, key)
-    if df is None or df.empty:
-        st.warning("⚠️ Supabase retornou vazio.")
-        return pd.DataFrame()
+    ref = _extract_ref_from_jwt(key)
+    if ref:
+        out.append(f"https://{ref}.supabase.co")
+        out.append(f"https://{ref}.supabase.in")
+    # dedup preservando ordem
+    seen = set(); uniq = []
+    for u in out:
+        if u not in seen:
+            uniq.append(u); seen.add(u)
+    return uniq
 
-    return _pos_processar(df)
+def _dns_ok(host: str) -> bool:
+    try:
+        socket.getaddrinfo(host, 443)
+        return True
+    except Exception:
+        return False
 
+def _http_warmup(u: str, k: str, tries: int = 5, base: float = 0.7) -> bool:
+    last = None
+    for i in range(tries):
+        try:
+            r = httpx.get(
+                u.rstrip("/") + "/rest/v1/",
+                headers={"apikey": k, "Authorization": f"Bearer {k}"},
+                timeout=10.0,
+            )
+            if r.status_code in (200, 401, 404):
+                return True
+            last = RuntimeError(f"HTTP {r.status_code}")
+        except httpx.HTTPError as he:
+            last = he
+        time.sleep(base * (2 ** i))
+    if last:
+        raise last
+    return False
 
-# ---------------------------------------------------------
-# Leitura da Tabela no Supabase (pagina em lotes)
-# ---------------------------------------------------------
+def _choose_working_base_url(url: str, key: str) -> str:
+    """
+    Tenta as candidatas na ordem; escolhe a primeira que:
+      1) resolve DNS;
+      2) responde ao warm-up HTTP.
+    """
+    cands = _candidate_urls(url, key)
+    if not cands:
+        raise RuntimeError("Sem candidatas de URL para Supabase.")
+    errs = []
+    for u in cands:
+        host = u.replace("https://", "").split("/")[0]
+        if not _dns_ok(host):
+            errs.append(f"DNS falhou para {u}")
+            continue
+        try:
+            if _http_warmup(u, key):
+                return u.rstrip("/")
+        except Exception as e:
+            errs.append(f"{u} warmup: {type(e).__name__}: {e}")
+    raise RuntimeError("Nenhuma URL funcionou. Tentativas:\n- " + "\n- ".join(errs))
+
 def _ler_supabase(url: str, key: str) -> pd.DataFrame:
-    from supabase import create_client
-    import httpx, socket, time
-    import streamlit as st
+    """
+    Escolhe automaticamente uma base URL funcional (.co/.in), faz warm-up,
+    pagina a tabela e retorna o DataFrame.
+    """
+    base_url = _choose_working_base_url(url, key)
+    st.caption(f"✅ Supabase base URL: {base_url}")
 
-    # --------- 0) Diagnóstico rápido de DNS ---------
-    try:
-        host = url.replace("https://", "").split("/")[0]
-        _ = socket.getaddrinfo(host, 443)  # força resolução de DNS
-        st.caption(f"🌐 DNS OK para {host}")
-    except Exception as e:
-        st.error(f"DNS falhou para {url} → {type(e).__name__}: {e}")
-        raise
-
-    # --------- 1) Warm-up HTTP com retry/backoff ---------
-    def _http_warmup(u, k, tries=5, base=0.8):
-        last_err = None
-        for i in range(tries):
-            try:
-                r = httpx.get(
-                    u.rstrip("/") + "/rest/v1/",
-                    headers={"apikey": k, "Authorization": f"Bearer {k}"},
-                    timeout=10.0,
-                )
-                # 200/401/404 já prova conectividade
-                if r.status_code in (200, 401, 404):
-                    return True
-                last_err = RuntimeError(f"HTTP {r.status_code}")
-            except httpx.HTTPError as he:
-                last_err = he
-            time.sleep(base * (2 ** i))
-        raise last_err or RuntimeError("warmup failed")
-
-    try:
-        _http_warmup(url, key)
-    except Exception as e:
-        st.error(f"Conexão HTTP falhou (warm-up): {type(e).__name__}: {e}")
-        raise
-
-    # --------- 2) Cliente Supabase e paginação ---------
-    client = create_client(url, key)
+    client = create_client(base_url, key)
+    TBL = "Desempenho"
     batch = 50000
     frames: list[pd.DataFrame] = []
 
     def _paged(start: int, end: int):
-        return client.table(TBL).select('*')\
-            .order('data_do_periodo', desc=False)\
+        return client.table(TBL).select("*")\
+            .order("data_do_periodo", desc=False)\
             .range(start, end)\
             .execute()
 
-    # tentar contar, mas segue sem se falhar
+    # contar, mas seguir se falhar
     total = None
     try:
-        resp = client.table(TBL).select('id', count='exact').execute()
+        resp = client.table(TBL).select("id", count="exact").execute()
         total = getattr(resp, "count", None)
     except Exception:
         pass
@@ -115,72 +145,3 @@ def _ler_supabase(url: str, key: str) -> pd.DataFrame:
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)
-
-
-
-# ---------------------------------------------------------
-# Pós-processamento (formata tudo que o app espera)
-# ---------------------------------------------------------
-def _pos_processar(df: pd.DataFrame) -> pd.DataFrame:
-    # Datas/particionamento
-    df["data_do_periodo"] = pd.to_datetime(df.get("data_do_periodo"), errors="coerce")
-    df["data"] = df["data_do_periodo"].dt.date
-    df["mes"] = df["data_do_periodo"].dt.month
-    df["ano"] = df["data_do_periodo"].dt.year
-    df["mes_ano"] = df["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
-
-    # Nome/uuid
-    df["pessoa_entregadora_normalizado"] = df.get("pessoa_entregadora", "").apply(normalizar)
-    if "id_da_pessoa_entregadora" in df.columns:
-        df["uuid"] = df["id_da_pessoa_entregadora"].astype(str)
-    else:
-        df["uuid"] = ""
-
-    # ---- segundos_abs_raw: pode vir numérico/texto/tempo ----
-    if "tempo_disponivel_absoluto" in df.columns:
-        s = df["tempo_disponivel_absoluto"]
-        try:
-            if pd.api.types.is_timedelta64_dtype(s):
-                df["segundos_abs_raw"] = s.dt.total_seconds().fillna(0).astype(int)
-            elif pd.api.types.is_numeric_dtype(s):
-                df["segundos_abs_raw"] = pd.to_numeric(s, errors="coerce").fillna(0).astype(int)
-            else:
-                td = pd.to_timedelta(s.astype(str).str.strip(), errors="coerce")
-                if td.notna().any():
-                    df["segundos_abs_raw"] = td.dt.total_seconds().fillna(0).astype(int)
-                else:
-                    df["segundos_abs_raw"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
-        except Exception:
-            df["segundos_abs_raw"] = s.apply(tempo_para_segundos).fillna(0).astype(int)
-    else:
-        df["segundos_abs_raw"] = 0
-
-    # Flag e versão clipada (negativos -> 0) p/ SH/UTR/online
-    seg_raw = pd.to_numeric(df["segundos_abs_raw"], errors="coerce").fillna(0)
-    df["segundos_negativos_flag"] = seg_raw < 0
-    df["segundos_abs"] = seg_raw.where(seg_raw >= 0, 0).astype(int)
-
-    # Numéricos chave
-    for c in [
-        "numero_de_corridas_ofertadas",
-        "numero_de_corridas_aceitas",
-        "numero_de_corridas_rejeitadas",
-        "numero_de_corridas_completadas",
-        "tempo_disponivel_escalado",
-        "numero_de_corridas_canceladas_pela_pessoa_entregadora",
-        "numero_de_pedidos_aceitos_e_concluidos",
-        "soma_das_taxas_das_corridas_aceitas",
-        "numero_minimo_de_entregadores_regulares_na_escala",
-    ]:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-
-    # Limpeza de colunas comuns que podem vir do banco
-    if "created_at" in df.columns:
-        # manter se quiser auditar; senão, tudo certo deixar
-        pass
-    if "id" in df.columns:
-        # idem
-        pass
-
-    return df
