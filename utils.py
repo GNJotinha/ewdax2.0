@@ -54,23 +54,38 @@ def tempo_para_segundos(t):
 # ---------------------------------------------------------
 def calcular_tempo_online(df_filtrado: pd.DataFrame) -> float:
     """
-    Calcula o tempo online como a média da coluna 'tempo_disponivel_escalado' (em %).
-    Ignora apenas as linhas com tempo absoluto igual a -10 minutos (-600s),
-    mas considera todas as demais linhas normalmente.
-    Retorna o valor já em porcentagem (0–100).
+    Tempo online = média de 'tempo_disponivel_escalado' em %.
+    Regras:
+      - Ignora apenas linhas com -10:00 (segundos_abs_raw == -600).
+      - Auto-escalona a origem:
+          * mediana <= 1   -> assume 0–1      (multiplica por 100)
+          * <= 100         -> assume 0–100    (usa como está)
+          * > 100          -> assume 0–10000  (divide por 100)
+      - Clip final em [0, 100] e retorna com 1 casa.
     """
     if df_filtrado is None or df_filtrado.empty:
         return 0.0
 
     d = df_filtrado.copy()
 
-    # Ignorar -10:00 (mas considerar a linha pra corridas/UTR etc.)
+    # ignora -10:00 no cálculo do online
     if "segundos_abs_raw" in d.columns:
         d = d[d["segundos_abs_raw"] != -600]
 
-    # Pega apenas valores válidos de tempo_disponivel_escalado
     esc = pd.to_numeric(d.get("tempo_disponivel_escalado"), errors="coerce").dropna()
     if esc.empty:
         return 0.0
 
-    return round(float(esc.mean()), 1)
+    med = esc.median()
+    mean_val = float(esc.mean())
+
+    if med <= 1.0:
+        val = mean_val * 100.0       # origem 0–1
+    elif med <= 100.0:
+        val = mean_val               # origem 0–100
+    else:
+        val = mean_val / 100.0       # origem 0–10000 (basis points)
+
+    # saneamento final
+    val = max(0.0, min(100.0, val))
+    return round(val, 1)
