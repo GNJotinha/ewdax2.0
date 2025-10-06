@@ -55,8 +55,9 @@ def tempo_para_segundos(t):
 def calcular_tempo_online(df_filtrado: pd.DataFrame) -> float:
     """
     Tempo online = média de 'tempo_disponivel_escalado' em %.
+
     Regras:
-      - Ignora apenas linhas com -10:00 (segundos_abs_raw == -600).
+      - Ignora apenas linhas com -10:00 (segundos_abs == -600).
       - Auto-escalona a origem:
           * mediana <= 1   -> assume 0–1      (multiplica por 100)
           * <= 100         -> assume 0–100    (usa como está)
@@ -68,9 +69,9 @@ def calcular_tempo_online(df_filtrado: pd.DataFrame) -> float:
 
     d = df_filtrado.copy()
 
-    # ignora -10:00 no cálculo do online
-    if "segundos_abs_raw" in d.columns:
-        d = d[d["segundos_abs_raw"] != -600]
+    # ignora -10:00 no cálculo do online (coluna produzida no loader)
+    if "segundos_abs" in d.columns:
+        d = d[d["segundos_abs"] != -600]
 
     esc = pd.to_numeric(d.get("tempo_disponivel_escalado"), errors="coerce").dropna()
     if esc.empty:
