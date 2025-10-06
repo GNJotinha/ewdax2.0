@@ -35,46 +35,68 @@ def carregar_dados(prefer_drive: bool = False, _ts: float | None = None) -> pd.D
 # ---------------------------------------------------------
 def _ler_supabase(url: str, key: str) -> pd.DataFrame:
     from supabase import create_client
-    import httpx
+    import httpx, socket, time
+    import streamlit as st
 
+    # --------- 0) Diagnóstico rápido de DNS ---------
+    try:
+        host = url.replace("https://", "").split("/")[0]
+        _ = socket.getaddrinfo(host, 443)  # força resolução de DNS
+        st.caption(f"🌐 DNS OK para {host}")
+    except Exception as e:
+        st.error(f"DNS falhou para {url} → {type(e).__name__}: {e}")
+        raise
+
+    # --------- 1) Warm-up HTTP com retry/backoff ---------
+    def _http_warmup(u, k, tries=5, base=0.8):
+        last_err = None
+        for i in range(tries):
+            try:
+                r = httpx.get(
+                    u.rstrip("/") + "/rest/v1/",
+                    headers={"apikey": k, "Authorization": f"Bearer {k}"},
+                    timeout=10.0,
+                )
+                # 200/401/404 já prova conectividade
+                if r.status_code in (200, 401, 404):
+                    return True
+                last_err = RuntimeError(f"HTTP {r.status_code}")
+            except httpx.HTTPError as he:
+                last_err = he
+            time.sleep(base * (2 ** i))
+        raise last_err or RuntimeError("warmup failed")
+
+    try:
+        _http_warmup(url, key)
+    except Exception as e:
+        st.error(f"Conexão HTTP falhou (warm-up): {type(e).__name__}: {e}")
+        raise
+
+    # --------- 2) Cliente Supabase e paginação ---------
     client = create_client(url, key)
-
     batch = 50000
     frames: list[pd.DataFrame] = []
 
-    # helper p/ executar select com captura de erro HTTP/transport
-    def _paged_select(start: int, end: int):
-        try:
-            return client.table(TBL).select('*')\
-                .order('data_do_periodo', desc=False)\
-                .range(start, end)\
-                .execute()
-        except httpx.HTTPError as he:
-            # Rede/DNS/SSL/timeouts caem aqui
-            import streamlit as st
-            st.error(f"Conexão HTTP falhou: {type(he).__name__}: {he}")
-            raise
-        except Exception as e:
-            import streamlit as st
-            st.error(f"Erro Supabase SDK: {e}")
-            raise
+    def _paged(start: int, end: int):
+        return client.table(TBL).select('*')\
+            .order('data_do_periodo', desc=False)\
+            .range(start, end)\
+            .execute()
 
-    # tentar contar
+    # tentar contar, mas segue sem se falhar
     total = None
     try:
-        count_resp = client.table(TBL).select('id', count='exact').execute()
-        total = getattr(count_resp, "count", None)
-    except Exception as e:
-        # segue sem contar; pagina até acabar
+        resp = client.table(TBL).select('id', count='exact').execute()
+        total = getattr(resp, "count", None)
+    except Exception:
         pass
 
     if total is None:
-        # pagina até esvaziar
         start = 0
         while True:
             end = start + batch - 1
-            data = _paged_select(start, end)
-            rows = (data.data or [])
+            data = _paged(start, end)
+            rows = data.data or []
             if not rows:
                 break
             frames.append(pd.DataFrame.from_records(rows))
@@ -83,18 +105,15 @@ def _ler_supabase(url: str, key: str) -> pd.DataFrame:
             start += batch
     else:
         import math
-        pags = math.ceil(total / batch)
-        for i in range(pags):
-            s = i * batch
-            e = s + batch - 1
-            data = _paged_select(s, e)
-            rows = (data.data or [])
+        for i in range(math.ceil(total / batch)):
+            s, e = i * batch, (i + 1) * batch - 1
+            data = _paged(s, e)
+            rows = data.data or []
             if rows:
                 frames.append(pd.DataFrame.from_records(rows))
 
     if not frames:
         return pd.DataFrame()
-
     return pd.concat(frames, ignore_index=True)
 
 
