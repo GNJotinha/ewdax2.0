@@ -35,28 +35,46 @@ def carregar_dados(prefer_drive: bool = False, _ts: float | None = None) -> pd.D
 # ---------------------------------------------------------
 def _ler_supabase(url: str, key: str) -> pd.DataFrame:
     from supabase import create_client
+    import httpx
+
     client = create_client(url, key)
 
     batch = 50000
     frames: list[pd.DataFrame] = []
 
-    # Tentativa de contar linhas para paginar certinho
-    try:
-        count_resp = client.table(TBL).select('id', count='exact').execute()
-        total = getattr(count_resp, "count", None)
-    except Exception:
-        total = None
-
-    if total is None:
-        # fallback: pagina até não vir mais nada
-        start = 0
-        while True:
-            end = start + batch - 1  # range é inclusivo
-            data = client.table(TBL).select('*')\
+    # helper p/ executar select com captura de erro HTTP/transport
+    def _paged_select(start: int, end: int):
+        try:
+            return client.table(TBL).select('*')\
                 .order('data_do_periodo', desc=False)\
                 .range(start, end)\
                 .execute()
-            rows = data.data or []
+        except httpx.HTTPError as he:
+            # Rede/DNS/SSL/timeouts caem aqui
+            import streamlit as st
+            st.error(f"Conexão HTTP falhou: {type(he).__name__}: {he}")
+            raise
+        except Exception as e:
+            import streamlit as st
+            st.error(f"Erro Supabase SDK: {e}")
+            raise
+
+    # tentar contar
+    total = None
+    try:
+        count_resp = client.table(TBL).select('id', count='exact').execute()
+        total = getattr(count_resp, "count", None)
+    except Exception as e:
+        # segue sem contar; pagina até acabar
+        pass
+
+    if total is None:
+        # pagina até esvaziar
+        start = 0
+        while True:
+            end = start + batch - 1
+            data = _paged_select(start, end)
+            rows = (data.data or [])
             if not rows:
                 break
             frames.append(pd.DataFrame.from_records(rows))
@@ -64,15 +82,13 @@ def _ler_supabase(url: str, key: str) -> pd.DataFrame:
                 break
             start += batch
     else:
+        import math
         pags = math.ceil(total / batch)
         for i in range(pags):
             s = i * batch
             e = s + batch - 1
-            data = client.table(TBL).select('*')\
-                .order('data_do_periodo', desc=False)\
-                .range(s, e)\
-                .execute()
-            rows = data.data or []
+            data = _paged_select(s, e)
+            rows = (data.data or [])
             if rows:
                 frames.append(pd.DataFrame.from_records(rows))
 
@@ -80,6 +96,7 @@ def _ler_supabase(url: str, key: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     return pd.concat(frames, ignore_index=True)
+
 
 
 # ---------------------------------------------------------
