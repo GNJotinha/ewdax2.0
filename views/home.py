@@ -5,12 +5,32 @@ from shared import hms_from_hours
 
 DEBUG_MODE = bool(st.secrets.get("DEBUG_MODE", False))
 
+def _ensure_time_parts(df: pd.DataFrame) -> pd.DataFrame:
+    """Garante colunas 'data' (datetime), 'mes' e 'ano' mesmo que não venham do loader."""
+    if df is None:
+        return pd.DataFrame()
+    d = df.copy()
+    # data
+    if "data" not in d.columns:
+        if "data_do_periodo" in d.columns:
+            d["data"] = pd.to_datetime(d["data_do_periodo"], errors="coerce")
+        else:
+            d["data"] = pd.NaT
+    else:
+        d["data"] = pd.to_datetime(d["data"], errors="coerce")
+
+    # mes/ano
+    if "mes" not in d.columns:
+        d["mes"] = d["data"].dt.month
+    if "ano" not in d.columns:
+        d["ano"] = d["data"].dt.year
+
+    return d
+
 def render(df: pd.DataFrame, USUARIOS: dict):
     st.title("📋 Painel de Entregadores")
 
-    # ---------------------------------------------------------
-    # Logo de fundo (muda conforme nível do usuário)
-    # ---------------------------------------------------------
+    # ————————————————— Logo de fundo por nível —————————————————
     nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
     logo_admin = st.secrets.get("LOGO_ADMIN_URL", "")
     logo_user  = st.secrets.get("LOGO_USER_URL", "")
@@ -31,51 +51,33 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         ''', unsafe_allow_html=True)
     st.markdown("<div class='home-bg' style='position:relative;'>", unsafe_allow_html=True)
 
-    # ---------------------------------------------------------
-    # Diagnóstico opcional (ativado com DEBUG_MODE=true no secrets)
-    # ---------------------------------------------------------
+    # ————————————————— Sanitiza df —————————————————
+    df = _ensure_time_parts(df)
+
+    # ————————————————— DEBUG opcional —————————————————
     if DEBUG_MODE:
         st.info("🧪 DEBUG — Diagnóstico do dataset carregado")
         try:
-            base_dt = pd.to_datetime(df.get("data"), errors="coerce")
-            dmin, dmax = base_dt.min(), base_dt.max()
+            dmin, dmax = df["data"].min(), df["data"].max()
             st.caption(f"Min/Max data no DF: {dmin} → {dmax}")
-        except Exception as e:
-            st.caption(f"Erro lendo datas: {e}")
-
-        try:
             cont_mes = (
-                pd.to_datetime(df.get("data"), errors="coerce")
-                  .dt.to_period("M").value_counts().sort_index()
-                  .rename("linhas").to_frame()
+                df["data"].dt.to_period("M").value_counts().sort_index()
+                .rename("linhas").to_frame()
             )
             st.write("Contagem por mês (no DF):")
             st.dataframe(cont_mes, use_container_width=True)
         except Exception as e:
-            st.caption(f"Erro contando meses: {e}")
-
-        try:
-            # Amostra do mês atual para conferir se o filtro bate
-            hoje = pd.Timestamp.today()
-            amostra = df[(df.get("mes") == hoje.month) & (df.get("ano") == hoje.year)].head(5)
-            st.write("Amostra do mês atual (no DF):")
-            st.dataframe(amostra, use_container_width=True)
-        except Exception as e:
-            st.caption(f"Erro exibindo amostra do mês atual: {e}")
-
-        # URL do Supabase (útil para conferir se é o projeto certo)
+            st.caption(f"DEBUG erro datas: {e}")
         try:
             supa_url = st.secrets.get("SUPABASE_URL", "—")
             st.caption(f"🔌 Supabase em uso: {supa_url}")
         except Exception:
             pass
 
-    # ---------------------------------------------------------
-    # Cabeçalho: último dia com dados + botão de atualização
-    # ---------------------------------------------------------
+    # ————————————————— Cards: último dia + atualizar —————————————————
     try:
-        ultimo_dia = pd.to_datetime(df.get("data"), errors="coerce").max().date()
-        ultimo_dia_txt = ultimo_dia.strftime("%d/%m/%Y")
+        ultimo_dia = pd.to_datetime(df["data"], errors="coerce").max()
+        ultimo_dia_txt = "—" if pd.isna(ultimo_dia) else ultimo_dia.date().strftime("%d/%m/%Y")
     except Exception:
         ultimo_dia_txt = "—"
 
@@ -93,12 +95,18 @@ def render(df: pd.DataFrame, USUARIOS: dict):
 
     st.divider()
 
-    # ---------------------------------------------------------
-    # Resumo do mês atual
-    # ---------------------------------------------------------
+    # ————————————————— Resumo do mês atual —————————————————
     hoje = pd.Timestamp.today()
     mes_atual, ano_atual = int(hoje.month), int(hoje.year)
-    df_mes = df[(df.get("mes") == mes_atual) & (df.get("ano") == ano_atual)].copy()
+
+    if df.empty or df["data"].notna().sum() == 0:
+        st.warning("Base vazia ou sem datas válidas para calcular o mês atual.")
+        # Fecha a DIV da home e sai
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    # filtro seguro
+    df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
 
     ofertadas  = int(pd.to_numeric(df_mes.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
     aceitas    = int(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
@@ -133,17 +141,16 @@ def render(df: pd.DataFrame, USUARIOS: dict):
 
     st.divider()
 
-    # ---------------------------------------------------------
-    # Curiosidades / Destaques do ano atual
-    # ---------------------------------------------------------
+    # ————————————————— Destaque do ano —————————————————
     ano = int(hoje.year)
-    total_corridas_ano = int(pd.to_numeric(df[df.get("ano") == ano].get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0).sum())
+    total_corridas_ano = int(
+        pd.to_numeric(df[df["ano"] == ano].get("numero_de_corridas_completadas", 0), errors="coerce")
+        .fillna(0).sum()
+    )
     st.metric("Total de corridas completadas no ano", f"{total_corridas_ano:,}".replace(",", "."))
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---------------------------------------------------------
-    # Pós-refresh feedback
-    # ---------------------------------------------------------
+    # ————————————————— Pós-refresh —————————————————
     if st.session_state.pop("just_refreshed", False):
         st.success("✅ Base atualizada a partir do Supabase.")
