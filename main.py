@@ -1,55 +1,92 @@
-import importlib
-import streamlit as st
+# main.py — versão oficial (Supabase-only)
 
+import importlib
+import os
+import streamlit as st
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
 
-# =========================================================
-# 🔄 Carga ÚNICA do DF por render + suporte a hard refresh
-# =========================================================
-def get_df_once():
-    """
-    Carrega o df uma única vez por render.
-    Se o usuário clicou em 'Atualizar dados', força baixar do Drive.
-    """
-    prefer = st.session_state.pop("force_refresh", False)
-    ts = pd.Timestamp.now().timestamp() if prefer else None
-    return carregar_dados(prefer_drive=prefer, _ts=ts)
+# ---------------------------------------------------------
+# (Opcional) habilitar utilitários de debug com DEBUG_MODE=true em secrets
+# ---------------------------------------------------------
+DEBUG_MODE = bool(st.secrets.get("DEBUG_MODE", False))
 
+# ---------------------------------------------------------
+# Estilos globais (tema escuro + cards/metrics uniformes)
+# ---------------------------------------------------------
+st.markdown("""
+<style>
+:root{
+  --bg:#0E1117;         /* fundo */
+  --sidebar:#141B25;    /* sidebar */
+  --card:#0F1520;       /* cartões */
+  --text:#E6E9EE;       /* texto */
+  --muted:#9AA4B2;      /* texto secundário */
+  --border:#1F2A3A;
 
-# -------------------------------------------------------------------
-# Config da página
-# -------------------------------------------------------------------
-st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
+  --accent:#3B82F6;       /* azul principal (botões) */
+  --accent-hover:#2563EB; /* hover */
+  --metric-h: 130px;      /* altura dos cards/metrics */
+}
 
-# -------------------------------------------------------------------
-# Estilo
-# -------------------------------------------------------------------
-st.markdown(
-    """
-    <style>
-        body { background-color: #0e1117; color: #c9d1d9; }
-        .stButton>button {
-            background-color: #1f6feb;
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-weight: bold;
-        }
-        .stButton>button:hover { background-color: #388bfd; }
-        .stSidebar { background-color: #161b22; }
-        h1, h2, h3 { color: #58a6ff; }
-        .stSelectbox, .stMultiSelect, .stTextInput {
-            background-color: #21262d;
-            color: #c9d1d9;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+/*** base ***/
+html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important;color:var(--text)!important;}
+header[data-testid="stHeader"]{background:transparent!important;border-bottom:1px solid rgba(255,255,255,.04)!important;}
+.block-container{padding-top:1.2rem!important}
 
+/*** SIDEBAR ***/
+section[data-testid="stSidebar"]{
+  background:var(--sidebar)!important;border-right:1px solid var(--border)!important;
+}
+section[data-testid="stSidebar"] .stAlert{
+  background:linear-gradient(180deg,#1f2937 0%,#111827 100%)!important;
+  border:1px solid var(--border)!important;border-radius:12px!important;
+}
 
+/* Botões da sidebar */
+section[data-testid="stSidebar"] .stButton>button{
+  width:100%!important;margin-bottom:.45rem!important;
+  background:var(--accent)!important;color:#fff!important;border:0!important;
+  border-radius:12px!important;padding:.65rem .85rem!important;font-weight:700!important;
+  box-shadow:0 6px 20px rgba(0,0,0,.25)!important;transition:.12s ease-in-out!important;
+}
+section[data-testid="stSidebar"] .stButton>button:hover{background:var(--accent-hover)!important;transform:translateY(-1px);}
+section[data-testid="stSidebar"] .stButton>button:active{transform:translateY(0)}
+/* Expanders do menu */
+section[data-testid="stSidebar"] [data-testid="stExpander"]{
+  background:#111823!important;border:1px solid var(--border)!important;border-radius:12px!important;
+}
+section[data-testid="stSidebar"] [data-testid="stExpander"] summary{font-weight:700!important}
+
+/*** Botões na página ***/
+[data-testid="stAppViewContainer"] .stButton>button{
+  background:var(--accent)!important;color:#fff!important;border:0!important;
+  border-radius:14px!important;padding:.70rem 1rem!important;font-weight:700!important;
+  box-shadow:0 6px 20px rgba(0,0,0,.25)!important;transition:.12s ease-in-out!important;
+}
+[data-testid="stAppViewContainer"] .stButton>button:hover{background:var(--accent-hover)!important;transform:translateY(-1px);}
+[data-testid="stAppViewContainer"] .stButton>button:active{transform:translateY(0);}
+
+/*** Inputs ***/
+.stTextInput>div>div>input,.stPassword>div>div>input,.stSelectbox>div>div>div{
+  background:#0f1520!important;color:var(--text)!important;border:1px solid var(--border)!important;border-radius:12px!important;
+}
+
+/*** Métricas — tamanho uniforme ***/
+[data-testid="stMetric"]{
+  background:var(--card)!important;border:1px solid var(--border)!important;border-radius:14px!important;
+  padding:.9rem .95rem!important;box-shadow:0 10px 30px rgba(0,0,0,.25);
+  min-height: var(--metric-h) !important;
+  display:flex;flex-direction:column;justify-content:center;
+}
+[data-testid="stMetricLabel"]{color:var(--muted)!important;font-weight:600!important}
+[data-testid="stMetricValue"]{color:#fff!important;font-weight:800!important;letter-spacing:.2px}
+
+/*** Tabelas & separadores ***/
+[data-testid="stDataFrame"]{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:12px!important}
+hr{border-color:var(--border)!important}
+</style>
+""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # Estado inicial
@@ -82,6 +119,21 @@ if not st.session_state.logado:
     st.stop()
 
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
+
+# ---------------------------------------------------------
+# (Opcional) Painelzinho de debug — só aparece com DEBUG_MODE=true
+# ---------------------------------------------------------
+if DEBUG_MODE:
+    with st.sidebar.expander("⚙️ Debug"):
+        has_url = "SUPABASE_URL" in st.secrets
+        has_key = "SUPABASE_KEY" in st.secrets
+        st.write({"SUPABASE_URL?": has_url, "SUPABASE_KEY?": has_key})
+        st.caption(f"URL: {st.secrets.get('SUPABASE_URL','—')}")
+        st.caption(f"Usuário atual: {st.session_state.usuario}")
+        if st.button("🧼 Limpar cache"):
+            st.cache_data.clear(); st.experimental_rerun()
+        if st.button("🔁 Reiniciar app"):
+            st.cache_data.clear(); os._exit(0)
 
 # ---------------------------------------------------------
 # Menu (sem item duplicado de Início)
@@ -133,12 +185,12 @@ with st.sidebar:
                         st.rerun()
 
 # ---------------------------------------------------------
-# Dados (suporta refresh disparado pela Home)
+# Dados (carrega 100% do Supabase; refresh disparado pela Home)
 # ---------------------------------------------------------
 df = carregar_dados(prefer_drive=st.session_state.pop("force_refresh", False))
 
 if st.session_state.pop("just_refreshed", False):
-    st.success("✅ Base atualizada a partir do Google Drive.")
+    st.success("✅ Base atualizada a partir do Supabase.")
 
 # ---------------------------------------------------------
 # Roteador
