@@ -3,13 +3,18 @@ import pandas as pd
 from relatorios import utr_por_entregador_turno
 from shared import hms_from_hours
 
+DEBUG_MODE = bool(st.secrets.get("DEBUG_MODE", False))
+
 def render(df: pd.DataFrame, USUARIOS: dict):
     st.title("📋 Painel de Entregadores")
 
+    # ---------------------------------------------------------
+    # Logo de fundo (muda conforme nível do usuário)
+    # ---------------------------------------------------------
     nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
     logo_admin = st.secrets.get("LOGO_ADMIN_URL", "")
     logo_user  = st.secrets.get("LOGO_USER_URL", "")
-    bg_logo = logo_admin if nivel == "admin" and logo_admin else logo_user
+    bg_logo = logo_admin if (nivel == "admin" and logo_admin) else logo_user
     if bg_logo:
         st.markdown(f'''
             <style>
@@ -26,13 +31,55 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         ''', unsafe_allow_html=True)
     st.markdown("<div class='home-bg' style='position:relative;'>", unsafe_allow_html=True)
 
+    # ---------------------------------------------------------
+    # Diagnóstico opcional (ativado com DEBUG_MODE=true no secrets)
+    # ---------------------------------------------------------
+    if DEBUG_MODE:
+        st.info("🧪 DEBUG — Diagnóstico do dataset carregado")
+        try:
+            base_dt = pd.to_datetime(df.get("data"), errors="coerce")
+            dmin, dmax = base_dt.min(), base_dt.max()
+            st.caption(f"Min/Max data no DF: {dmin} → {dmax}")
+        except Exception as e:
+            st.caption(f"Erro lendo datas: {e}")
+
+        try:
+            cont_mes = (
+                pd.to_datetime(df.get("data"), errors="coerce")
+                  .dt.to_period("M").value_counts().sort_index()
+                  .rename("linhas").to_frame()
+            )
+            st.write("Contagem por mês (no DF):")
+            st.dataframe(cont_mes, use_container_width=True)
+        except Exception as e:
+            st.caption(f"Erro contando meses: {e}")
+
+        try:
+            # Amostra do mês atual para conferir se o filtro bate
+            hoje = pd.Timestamp.today()
+            amostra = df[(df.get("mes") == hoje.month) & (df.get("ano") == hoje.year)].head(5)
+            st.write("Amostra do mês atual (no DF):")
+            st.dataframe(amostra, use_container_width=True)
+        except Exception as e:
+            st.caption(f"Erro exibindo amostra do mês atual: {e}")
+
+        # URL do Supabase (útil para conferir se é o projeto certo)
+        try:
+            supa_url = st.secrets.get("SUPABASE_URL", "—")
+            st.caption(f"🔌 Supabase em uso: {supa_url}")
+        except Exception:
+            pass
+
+    # ---------------------------------------------------------
+    # Cabeçalho: último dia com dados + botão de atualização
+    # ---------------------------------------------------------
     try:
-        ultimo_dia = pd.to_datetime(df["data"]).max().date()
+        ultimo_dia = pd.to_datetime(df.get("data"), errors="coerce").max().date()
         ultimo_dia_txt = ultimo_dia.strftime("%d/%m/%Y")
     except Exception:
         ultimo_dia_txt = "—"
 
-    c1, c2 = st.columns([1,2])
+    c1, c2 = st.columns([1, 2])
     with c1:
         st.subheader("Dados mais recentes")
         st.metric("", ultimo_dia_txt)
@@ -46,18 +93,22 @@ def render(df: pd.DataFrame, USUARIOS: dict):
 
     st.divider()
 
+    # ---------------------------------------------------------
+    # Resumo do mês atual
+    # ---------------------------------------------------------
     hoje = pd.Timestamp.today()
     mes_atual, ano_atual = int(hoje.month), int(hoje.year)
-    df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
+    df_mes = df[(df.get("mes") == mes_atual) & (df.get("ano") == ano_atual)].copy()
 
-    ofertadas  = int(df_mes.get("numero_de_corridas_ofertadas", 0).sum())
-    aceitas    = int(df_mes.get("numero_de_corridas_aceitas", 0).sum())
-    rejeitadas = int(df_mes.get("numero_de_corridas_rejeitadas", 0).sum())
+    ofertadas  = int(pd.to_numeric(df_mes.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
+    aceitas    = int(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
+    rejeitadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
     entreg_uniq = int(df_mes.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().nunique())
 
     acc_pct = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
     rej_pct = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
 
+    # UTRs (Absoluto e Médias)
     base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
     if not df_mes.empty:
         seg = pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
@@ -81,7 +132,18 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     m4.metric("Entregadores ativos", f"{entreg_uniq}")
 
     st.divider()
+
+    # ---------------------------------------------------------
+    # Curiosidades / Destaques do ano atual
+    # ---------------------------------------------------------
     ano = int(hoje.year)
-    total_corridas_ano = int(df[df["ano"] == ano]["numero_de_corridas_completadas"].sum())
+    total_corridas_ano = int(pd.to_numeric(df[df.get("ano") == ano].get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0).sum())
     st.metric("Total de corridas completadas no ano", f"{total_corridas_ano:,}".replace(",", "."))
+
     st.markdown("</div>", unsafe_allow_html=True)
+
+    # ---------------------------------------------------------
+    # Pós-refresh feedback
+    # ---------------------------------------------------------
+    if st.session_state.pop("just_refreshed", False):
+        st.success("✅ Base atualizada a partir do Supabase.")
