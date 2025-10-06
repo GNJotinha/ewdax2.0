@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 from utils import normalizar, tempo_para_segundos
 
-TBL = 'Desempenho'  # nome exato da sua tabela
+TBL = 'Desempenho'  # noe exato da sua tabela
 
 # ---------------------------------------------------------
 # Entrada principal (com cache)
