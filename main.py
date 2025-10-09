@@ -1,33 +1,92 @@
-# main.py
-# ============================================================
-# SISTEMA MOVEE — MAIN
-# ============================================================
-
-import streamlit as st
 import importlib
-import pandas as pd
-from data_loader import carregar_dados
-from auth import autenticar
+import streamlit as st
 
-# ============================================================
-# CONFIGURAÇÃO INICIAL
-# ============================================================
-st.set_page_config(
-    page_title="Sistema Movee",
-    layout="wide",
-    page_icon="🟢"
+from auth import autenticar, USUARIOS
+from data_loader import carregar_dados
+
+# =========================================================
+# 🔄 Carga ÚNICA do DF por render + suporte a hard refresh
+# =========================================================
+def get_df_once():
+    """
+    Carrega o df uma única vez por render.
+    Se o usuário clicou em 'Atualizar dados', força baixar do Drive.
+    """
+    prefer = st.session_state.pop("force_refresh", False)
+    ts = pd.Timestamp.now().timestamp() if prefer else None
+    return carregar_dados(prefer_drive=prefer, _ts=ts)
+
+
+# -------------------------------------------------------------------
+# Config da página
+# -------------------------------------------------------------------
+st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
+
+# -------------------------------------------------------------------
+# Estilo
+# -------------------------------------------------------------------
+st.markdown(
+    """
+    <style>
+        body { background-color: #0e1117; color: #c9d1d9; }
+        .stButton>button {
+            background-color: #1f6feb;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+        }
+        .stButton>button:hover { background-color: #388bfd; }
+        .stSidebar { background-color: #161b22; }
+        h1, h2, h3 { color: #58a6ff; }
+        .stSelectbox, .stMultiSelect, .stTextInput {
+            background-color: #21262d;
+            color: #c9d1d9;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
-# ============================================================
-# CARREGAR USUÁRIOS / PERMISSÕES
-# ============================================================
-USUARIOS = st.secrets.get("USUARIOS", {})
-USUARIOS_PRIVADOS = st.secrets.get("USUARIOS_PRIVADOS", {})
 
-# ============================================================
-# MENU BASE (todas as páginas públicas)
-# ============================================================
-MENU_BASE = {
+
+# ---------------------------------------------------------
+# Estado inicial
+# ---------------------------------------------------------
+if "logado" not in st.session_state:
+    st.session_state.logado = False
+    st.session_state.usuario = ""
+
+if "module" not in st.session_state:
+    # default = Home
+    st.session_state.module = "views.home"
+
+if "open_cat" not in st.session_state:
+    st.session_state.open_cat = None
+
+# ---------------------------------------------------------
+# Login
+# ---------------------------------------------------------
+if not st.session_state.logado:
+    st.title("🔐 Login do Painel")
+    usuario = st.text_input("Usuário")
+    senha = st.text_input("Senha", type="password")
+    if st.button("Entrar", use_container_width=True):
+        if autenticar(usuario, senha):
+            st.session_state.logado = True
+            st.session_state.usuario = usuario
+            st.rerun()
+        else:
+            st.error("Usuário ou senha incorretos")
+    st.stop()
+
+st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
+
+# ---------------------------------------------------------
+# Menu (sem item duplicado de Início)
+# ---------------------------------------------------------
+MENU = {
     "Desempenho do Entregador": {
         "Ver geral": "views.ver_geral",
         "Simplificada (WhatsApp)": "views.simplificada",
@@ -42,7 +101,6 @@ MENU_BASE = {
         "Resumos": "views.resumos",
         "Lista de Ativos": "views.lista_ativos",
         "Comparar ativos": "views.comparar",
-        # “Saídas (privado)” vai ser injetado dinamicamente
     },
     "Dashboards": {
         "UTR": "views.utr",
@@ -50,74 +108,44 @@ MENU_BASE = {
     },
 }
 
-# ============================================================
-# ESTADO INICIAL
-# ============================================================
-if "logado" not in st.session_state:
-    st.session_state.logado = False
-    st.session_state.usuario = ""
-if "module" not in st.session_state:
-    st.session_state.module = "views.home"
-
-# ============================================================
-# LOGIN
-# ============================================================
-if not st.session_state.logado:
-    usuario, senha = autenticar()
-    if usuario:
-        st.session_state.usuario = usuario
-        st.session_state.logado = True
-        st.experimental_rerun()
-    st.stop()
-
-# ============================================================
-# CARREGAR DADOS
-# ============================================================
-with st.spinner("Carregando dados..."):
-    df = carregar_dados()
-
-# ============================================================
-# MENU LATERAL (dinâmico)
-# ============================================================
-user = st.session_state.get("usuario", "")
-allowed_saidas = set(USUARIOS_PRIVADOS.get("SAIDAS", []))
-
-# Clona o menu base
-MENU = {k: dict(v) for k, v in MENU_BASE.items()}
-
-# 🔒 Adiciona “Saídas (privado)” só pra quem pode
-if user in allowed_saidas:
-    MENU.setdefault("Relatórios", {})
-    MENU["Relatórios"]["Saídas (privado)"] = "views.saidas"
-
-# ============================================================
-# SIDEBAR
-# ============================================================
 with st.sidebar:
-    st.image("https://i.imgur.com/p3vjjKZ.png", width=180)
-    st.markdown("---")
-    st.markdown(f"👤 **Usuário:** `{user}`")
-    st.markdown("---")
+    st.markdown("### Navegação")
+    # Botão Home dedicado
+    if st.button("Início", use_container_width=True):
+        st.session_state.module = "views.home"
+        st.session_state.open_cat = None
+        st.rerun()
 
-    selected_section = st.selectbox("📂 Módulo", list(MENU.keys()))
-    selected_page = st.selectbox(
-        "📄 Página",
-        list(MENU[selected_section].keys())
-    )
+    # Submenus
+    for cat, opts in MENU.items():
+        if isinstance(opts, str):
+            if st.button(cat, use_container_width=True):
+                st.session_state.module = opts
+                st.session_state.open_cat = None
+                st.rerun()
+        else:
+            expanded = (st.session_state.open_cat == cat)
+            with st.expander(cat, expanded=expanded):
+                for label, module in opts.items():
+                    if st.button(label, key=f"btn_{cat}_{label}", use_container_width=True):
+                        st.session_state.module = module
+                        st.session_state.open_cat = cat
+                        st.rerun()
 
-    st.session_state.module = MENU[selected_section][selected_page]
+# ---------------------------------------------------------
+# Dados (suporta refresh disparado pela Home)
+# ---------------------------------------------------------
+df = carregar_dados(prefer_drive=st.session_state.pop("force_refresh", False))
 
-    st.markdown("---")
-    if st.button("🚪 Sair", use_container_width=True):
-        st.session_state.logado = False
-        st.session_state.usuario = ""
-        st.experimental_rerun()
+if st.session_state.pop("just_refreshed", False):
+    st.success("✅ Base atualizada a partir do Google Drive.")
 
-# ============================================================
-# RENDERIZAR PÁGINA SELECIONADA
-# ============================================================
+# ---------------------------------------------------------
+# Roteador
+# ---------------------------------------------------------
 try:
-    mod = importlib.import_module(st.session_state.module)
-    mod.render(df, USUARIOS)
+    page = importlib.import_module(st.session_state.module)
 except Exception as e:
-    st.error(f"Erro ao carregar a página: {e}")
+    st.error(f"Erro ao carregar módulo **{st.session_state.module}**: {e}")
+else:
+    page.render(df, USUARIOS)
