@@ -5,7 +5,6 @@ import gdown
 from pathlib import Path
 from utils import normalizar, tempo_para_segundos
 
-# ========= SUA PARTE (Drive/Excel) =========
 SHEET = "Base 2025"
 
 @st.cache_data(show_spinner=False)  # 👈 evita ficar mostrando "Running..." toda hora
@@ -129,65 +128,3 @@ def _ler(path: Path) -> pd.DataFrame:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
 
     return df
-
-# ========= NOVO: Supabase (v3) =========
-# Lê agregados diretos da materialized view v3.mv_resumo_mes
-try:
-    from supabase import create_client
-except Exception:
-    create_client = None
-    st.warning("⚠️ Para usar Supabase, adicione 'supabase>=2.6.0' ao requirements.txt e configure st.secrets['supabase'].")
-
-def _sb_client():
-    if create_client is None:
-        raise RuntimeError("Biblioteca 'supabase' não disponível.")
-    SB_URL = st.secrets["supabase"]["url"]
-    SB_KEY = st.secrets["supabase"]["service_key"]  # service_role no backend
-    # cache do client
-    if "_sb" not in st.session_state:
-        st.session_state["_sb"] = create_client(SB_URL, SB_KEY)
-    return st.session_state["_sb"]
-
-@st.cache_data(ttl=60, show_spinner=False)
-def get_resumo_mes(ano: int, mes: int, praca: str | None = None, subpraca: str | None = None) -> pd.DataFrame:
-    """
-    Lê a MV v3.mv_resumo_mes para o mês/filtros informados.
-    Retorna: mes, praca, sub_praca, periodo, ofertadas, aceitas, rejeitadas, concluidas, utr, valor_total_rs
-    """
-    sb = _sb_client()
-    mes_iso = pd.Timestamp(ano, mes, 1).date().isoformat()
-    q = (sb.table("v3.mv_resumo_mes")
-            .select("mes,praca,sub_praca,periodo,ofertadas,aceitas,rejeitadas,concluidas,utr,valor_total_rs")
-            .eq("mes", mes_iso)
-            .limit(20000))
-    if praca:
-        q = q.eq("praca", praca)
-    if subpraca:
-        q = q.eq("sub_praca", subpraca)
-    data = q.execute().data or []
-    df = pd.DataFrame(data)
-    if df.empty:
-        return df
-    # tipagem
-    df["mes"] = pd.to_datetime(df["mes"], errors="coerce").dt.date
-    for c in ["ofertadas", "aceitas", "rejeitadas", "concluidas"]:
-        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int)
-    df["utr"] = pd.to_numeric(df["utr"], errors="coerce")
-    df["valor_total_rs"] = pd.to_numeric(df["valor_total_rs"], errors="coerce").fillna(0.0)
-    return df
-
-@st.cache_data(ttl=60, show_spinner=False)
-def get_last_dia():
-    """Último dia com dados (v3.vw_resumo_diario) — útil pra mostrar status na Home."""
-    sb = _sb_client()
-    try:
-        res = (sb.table("v3.vw_resumo_diario")
-                 .select("dia")
-                 .order("dia", desc=True)
-                 .limit(1)
-                 .execute()).data
-        if res:
-            return pd.to_datetime(res[0]["dia"]).date()
-    except Exception:
-        return None
-    return None
