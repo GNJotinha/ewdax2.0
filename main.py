@@ -8,7 +8,6 @@ import importlib
 import pandas as pd
 from data_loader import carregar_dados
 from auth import autenticar
-from utils import aplicar_estilo
 
 # ============================================================
 # CONFIGURAÇÃO INICIAL
@@ -18,7 +17,6 @@ st.set_page_config(
     layout="wide",
     page_icon="🟢"
 )
-aplicar_estilo()
 
 # ============================================================
 # CARREGAR USUÁRIOS / PERMISSÕES
@@ -44,7 +42,7 @@ MENU_BASE = {
         "Resumos": "views.resumos",
         "Lista de Ativos": "views.lista_ativos",
         "Comparar ativos": "views.comparar",
-        # "Saídas (privado)" não aparece aqui — será injetado dinamicamente
+        # “Saídas (privado)” vai ser injetado dinamicamente
     },
     "Dashboards": {
         "UTR": "views.utr",
@@ -101,7 +99,6 @@ with st.sidebar:
     st.markdown(f"👤 **Usuário:** `{user}`")
     st.markdown("---")
 
-    # Montar menu dinâmico
     selected_section = st.selectbox("📂 Módulo", list(MENU.keys()))
     selected_page = st.selectbox(
         "📄 Página",
