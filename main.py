@@ -106,7 +106,7 @@ MENU = {
         "UTR": "views.utr",
         "Indicadores Gerais": "views.indicadores",
     },
-    user  = st.session_state.usuario
+    user = st.session_state.usuario
         nivel = USUARIOS.get(user, {}).get("nivel", "")
         if nivel == "dev":
             "Saídas": "views.saidas",
