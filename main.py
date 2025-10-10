@@ -106,12 +106,35 @@ MENU = {
         "UTR": "views.utr",
         "Indicadores Gerais": "views.indicadores",
     },
-    user = st.session_state.usuario
-        nivel = USUARIOS.get(user, {}).get("nivel", "")
-        if nivel == "dev":
-            "Saídas": "views.saidas",
-
 }
+
+MENU = {
+    "Desempenho do Entregador": {
+        "Ver geral": "views.ver_geral",
+        "Simplificada (WhatsApp)": "views.simplificada",
+        "Relatório Customizado": "views.relatorio_custom",
+        "Perfil do Entregador": "views.perfil_entregador",
+    },
+    "Relatórios": {
+        "Alertas de Faltas": "views.faltas",
+        "Relação de Entregadores": "views.relacao",
+        "Categorias de Entregadores": "views.categorias",
+        "Relatórios Subpraças": "views.rel_subpraca",
+        "Resumos": "views.resumos",
+        "Lista de Ativos": "views.lista_ativos",
+        "Comparar ativos": "views.comparar",
+    },
+    "Dashboards": {
+        "UTR": "views.utr",
+        "Indicadores Gerais": "views.indicadores",
+    },
+}
+
+user = st.session_state.usuario
+nivel = USUARIOS.get(user, {}).get("nivel", "")
+
+if nivel == "dev":  # ou "admin", se quiser
+    MENU["Saídas"] = "views.saidas"
 
 
 with st.sidebar:
