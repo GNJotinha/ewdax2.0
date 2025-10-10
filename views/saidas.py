@@ -1,113 +1,117 @@
-# saidas.py
+# views/meu_modo.py
 import streamlit as st
 import pandas as pd
 from utils import calcular_tempo_online
 
-# ✅ QUEM PODE ENTRAR AQUI
-ALLOWED_USERS = set(
-    st.secrets.get("USUARIOS_PRIVADOS", {}).get("BUSCA_MULTI", [])
-)
-
-def _fmt_pct_br(v: float, casas: int = 2) -> str:
+def _fmt_pct(x: float) -> str:
     try:
-        return f"{float(v):.{casas}f}%".replace(".", ",")
+        return f"{float(x):.2f}%".replace(".", ",")
     except Exception:
         return "0,00%"
 
-def _pct(num: float, den: float) -> str:
+def _num(x) -> int:
     try:
-        if den is None or den == 0:
-            return "0,00%"
-        return f"{(float(num)/float(den))*100:.2f}%".replace(".", ",")
+        return int(pd.to_numeric(x, errors="coerce").fillna(0))
     except Exception:
-        return "0,00%"
+        return 0
 
-def _mk_bloco(nome: str, df_p: pd.DataFrame) -> str:
-    # Sem dados (nenhuma linha) => sem atuação
-    if df_p.empty:
-        return f"*{nome}*\nX Sem dados de atuação"
-
-    # Filtra linhas com algum sinal de atividade
+def _tem_atuacao(df_chunk: pd.DataFrame) -> bool:
+    if df_chunk is None or df_chunk.empty:
+        return False
     soma = (
-        pd.to_numeric(df_p.get("segundos_abs", 0), errors="coerce").fillna(0)
-      + pd.to_numeric(df_p.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0)
-      + pd.to_numeric(df_p.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0)
-      + pd.to_numeric(df_p.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0)
+        pd.to_numeric(df_chunk.get("segundos_abs", 0), errors="coerce").fillna(0)
+      + pd.to_numeric(df_chunk.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0)
+      + pd.to_numeric(df_chunk.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0)
+      + pd.to_numeric(df_chunk.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0)
     )
-    df_act = df_p.loc[soma > 0].copy()
-    if df_act.empty:
-        return f"*{nome}*\nX Sem dados de atuação"
+    return bool((soma > 0).any())
 
-    turnos = int(df_act.shape[0])
-    ofertadas  = int(pd.to_numeric(df_act.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
-    aceitas    = int(pd.to_numeric(df_act.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
-    rejeitadas = int(pd.to_numeric(df_act.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
-    completas  = int(pd.to_numeric(df_act.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0).sum())
+def _bloco_whatsapp(nome: str, df_chunk: pd.DataFrame) -> str:
+    """Monta o bloco no formato pedido."""
+    if df_chunk is None or df_chunk.empty or not _tem_atuacao(df_chunk):
+        return f"*{nome}*\n\n✘ Sem atuação no período"
 
-    online = calcular_tempo_online(df_act)  # 0–100
-    online_str = _fmt_pct_br(online, 2)
+    # métricas
+    ofertadas  = int(pd.to_numeric(df_chunk.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
+    aceitas    = int(pd.to_numeric(df_chunk.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
+    rejeitadas = int(pd.to_numeric(df_chunk.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
+    completas  = int(pd.to_numeric(df_chunk.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0).sum())
 
-    aceitas_pct    = _pct(aceitas, ofertadas)
-    rejeitadas_pct = _pct(rejeitadas, ofertadas)
-    completas_pct  = _pct(completas, aceitas)   # conclusão sobre aceitas
+    acc_pct  = (aceitas   / ofertadas * 100.0) if ofertadas  > 0 else 0.0
+    rej_pct  = (rejeitadas/ ofertadas * 100.0) if ofertadas  > 0 else 0.0
+    comp_pct = (completas / aceitas   * 100.0) if aceitas    > 0 else 0.0
+
+    online_pct = calcular_tempo_online(df_chunk)
 
     linhas = [
         f"*{nome}*",
-        f"Tempo Online: {online_str}",
-        f"Turnos: {turnos}",
-        f"Ofertadas: {ofertadas}",
-        f"Aceitas: {aceitas} ({aceitas_pct})",
-        f"Rejeitadas: {rejeitadas} ({rejeitadas_pct})",
-        f"Completas: {completas} ({completas_pct})",
+        f"- Tempo online: {_fmt_pct(online_pct)}",
+        f"- Ofertadas: {ofertadas}",
+        f"- Aceitas: {aceitas} ({_fmt_pct(acc_pct)})",
+        f"- Rejeitadas: {rejeitadas} ({_fmt_pct(rej_pct)})",
+        f"- Completas: {completas} ({_fmt_pct(comp_pct)})",
     ]
     return "\n".join(linhas)
 
 def render(df: pd.DataFrame, USUARIOS: dict):
-    # 🔒 bloqueio total: só quem estiver em ALLOWED_USERS entra
-    user = st.session_state.get("usuario", "")
-    if user not in ALLOWED_USERS:
+    # --- trava de admin ---
+    user  = st.session_state.get("usuario", "")
+    nivel = USUARIOS.get(user, {}).get("nivel", "")
+    if nivel != "admin":
+        st.error("Acesso negado.")
         st.stop()
 
-    st.header("🔎 Busca múltipla (privado) — Whats")
+    st.header("🧪 Meu modo (admin) — WhatsApp")
 
-    # datas do dataframe (assumindo coluna 'data' já normalizada no loader)
-    df_local = df.copy()
-    df_local["data"] = pd.to_datetime(df_local.get("data"), errors="coerce").dt.date
-    data_min = pd.Series(df_local["data"]).dropna().min()
-    data_max = pd.Series(df_local["data"]).dropna().max()
+    # normaliza data
+    base = df.copy()
+    if "data" in base.columns:
+        base["data"] = pd.to_datetime(base["data"], errors="coerce")
+    elif "data_do_periodo" in base.columns:
+        base["data"] = pd.to_datetime(base["data_do_periodo"], errors="coerce")
+    else:
+        st.error("Coluna de data ausente (espere 'data' ou 'data_do_periodo').")
+        return
 
-    c1, c2 = st.columns([2, 1])
+    base = base.dropna(subset=["data"])
+    if base.empty:
+        st.info("Sem dados válidos.")
+        return
+
+    data_min = pd.to_datetime(base["data"]).min().date()
+    data_max = pd.to_datetime(base["data"]).max().date()
+
+    # filtros
+    c1, c2 = st.columns([2, 3])
     with c1:
-        periodo = st.date_input(
-            "Período contínuo:",
-            value=[data_min, data_max],
-            min_value=data_min, max_value=data_max,
-            format="DD/MM/YYYY"
-        )
+        nomes = sorted(base["pessoa_entregadora"].dropna().unique().tolist())
+        sel = st.multiselect("Entregadores", nomes, help="Você pode escolher vários.")
     with c2:
-        st.caption("Selecione os nomes e clique em **Gerar Whats**.")
+        periodo = st.date_input("Período", [data_min, data_max], format="DD/MM/YYYY")
 
-    nomes = sorted(df_local["pessoa_entregadora"].dropna().unique().tolist())
-    escol = st.multiselect("Entregadores (multi):", nomes)
+    gerar = st.button("Gerar texto", type="primary", use_container_width=True, disabled=(len(sel) == 0))
 
-    if st.button("Gerar Whats", type="primary", use_container_width=True, disabled=(len(escol)==0)):
-        df_cut = df_local.copy()
-        if len(periodo) == 2 and periodo[0] and periodo[1]:
-            ini, fim = periodo
-            df_cut = df_cut[(df_cut["data"] >= ini) & (df_cut["data"] <= fim)]
+    if not gerar:
+        st.caption("Selecione 1+ entregadores e um intervalo de datas, depois clique em **Gerar texto**.")
+        return
 
-        blocos = []
-        for nome in escol:
-            chunk = df_cut[df_cut["pessoa_entregadora"] == nome].copy()
-            blocos.append(_mk_bloco(nome, chunk))
+    # aplica período
+    df_filtrado = base.copy()
+    if len(periodo) == 2:
+        ini, fim = pd.to_datetime(periodo[0]), pd.to_datetime(periodo[1]) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        df_filtrado = df_filtrado[(df_filtrado["data"] >= ini) & (df_filtrado["data"] <= fim)]
+    elif len(periodo) == 1:
+        dia = pd.to_datetime(periodo[0])
+        df_filtrado = df_filtrado[df_filtrado["data"].dt.date == dia.date()]
 
-        if len(periodo) == 2:
-            header = f"Período de análise: {periodo[0].strftime('%d/%m/%Y')} a {periodo[1].strftime('%d/%m/%Y')}"
-        elif len(periodo) == 1:
-            header = f"Período de análise: {periodo[0].strftime('%d/%m/%Y')}"
-        else:
-            header = "Período de análise"
+    # monta blocos
+    blocos = []
+    for nome in sel:
+        chunk = df_filtrado[df_filtrado["pessoa_entregadora"] == nome].copy()
+        # para o cálculo de online, manteremos colunas originais; já protegemos na função
+        texto = _bloco_whatsapp(nome, chunk)
+        blocos.append(texto)
 
-        texto = header + "\n\n" + "\n\n".join(blocos)
-        st.text_area("Resultado (copiar p/ Whats):", value=texto, height=500)
-        st.download_button("⬇️ Baixar .txt", data=texto.encode("utf-8"), file_name="busca_multi_whats.txt", mime="text/plain")
+    saida = "\n\n".join(blocos).strip()
+    st.text_area("📝 Copiar e colar no WhatsApp", value=saida, height=500)
+    st.download_button("⬇️ Baixar .txt", data=saida.encode("utf-8"), file_name="relatorio_whatsapp.txt", mime="text/plain")
