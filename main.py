@@ -113,8 +113,8 @@ nivel = USUARIOS.get(user, {}).get("nivel", "")
 if nivel == "dev":
     MENU = {
         "Em desenvolvimento": {
-            "Saídas": "views.saidas"
-        }
+            "Saídas": "views.saidas",
+        },
     }
 
 
