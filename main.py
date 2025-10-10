@@ -106,16 +106,12 @@ MENU = {
         "UTR": "views.utr",
         "Indicadores Gerais": "views.indicadores",
     },
-}
+    user  = st.session_state.usuario
+        nivel = USUARIOS.get(user, {}).get("nivel", "")
+        if nivel == "dev":
+            "Saídas": "views.saidas"
 
-user  = st.session_state.usuario
-nivel = USUARIOS.get(user, {}).get("nivel", "")
-if nivel == "dev":
-    MENU = {
-        "Em desenvolvimento": {
-            "Saídas": "views.saidas",
-        },
-    }
+}
 
 
 with st.sidebar:
