@@ -111,7 +111,7 @@ MENU = {
 user  = st.session_state.usuario
 nivel = USUARIOS.get(user, {}).get("nivel", "")
 if nivel == "dev":
-    MENU["Meu modo (dev)"] = "views.meu_modo"
+    MENU["Meu modo (dev)"] = "views.saidas"
 
 
 with st.sidebar:
