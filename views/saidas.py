@@ -57,7 +57,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     # --- trava de admin ---
     user  = st.session_state.get("usuario", "")
     nivel = USUARIOS.get(user, {}).get("nivel", "")
-    if nivel != "admin":
+    if nivel != "dev":
         st.error("Acesso negado.")
         st.stop()
 
@@ -115,4 +115,5 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     saida = "\n\n".join(blocos).strip()
     st.text_area("📝 Copiar e colar no WhatsApp", value=saida, height=500)
     st.download_button("⬇️ Baixar .txt", data=saida.encode("utf-8"), file_name="relatorio_whatsapp.txt", mime="text/plain")
+
 
