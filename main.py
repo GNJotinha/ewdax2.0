@@ -108,6 +108,12 @@ MENU = {
     },
 }
 
+user  = st.session_state.usuario
+nivel = USUARIOS.get(user, {}).get("nivel", "")
+if nivel == "dev":
+    MENU["Meu modo (dev)"] = "views.meu_modo"
+
+
 with st.sidebar:
     st.markdown("### Navegação")
     # Botão Home dedicado
