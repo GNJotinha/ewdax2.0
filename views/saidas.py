@@ -92,7 +92,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     gerar = st.button("Gerar texto", type="primary", use_container_width=True, disabled=(len(sel) == 0))
 
     if not gerar:
-        st.caption("Selecione 1+ entregadores e um intervalo de datas, depois clique em **Gerar texto**.")
+        st.caption("Selecione entregadores.")
         return
 
     # aplica período
@@ -115,3 +115,4 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     saida = "\n\n".join(blocos).strip()
     st.text_area("📝 Copiar e colar no WhatsApp", value=saida, height=500)
     st.download_button("⬇️ Baixar .txt", data=saida.encode("utf-8"), file_name="relatorio_whatsapp.txt", mime="text/plain")
+
