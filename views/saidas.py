@@ -61,7 +61,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         st.error("Acesso negado.")
         st.stop()
 
-    st.header("🧪 Meu modo (admin) — WhatsApp")
+    st.header("Relatório de saídas")
 
     # normaliza data
     base = df.copy()
@@ -113,7 +113,8 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         blocos.append(texto)
 
     saida = "\n\n".join(blocos).strip()
-    st.text_area("📝 Copiar e colar no WhatsApp", value=saida, height=500)
-    st.download_button("⬇️ Baixar .txt", data=saida.encode("utf-8"), file_name="relatorio_whatsapp.txt", mime="text/plain")
+    st.text_area("Relatório de saídas", value=saida, height=500)
+
+
 
 
