@@ -109,7 +109,7 @@ MENU = {
     user  = st.session_state.usuario
         nivel = USUARIOS.get(user, {}).get("nivel", "")
         if nivel == "dev":
-            "Saídas": "views.saidas"
+            "Saídas": "views.saidas",
 
 }
 
