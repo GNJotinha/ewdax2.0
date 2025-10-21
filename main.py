@@ -86,27 +86,6 @@ st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 # ---------------------------------------------------------
 # Menu (sem item duplicado de Início)
 # ---------------------------------------------------------
-MENU = {
-    "Desempenho do Entregador": {
-        "Ver geral": "views.ver_geral",
-        "Simplificada (WhatsApp)": "views.simplificada",
-        "Relatório Customizado": "views.relatorio_custom",
-        "Perfil do Entregador": "views.perfil_entregador",
-    },
-    "Relatórios": {
-        "Alertas de Faltas": "views.faltas",
-        "Relação de Entregadores": "views.relacao",
-        "Categorias de Entregadores": "views.categorias",
-        "Relatórios Subpraças": "views.rel_subpraca",
-        "Resumos": "views.resumos",
-        "Lista de Ativos": "views.lista_ativos",
-        "Comparar ativos": "views.comparar",
-    },
-    "Dashboards": {
-        "UTR": "views.utr",
-        "Indicadores Gerais": "views.indicadores",
-    },
-}
 
 MENU = {
     "Desempenho do Entregador": {
