@@ -123,6 +123,7 @@ MENU = {
         "Resumos": "views.resumos",
         "Lista de Ativos": "views.lista_ativos",
         "Comparar ativos": "views.comparar",
+        "Lista de Presença": "views.presenca_calendario"
     },
     "Dashboards": {
         "UTR": "views.utr",
