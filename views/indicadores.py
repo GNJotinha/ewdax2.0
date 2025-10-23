@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from relatorios import utr_por_entregador_turno
 
 PRIMARY_COLOR = ["#00BFFF"]  # paleta padrão
 
@@ -13,6 +14,21 @@ def _ensure_mes_ano(df: pd.DataFrame) -> pd.DataFrame:
     dfx["mes_ano"] = base_dt.dt.to_period("M").dt.to_timestamp()
     return dfx
 
+
+def _calc_utr_media_mensal(df_mes: pd.DataFrame, mes: int, ano: int) -> float:
+    """
+    UTR 'Médias' por mês: média de (ofertadas/horas) nas linhas de (pessoa, turno, dia) com horas>0.
+    Usa relatorios.utr_por_entregador_turno para uma definição consistente com o módulo UTR.
+    """
+    base = utr_por_entregador_turno(df_mes, mes, ano)
+    if base is None or base.empty:
+        return 0.0
+    base = base[base.get("supply_hours", 0) > 0].copy()
+    if base.empty:
+        return 0.0
+    return float((base["corridas_ofertadas"] / base["supply_hours"]).mean())
+
+
 def render(df: pd.DataFrame, _USUARIOS: dict):
     st.header("📊 Indicadores Gerais")
 
@@ -23,7 +39,11 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         index=0, horizontal=True
     )
 
-    # recortes temporais
+    utr_modo = None
+    if tipo_grafico == "Corridas ofertadas":
+        utr_modo = st.radio("UTR no mensal", ["Absoluto","Médias"], index=0, horizontal=True,
+                            help="Escolhe como calcular a UTR mostrada nas labels do gráfico MENSAL de ofertadas.")
+
     hoje = pd.Timestamp.today()
     mes_atual = int(hoje.month)
     ano_atual = int(hoje.year)
@@ -119,51 +139,19 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     }
     col, titulo, label = col_map[tipo_grafico]
 
-    mensal = df.groupby("mes_ano", as_index=False)[col].sum()
+    mensal = df.groupby("mes_ano", as_index=False)[col].sum().rename(columns={col: "valor"})
     mensal["mes_rotulo"] = pd.to_datetime(mensal["mes_ano"]).dt.strftime("%b/%y")
 
-    fig = px.bar(
-        mensal, x="mes_rotulo", y=col, text=col, title=titulo,
-        labels={"mes_rotulo": "Mês/Ano", col: label},
-        template="plotly_dark", color_discrete_sequence=PRIMARY_COLOR
-    )
-    fig.update_traces(texttemplate="<b>%{text}</b>", textposition="outside")
-    fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
-    st.plotly_chart(fig, use_container_width=True)
-
-    # ---------- Por dia (mês atual) ----------
-    por_dia = (
-        df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-                    .groupby("dia", as_index=False)[col].sum()
-                    .sort_values("dia")
-    )
-
-    # 🔥 Personalização SOMENTE para "Corridas ofertadas":
     if tipo_grafico == "Corridas ofertadas":
-        # Calcula horas e UTR por dia
-        df_mes_atual["segundos_abs"] = pd.to_numeric(df_mes_atual.get("segundos_abs", 0), errors="coerce").fillna(0)
-        sh_por_dia = (
-            df_mes_atual.assign(dia=pd.to_datetime(df_mes_atual["data"]).dt.day)
-                        .groupby("dia", as_index=False)["segundos_abs"].sum()
-                        .rename(columns={"segundos_abs":"segundos"})
-        )
-        por_dia = por_dia.merge(sh_por_dia, on="dia", how="left")
-        por_dia["horas"] = por_dia["segundos"] / 3600.0
-        por_dia["utr"] = por_dia.apply(lambda r: (r[col]/r["horas"]) if r["horas"] > 0 else 0.0, axis=1)
-        por_dia["label"] = por_dia.apply(lambda r: f"{int(r[col])} ofertadas ({r['utr']:.2f} UTR)", axis=1)
+        secs_mensal = df.groupby("mes_ano", as_index=False)["segundos_abs"].sum().rename(columns={"segundos_abs":"segundos"})
+        mensal = mensal.merge(secs_mensal, on="mes_ano", how="left")
+        mensal["horas"] = pd.to_numeric(mensal["segundos"], errors="coerce").fillna(0) / 3600.0
 
-        fig2 = px.bar(
-            por_dia, x="dia", y=col, text="label",
-            title=f"📈 {label} por dia (mês atual)",
-            labels={"dia": "Dia", col: label},
-            template="plotly_dark"
-        )
-        fig2.update_traces(texttemplate="<b>%{text}</b>", textposition="outside")
-    else:
-        fig2 = px.line(
-            por_dia, x="dia", y=col, title=f"📈 {label} por dia (mês atual)",
-            labels={"dia": "Dia", col: label}, template="plotly_dark"
-        )
-
-    fig2.update_layout(margin=dict(t=60, b=30, l=40, r=40))
-    st.plotly_chart(fig2, use_container_width=True)
+        if utr_modo == "Médias":
+            def _calc_row_utr_media(row):
+                ts = pd.to_datetime(row["mes_ano"])
+                mes_i, ano_i = int(ts.month), int(ts.year)
+                return _calc_utr_media_mensal(df, mes_i, ano_i)
+            mensal["utr"] = mensal.apply(_calc_row_utr_media, axis=1)
+        else:
+            m
