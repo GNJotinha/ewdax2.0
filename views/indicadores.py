@@ -14,12 +14,12 @@ def _ensure_mes_ano(df: pd.DataFrame) -> pd.DataFrame:
     dfx["mes_ano"] = base_dt.dt.to_period("M").dt.to_timestamp()
     return dfx
 
-def _calc_utr_media_mensal(df_mes: pd.DataFrame, mes: int, ano: int) -> float:
+def _utr_media_mensal(df: pd.DataFrame, mes: int, ano: int) -> float:
     """
     UTR 'Médias' por mês: média de (ofertadas/horas) nas linhas de (pessoa, turno, dia) com horas>0.
-    Usa relatorios.utr_por_entregador_turno para uma definição consistente com o módulo UTR.
+    Usa relatorios.utr_por_entregador_turno para manter consistência com a tela de UTR.
     """
-    base = utr_por_entregador_turno(df_mes, mes, ano)
+    base = utr_por_entregador_turno(df, mes, ano)
     if base is None or base.empty:
         return 0.0
     base = base[base.get("supply_hours", 0) > 0].copy()
@@ -32,26 +32,39 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     tipo_grafico = st.radio(
         "Tipo de gráfico:",
-        ["Corridas ofertadas","Corridas aceitas","Corridas rejeitadas",
-         "Corridas completadas","Horas realizadas","Entregadores ativos"],
-        index=0, horizontal=True
+        [
+            "Corridas ofertadas",
+            "Corridas aceitas",
+            "Corridas rejeitadas",
+            "Corridas completadas",
+            "Horas realizadas",
+            "Entregadores ativos",
+        ],
+        index=0,
+        horizontal=True,
     )
 
-    # 👇 Só aparece para o MENSAL de "Corridas ofertadas"
+    # 👇 Seletor só para o MENSAL de ofertadas
     utr_modo = None
     if tipo_grafico == "Corridas ofertadas":
-        utr_modo = st.radio("UTR no mensal", ["Absoluto","Médias"], index=0, horizontal=True,
-                            help="Escolhe como calcular a UTR mostrada nas labels do gráfico MENSAL de ofertadas.")
+        utr_modo = st.radio(
+            "UTR no mensal",
+            ["Absoluto", "Médias"],
+            index=0,
+            horizontal=True,
+            help="Como calcular a UTR exibida no gráfico MENSAL de ofertadas."
+        )
 
-    # recortes temporais
+    # Recortes temporais
     hoje = pd.Timestamp.today()
     mes_atual = int(hoje.month)
     ano_atual = int(hoje.year)
+
     df = _ensure_mes_ano(df)
     df_mes_atual = df[(df.get("mes") == mes_atual) & (df.get("ano") == ano_atual)].copy()
 
     # ---------------------------------------------------------
-    # Horas realizadas
+    # Horas realizadas (mantido)
     # ---------------------------------------------------------
     if tipo_grafico == "Horas realizadas":
         mensal_horas = (
@@ -61,10 +74,14 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         mensal_horas["mes_rotulo"] = pd.to_datetime(mensal_horas["mes_ano"]).dt.strftime("%b/%y")
 
         fig_m = px.bar(
-            mensal_horas, x="mes_rotulo", y="horas", text="horas",
+            mensal_horas,
+            x="mes_rotulo",
+            y="horas",
+            text="horas",
             title="Horas realizadas por mês",
-            labels={"mes_rotulo":"Mês/Ano","horas":"Horas"},
-            template="plotly_dark", color_discrete_sequence=PRIMARY_COLOR
+            labels={"mes_rotulo": "Mês/Ano", "horas": "Horas"},
+            template="plotly_dark",
+            color_discrete_sequence=PRIMARY_COLOR,
         )
         fig_m.update_traces(texttemplate="<b>%{text:.1f}h</b>", textposition="outside")
         fig_m.update_layout(margin=dict(t=60, b=30, l=40, r=40))
@@ -73,15 +90,17 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         if not df_mes_atual.empty:
             por_dia = (
                 df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-                           .groupby("dia", as_index=False)["segundos_abs"].sum()
-                           .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
-                           .sort_values("dia")
+                .groupby("dia", as_index=False)["segundos_abs"].sum()
+                .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
+                .sort_values("dia")
             )
             fig_d = px.line(
-                por_dia, x="dia", y="horas",
+                por_dia,
+                x="dia",
+                y="horas",
                 title="📈 Horas por dia (mês atual)",
-                labels={"dia":"Dia","horas":"Horas"},
-                template="plotly_dark"
+                labels={"dia": "Dia", "horas": "Horas"},
+                template="plotly_dark",
             )
             fig_d.update_layout(margin=dict(t=60, b=30, l=40, r=40))
             st.metric("⏱️ Horas realizadas no mês", f"{por_dia['horas'].sum():.2f}h")
@@ -91,19 +110,23 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         return
 
     # ---------------------------------------------------------
-    # Entregadores ativos
+    # Entregadores ativos (mantido)
     # ---------------------------------------------------------
     if tipo_grafico == "Entregadores ativos":
         mensal = (
             df.groupby("mes_ano", as_index=False)["pessoa_entregadora"].nunique()
-              .rename(columns={"pessoa_entregadora":"entregadores"})
+            .rename(columns={"pessoa_entregadora": "entregadores"})
         )
         mensal["mes_rotulo"] = pd.to_datetime(mensal["mes_ano"]).dt.strftime("%b/%y")
 
         fig = px.bar(
-            mensal, x="mes_rotulo", y="entregadores", text="entregadores",
+            mensal,
+            x="mes_rotulo",
+            y="entregadores",
+            text="entregadores",
             title="Entregadores ativos por mês",
-            template="plotly_dark", color_discrete_sequence=PRIMARY_COLOR
+            template="plotly_dark",
+            color_discrete_sequence=PRIMARY_COLOR,
         )
         fig.update_traces(texttemplate="<b>%{text}</b>", textposition="outside")
         fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
@@ -112,15 +135,17 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         if not df_mes_atual.empty:
             por_dia = (
                 df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-                            .groupby("dia", as_index=False)["pessoa_entregadora"].nunique()
-                            .rename(columns={"pessoa_entregadora":"entregadores"})
-                            .sort_values("dia")
+                .groupby("dia", as_index=False)["pessoa_entregadora"].nunique()
+                .rename(columns={"pessoa_entregadora": "entregadores"})
+                .sort_values("dia")
             )
             fig2 = px.line(
-                por_dia, x="dia", y="entregadores",
+                por_dia,
+                x="dia",
+                y="entregadores",
                 title="📈 Entregadores por dia (mês atual)",
-                labels={"dia":"Dia","entregadores":"Entregadores"},
-                template="plotly_dark"
+                labels={"dia": "Dia", "entregadores": "Entregadores"},
+                template="plotly_dark",
             )
             fig2.update_layout(margin=dict(t=60, b=30, l=40, r=40))
             st.plotly_chart(fig2, use_container_width=True)
@@ -143,56 +168,67 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     mensal = df.groupby("mes_ano", as_index=False)[col].sum().rename(columns={col: "valor"})
     mensal["mes_rotulo"] = pd.to_datetime(mensal["mes_ano"]).dt.strftime("%b/%y")
 
-    # 🔥 Se for "Corridas ofertadas", calcula UTR (Absoluto/Médias) para as labels do MENSAL
     if tipo_grafico == "Corridas ofertadas":
-        # Horas (supply) por mês
-        secs_mensal = df.groupby("mes_ano", as_index=False)["segundos_abs"].sum().rename(columns={"segundos_abs":"segundos"})
+        # Horas por mês
+        secs_mensal = df.groupby("mes_ano", as_index=False)["segundos_abs"].sum().rename(columns={"segundos_abs": "segundos"})
         mensal = mensal.merge(secs_mensal, on="mes_ano", how="left")
         mensal["segundos"] = pd.to_numeric(mensal.get("segundos", 0), errors="coerce").fillna(0)
         mensal["horas"] = mensal["segundos"] / 3600.0
 
         # UTR por mês conforme modo
-        if utr_modo == "Absoluto" or utr_modo is None:
-            mensal["utr"] = mensal.apply(lambda r: (r["valor"] / r["horas"]) if r["horas"] > 0 else 0.0, axis=1)
-        else:
-            # Médias: usa base vetorizada por (pessoa, turno, dia)
-            def _calc_row_utr_media(row):
+        if utr_modo == "Médias":
+            def _calc_row_utr_media(row: pd.Series) -> float:
                 ts = pd.to_datetime(row["mes_ano"])
-                mes_i, ano_i = int(ts.month), int(ts.year)
-                return _calc_utr_media_mensal(df, mes_i, ano_i)
+                return _utr_media_mensal(df, int(ts.month), int(ts.year))
             mensal["utr"] = mensal.apply(_calc_row_utr_media, axis=1)
+        else:
+            mensal["utr"] = mensal.apply(lambda r: (r["valor"] / r["horas"]) if r["horas"] > 0 else 0.0, axis=1)
 
-        # Label: "N (x.xx UTR)" -> sem "ofertadas"
+        # Label no formato: "N (x.xx UTR)"
         mensal["label"] = mensal.apply(lambda r: f"{int(r['valor'])} ({r['utr']:.2f} UTR)", axis=1)
 
         fig = px.bar(
-            mensal, x="mes_rotulo", y="valor", text="label", title=titulo,
+            mensal,
+            x="mes_rotulo",
+            y="valor",
+            text="label",
+            title=titulo,
             labels={"mes_rotulo": "Mês/Ano", "valor": label},
-            template="plotly_dark", color_discrete_sequence=PRIMARY_COLOR
+            template="plotly_dark",
+            color_discrete_sequence=PRIMARY_COLOR,
         )
         fig.update_traces(texttemplate="<b>%{text}</b>", textposition="outside")
     else:
         fig = px.bar(
-            mensal, x="mes_rotulo", y="valor", text="valor", title=titulo,
+            mensal,
+            x="mes_rotulo",
+            y="valor",
+            text="valor",
+            title=titulo,
             labels={"mes_rotulo": "Mês/Ano", "valor": label},
-            template="plotly_dark", color_discrete_sequence=PRIMARY_COLOR
+            template="plotly_dark",
+            color_discrete_sequence=PRIMARY_COLOR,
         )
         fig.update_traces(texttemplate="<b>%{text}</b>", textposition="outside")
 
     fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---------- Por dia (mês atual) — mantém linha e só quantidade ----------
+    # ---------- Por dia (mês atual) — linha e só quantidade ----------
     por_dia = (
         df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-                    .groupby("dia", as_index=False)[col].sum()
-                    .rename(columns={col: "valor"})
-                    .sort_values("dia")
+        .groupby("dia", as_index=False)[col].sum()
+        .rename(columns={col: "valor"})
+        .sort_values("dia")
     )
 
     fig2 = px.line(
-        por_dia, x="dia", y="valor", title=f"📈 {label} por dia (mês atual)",
-        labels={"dia": "Dia", "valor": label}, template="plotly_dark"
+        por_dia,
+        x="dia",
+        y="valor",
+        title=f"📈 {label} por dia (mês atual)",
+        labels={"dia": "Dia", "valor": label},
+        template="plotly_dark",
     )
     fig2.update_layout(margin=dict(t=60, b=30, l=40, r=40))
     st.plotly_chart(fig2, use_container_width=True)
