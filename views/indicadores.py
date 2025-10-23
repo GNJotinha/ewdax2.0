@@ -138,18 +138,24 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                     .sort_values("dia")
     )
 
-    # 🔥 Personalização SOMENTE para "Corridas ofertadas":
-    if tipo_grafico == "Corridas ofertadas":
-        # Calcula horas e UTR por dia
+    # 🔥 Personalização SOMENTE para "Corridas ofertadas"
+    if "ofertadas" in tipo_grafico.lower():
+        # Garante coluna de segundos válida
         df_mes_atual["segundos_abs"] = pd.to_numeric(df_mes_atual.get("segundos_abs", 0), errors="coerce").fillna(0)
+
+        # Horas (SH) por dia
         sh_por_dia = (
             df_mes_atual.assign(dia=pd.to_datetime(df_mes_atual["data"]).dt.day)
                         .groupby("dia", as_index=False)["segundos_abs"].sum()
-                        .rename(columns={"segundos_abs":"segundos"})
+                        .rename(columns={"segundos_abs": "segundos"})
         )
+
         por_dia = por_dia.merge(sh_por_dia, on="dia", how="left")
+        por_dia["segundos"] = pd.to_numeric(por_dia.get("segundos", 0), errors="coerce").fillna(0)
         por_dia["horas"] = por_dia["segundos"] / 3600.0
-        por_dia["utr"] = por_dia.apply(lambda r: (r[col]/r["horas"]) if r["horas"] > 0 else 0.0, axis=1)
+        por_dia["utr"] = por_dia.apply(lambda r: (r[col] / r["horas"]) if r["horas"] > 0 else 0.0, axis=1)
+
+        # Label SEMPRE presente, mesmo se UTR=0
         por_dia["label"] = por_dia.apply(lambda r: f"{int(r[col])} ofertadas ({r['utr']:.2f} UTR)", axis=1)
 
         fig2 = px.bar(
