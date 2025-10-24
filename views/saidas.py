@@ -54,13 +54,7 @@ def _bloco_whatsapp(nome: str, df_chunk: pd.DataFrame) -> str:
     return "\n".join(linhas)
 
 def render(df: pd.DataFrame, USUARIOS: dict):
-    # --- trava de admin ---
-    user  = st.session_state.get("usuario", "")
-    nivel = USUARIOS.get(user, {}).get("nivel", "")
-    if nivel != "dev":
-        st.error("Acesso negado.")
-        st.stop()
-
+    # --- sem gate de acesso: liberado para todos ---
     st.header("Relatório de saídas")
 
     # normaliza data
@@ -108,13 +102,17 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     blocos = []
     for nome in sel:
         chunk = df_filtrado[df_filtrado["pessoa_entregadora"] == nome].copy()
-        # para o cálculo de online, manteremos colunas originais; já protegemos na função
         texto = _bloco_whatsapp(nome, chunk)
         blocos.append(texto)
 
-    saida = "\n\n".join(blocos).strip()
+    # título do período no início + contagem de saídas
+    if len(periodo) == 2:
+        titulo_periodo = f"*Período {pd.to_datetime(periodo[0]).strftime('%d/%m')} á {pd.to_datetime(periodo[1]).strftime('%d/%m')}*"
+    else:
+        titulo_periodo = f"*Período {pd.to_datetime(periodo[0]).strftime('%d/%m')}*"
+
+    titulo_saidas = f"*{len(sel)} Saídas*"
+
+    saida = (titulo_periodo + "\n" + titulo_saidas + "\n\n" + "\n\n".join(blocos)).strip()
+
     st.text_area("Relatório de saídas", value=saida, height=500)
-
-
-
-
