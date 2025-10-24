@@ -102,18 +102,13 @@ MENU = {
         "Resumos": "views.resumos",
         "Lista de Ativos": "views.lista_ativos",
         "Comparar ativos": "views.comparar",
+        "Saídas": "views.saidas",
     },
     "Dashboards": {
         "UTR": "views.utr",
         "Indicadores Gerais": "views.indicadores",
     },
 }
-
-user = st.session_state.usuario
-nivel = USUARIOS.get(user, {}).get("nivel", "")
-
-if nivel == "dev":  # ou "admin", se quiser
-    MENU["Saídas"] = "views.saidas"
 
 
 with st.sidebar:
