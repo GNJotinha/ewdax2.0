@@ -54,7 +54,7 @@ def _bloco_whatsapp(nome: str, df_chunk: pd.DataFrame) -> str:
     return "\n".join(linhas)
 
 def render(df: pd.DataFrame, USUARIOS: dict):
-    # --- sem gate de acesso: liberado para todos ---
+    # --- liberado para todos ---
     st.header("Relatório de saídas")
 
     # normaliza data
@@ -105,14 +105,14 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         texto = _bloco_whatsapp(nome, chunk)
         blocos.append(texto)
 
-    # título do período no início + contagem de saídas
+    # título: quantidade de saídas primeiro, depois o período
     if len(periodo) == 2:
-        titulo_periodo = f"*Período {pd.to_datetime(periodo[0]).strftime('%d/%m')} á {pd.to_datetime(periodo[1]).strftime('%d/%m')}*"
+        titulo_periodo = f"*Período de análise {pd.to_datetime(periodo[0]).strftime('%d/%m')} á {pd.to_datetime(periodo[1]).strftime('%d/%m')}*"
     else:
-        titulo_periodo = f"*Período {pd.to_datetime(periodo[0]).strftime('%d/%m')}*"
+        titulo_periodo = f"*Período de análise {pd.to_datetime(periodo[0]).strftime('%d/%m')}*"
 
     titulo_saidas = f"*{len(sel)} Saídas*"
 
-    saida = (titulo_periodo + "\n" + titulo_saidas + "\n\n" + "\n\n".join(blocos)).strip()
+    saida = (titulo_saidas + "\n" + titulo_periodo + "\n\n" + "\n\n".join(blocos)).strip()
 
     st.text_area("Relatório de saídas", value=saida, height=500)
