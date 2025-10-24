@@ -105,14 +105,14 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         texto = _bloco_whatsapp(nome, chunk)
         blocos.append(texto)
 
-    # título: quantidade de saídas primeiro, depois o período
+    # título: quantidade de saídas primeiro, depois o período (com quebra de linha)
     if len(periodo) == 2:
         titulo_periodo = f"*Período de análise {pd.to_datetime(periodo[0]).strftime('%d/%m')} á {pd.to_datetime(periodo[1]).strftime('%d/%m')}*"
     else:
         titulo_periodo = f"*Período de análise {pd.to_datetime(periodo[0]).strftime('%d/%m')}*"
 
-    titulo_saidas = f"*{len(sel)} Saídas*"
+    titulo_saidas = f"{len(sel)} Saídas"
 
-    saida = (titulo_saidas + "\n" + titulo_periodo + "\n\n" + "\n\n".join(blocos)).strip()
+    saida = (titulo_saidas + "\n\n" + titulo_periodo + "\n\n" + "\n\n".join(blocos)).strip()
 
     st.text_area("Relatório de saídas", value=saida, height=500)
