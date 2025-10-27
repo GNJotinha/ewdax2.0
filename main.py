@@ -87,6 +87,7 @@ st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 # Menu (sem item duplicado de Início)
 # ---------------------------------------------------------
 
+
 MENU = {
     "Desempenho do Entregador": {
         "Ver geral": "views.ver_geral",
@@ -118,6 +119,17 @@ with st.sidebar:
         st.session_state.module = "views.home"
         st.session_state.open_cat = None
         st.rerun()
+    
+     
+    nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
+    if nivel == "admin":
+        st.markdown("---")
+        st.markdown("### 🔒 Área Sigilosa")
+        if st.button("Auditoria Operacional × Faturamento", use_container_width=True):
+            st.session_state.module = "views.auditoria_sigilosa"
+            st.session_state.open_cat = None
+            st.rerun()
+
 
     # Submenus
     for cat, opts in MENU.items():
