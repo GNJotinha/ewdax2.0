@@ -8,14 +8,16 @@ from auditoria_loader import (
     load_faturamento_from_drive,
 )
 
-# ----------------- Gate de senha (simples) -----------------
+# ----------------- Gate: senha super simples -----------------
 def senha_por_formula(palavra_base: str) -> str:
     """
     Senha = <PALAVRA>@(dia+mês)
     Ex.: 27/10 -> Movee@37
     """
     hoje = date.today()
-    return f"{str(palavra_base).strip()}@{hoje.day + hoje.month}"
+    dia, mes = hoje.day, hoje.month
+    valor = dia + mes
+    return f"{str(palavra_base).strip()}@{valor}"
 
 def _gate():
     st.subheader("🔐 Acesso sigiloso")
@@ -36,106 +38,60 @@ def _gate():
     if not st.session_state.get("_sig_ok", False):
         st.stop()
 
-# ----------------- Preparação dos dataframes -----------------
+# ----------------- Helpers de preparo -----------------
 def _prep_operacional(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Espera colunas mínimas do operacional:
-      - data_do_periodo OU data
-      - periodo
-      - id_da_pessoa_entregadora
-      - pessoa_entregadora
-      - soma_das_taxas_das_corridas_aceitas (em centavos)
-    Retorna agregado por (data, ent_id, ent_nome, turno) com VLROP (R$).
+    Espera colunas (vêm do loader enxuto):
+      data, periodo, id_da_pessoa_entregadora, pessoa_entregadora,
+      soma_das_taxas_das_corridas_aceitas
+    Converte centavos -> reais e agrega por data/entregador/turno.
     """
-    # data
-    if "data_do_periodo" in df.columns:
-        df["data"] = pd.to_datetime(df["data_do_periodo"], errors="coerce").dt.date
-    else:
-        df["data"] = pd.to_datetime(df.get("data"), errors="coerce").dt.date
+    # data já vem como date no loader
+    df = df.copy()
 
-    # turno, id e nome
-    df["turno"] = df.get("periodo")
-    df["ent_id"] = df.get("id_da_pessoa_entregadora")
-    df["ent_nome"] = df.get("pessoa_entregadora")
+    # turno
+    df["turno"] = df.get("periodo").astype(str) if "periodo" in df.columns else None
+
+    # identificadores
+    df["ent_id"] = df.get("id_da_pessoa_entregadora", "").astype(str)
+    df["ent_nome"] = df.get("pessoa_entregadora", "").astype(str)
 
     # valor aceitas (centavos → reais)
-    col_val = "soma_das_taxas_das_corridas_aceitas"
-    if col_val not in df.columns:
-        st.error(f"Coluna ausente no operacional: {col_val}")
-        st.stop()
-
-    df["valor_operacional"] = pd.to_numeric(df[col_val], errors="coerce").fillna(0) / 100.0
+    df["valor_operacional"] = pd.to_numeric(
+        df.get("soma_das_taxas_das_corridas_aceitas"), errors="coerce"
+    ).fillna(0) / 100.0
 
     grp = (
         df.groupby(["data", "ent_id", "ent_nome", "turno"], dropna=False)["valor_operacional"]
           .sum()
           .reset_index()
-          .rename(columns={"valor_operacional": "VLROP"})
     )
     return grp
 
 def _prep_faturamento(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Espera colunas mínimas do faturamento:
-      - uma das datas: data_do_periodo_de_referencia | data_do_periodo | data_do_lancamento_financeiro | data_do_repasse
-      - periodo
-      - id_da_pessoa_entregadora
-      - recebedor ou pessoa_entregadora
-      - valor (R$)
-      - descricao (texto) -> filtramos "conclu"
-    Retorna agregado por (data, ent_id, ent_nome, turno) com VLRFAT (R$).
+    Espera colunas (vêm do loader enxuto):
+      data, periodo, id_da_pessoa_entregadora, ent_nome, valor, descricao
+    Filtra somente 'conclu' e agrega por data/entregador/turno.
     """
-    # data referência
-    date_col = None
-    for c in ["data_do_periodo_de_referencia", "data_do_periodo", "data_do_lancamento_financeiro", "data_do_repasse"]:
-        if c in df.columns:
-            date_col = c
-            break
-    if not date_col:
-        st.error("Nenhuma coluna de data na aba Base do FATURAMENTO.")
-        st.stop()
+    df = df.copy()
 
-    df["data"] = pd.to_datetime(df[date_col], errors="coerce").dt.date
+    # turno / identificadores
+    df["turno"] = df.get("periodo").astype(str) if "periodo" in df.columns else None
+    df["ent_id"] = df.get("id_da_pessoa_entregadora", "").astype(str)
+    df["ent_nome"] = df.get("ent_nome", "").astype(str)
 
-    # turno, id e nome
-    df["turno"] = df.get("periodo")
-    df["ent_id"] = df.get("id_da_pessoa_entregadora")
-    nome = df.get("recebedor")
-    if nome is None or (isinstance(nome, pd.Series) and nome.isna().all()):
-        nome = df.get("pessoa_entregadora", "")
-    df["ent_nome"] = nome.astype(str) if isinstance(nome, pd.Series) else str(nome)
-
-    # valor + filtro concluídas
-    if "valor" not in df.columns:
-        st.error("Coluna 'valor' ausente no FATURAMENTO.")
-        st.stop()
-    if "descricao" not in df.columns:
-        st.error("Coluna 'descricao' ausente no FATURAMENTO.")
-        st.stop()
-
-    df = df[df["descricao"].astype(str).str.lower().str.contains("conclu")].copy()
-    df["VLRFAT"] = pd.to_numeric(df["valor"], errors="coerce").fillna(0.0)
+    # valor (reais) + filtro concluídas
+    df["valor"] = pd.to_numeric(df.get("valor"), errors="coerce").fillna(0.0)
+    df = df[df.get("descricao", "").astype(str).str.lower().str.contains("conclu", na=False)].copy()
 
     grp = (
-        df.groupby(["data", "ent_id", "ent_nome", "turno"], dropna=False)["VLRFAT"]
+        df.groupby(["data", "ent_id", "ent_nome", "turno"], dropna=False)["valor"]
           .sum()
           .reset_index()
+          .rename(columns={"valor": "valor_faturamento"})
     )
     return grp
-
-def _merge_oper_fat(op: pd.DataFrame, fat: pd.DataFrame) -> pd.DataFrame:
-    """
-    Merge por (data, ent_id, turno). Mantemos ent_nome de ambos para seleção por nome.
-    """
-    base = pd.merge(
-        op, fat,
-        on=["data", "ent_id", "turno"],
-        how="outer",
-        suffixes=("_op", "_fat")
-    )
-    # Entregador: preferir nome do operacional; se NaN, usar do faturamento
-    base["ent_nome"] = base["ent_nome_op"].fillna(base["ent_nome_fat"])
-    return base[["data", "ent_id", "ent_nome", "turno", "VLROP", "VLRFAT"]]
 
 # ----------------- View -----------------
 def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
@@ -143,70 +99,79 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
     _gate()
 
     # Controles de atualização
-    cols = st.columns([1, 1])
-    refresh = cols[0].button("🔄 Atualizar do Drive", use_container_width=True)
+    col_a, col_b = st.columns([1, 3])
+    refresh = col_a.button("🔄 Atualizar do Drive", use_container_width=True)
 
-    # Carrega do Drive (rápido com cache) e prepara
-    with st.spinner("Baixando planilhas do Drive..."):
+    with st.spinner("Carregando bases..."):
+        # Baixa (ou usa cache) e prepara
         raw_op = load_operacional_from_drive(force=refresh)
         raw_fa = load_faturamento_from_drive(force=refresh)
 
-        op = _prep_operacional(raw_op)
-        fa = _prep_faturamento(raw_fa)
-        base = _merge_oper_fat(op, fa)
+        op = _prep_operacional(raw_op)   # data, ent_id, ent_nome, turno, valor_operacional
+        fa = _prep_faturamento(raw_fa)   # data, ent_id, ent_nome, turno, valor_faturamento
 
-    if base.empty:
-        st.info("Nenhum dado encontrado.")
-        st.stop()
+    # Lista de entregadores (união dos nomes nas duas bases)
+    nomes = sorted(pd.Index(op["ent_nome"]).union(pd.Index(fa["ent_nome"])).dropna().unique().tolist())
+    nome = st.selectbox("Entregador", [None] + nomes, format_func=lambda x: "" if x is None else x, index=0)
 
-    # Filtro de período
-    base["data_ts"] = pd.to_datetime(base["data"], errors="coerce")
-    min_d, max_d = base["data_ts"].min().date(), base["data_ts"].max().date()
-    periodo = st.date_input(
-        "Período:",
-        (min_d, max_d),
-        min_value=min_d,
-        max_value=max_d,
-        format="DD/MM/YYYY",
-    )
-    if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
-        base = base[
-            (base["data_ts"] >= pd.to_datetime(periodo[0])) &
-            (base["data_ts"] <= pd.to_datetime(periodo[1]))
-        ]
-
-    # Escolha do entregador (por nome)
-    nomes = sorted([n for n in base["ent_nome"].dropna().unique()])
-    nome = st.selectbox(
-        "Entregador",
-        [None] + nomes,
-        index=0,
-        format_func=lambda x: "" if x is None else x
-    )
     if not nome:
         st.info("Selecione um entregador para ver a lista.")
         st.stop()
 
-    df_sel = base[base["ent_nome"] == nome].copy()
+    # Filtra por entregador escolhido
+    op_sel = op[op["ent_nome"] == nome].copy()
+    fa_sel = fa[fa["ent_nome"] == nome].copy()
 
-    # Lista no formato pedido: DATA | TURNO | VLROP | VLRFAT
-    saida = (
-        df_sel.groupby(["data", "turno"], dropna=False)
-              .agg(VLROP=("VLROP", "sum"), VLRFAT=("VLRFAT", "sum"))
-              .reset_index()
-              .sort_values(["data", "turno"], ascending=[True, True])
-              .rename(columns={"data": "DATA", "turno": "TURNO"})
+    # Datas disponíveis e filtro de período
+    if not op_sel.empty or not fa_sel.empty:
+        min_d = pd.concat([op_sel["data"], fa_sel["data"]], ignore_index=True).min()
+        max_d = pd.concat([op_sel["data"], fa_sel["data"]], ignore_index=True).max()
+    else:
+        min_d = max_d = None
+
+    if min_d is None or max_d is None:
+        st.info("Sem dados para este entregador.")
+        st.stop()
+
+    periodo = st.date_input("Período:", (min_d, max_d), min_value=min_d, max_value=max_d, format="DD/MM/YYYY")
+    if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
+        d0, d1 = pd.to_datetime(periodo[0]).date(), pd.to_datetime(periodo[1]).date()
+        op_sel = op_sel[(op_sel["data"] >= d0) & (op_sel["data"] <= d1)]
+        fa_sel = fa_sel[(fa_sel["data"] >= d0) & (fa_sel["data"] <= d1)]
+
+    # Reagrega por DATA|TURNO (garantindo colunas)
+    op_day = (
+        op_sel.groupby(["data", "turno"], dropna=False)["valor_operacional"]
+              .sum().reset_index()
+              .rename(columns={"valor_operacional": "VLROP"})
+    )
+    fa_day = (
+        fa_sel.groupby(["data", "turno"], dropna=False)["valor_faturamento"]
+              .sum().reset_index()
+              .rename(columns={"valor_faturamento": "VLRFAT"})
     )
 
+    # Merge por data/turno (outer pra cobrir linhas presentes só de um lado)
+    saida = pd.merge(op_day, fa_day, on=["data", "turno"], how="outer")
+    # Preenche ausentes com 0.0 para exibição amigável
+    saida["VLROP"] = pd.to_numeric(saida.get("VLROP"), errors="coerce").fillna(0.0)
+    saida["VLRFAT"] = pd.to_numeric(saida.get("VLRFAT"), errors="coerce").fillna(0.0)
+
+    # Ordena e renomeia cabeçalho
+    saida = saida.sort_values(["data", "turno"], ascending=[True, True]).reset_index(drop=True)
+    saida.rename(columns={"data": "DATA", "turno": "TURNO"}, inplace=True)
+
+    # Exibição
     st.subheader(f"Lista — {nome}")
-    st.dataframe(
+    vis = (
         saida[["DATA", "TURNO", "VLROP", "VLRFAT"]]
-             .assign(VLROP=lambda d: d["VLROP"].round(2),
-                     VLRFAT=lambda d: d["VLRFAT"].round(2))
-             .style.format({"VLROP": "{:.2f}", "VLRFAT": "{:.2f}"}),
-        use_container_width=True
+            .assign(VLROP=lambda d: d["VLROP"].round(2),
+                    VLRFAT=lambda d: d["VLRFAT"].round(2))
+            .style.format({"VLROP": "{:.2f}", "VLRFAT": "{:.2f}"})
     )
+    st.dataframe(vis, use_container_width=True)
 
+    # Download CSV no mesmo layout
     st.download_button(
         "⬇️ Baixar CSV",
         saida[["DATA", "TURNO", "VLROP", "VLRFAT"]].to_csv(index=False).encode("utf-8"),
