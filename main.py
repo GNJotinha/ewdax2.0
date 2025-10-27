@@ -121,8 +121,15 @@ with st.sidebar:
         st.rerun()
     
      
-    nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
-    if nivel == "admin":
+    # --- Área Sigilosa ---
+    admins_list = set(st.secrets.get("ADMINS", []))  # opcional: lista extra no secrets
+    user_entry = USUARIOS.get(st.session_state.usuario, {}) or {}
+    nivel = user_entry.get("nivel", "")
+    
+    # deixa ver se for admin OU dev OU listado em ADMINS
+    is_admin = (nivel in ("admin", "dev")) or (st.session_state.usuario in admins_list)
+    
+    if is_admin:
         st.markdown("---")
         st.markdown("### 🔒 Área Sigilosa")
         if st.button("Auditoria Operacional × Faturamento", use_container_width=True):
