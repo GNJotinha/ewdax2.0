@@ -21,7 +21,6 @@ def senha_por_formula(palavra_base: str) -> str:
 
 def _gate():
     st.subheader("🔐 Acesso sigiloso")
-    st.caption("Padrão: <PALAVRA>@(dia+mês) — Ex.: 27/10 → Movee@37")
 
     palavra = st.secrets.get("SIGILOSO_PALAVRA", "Movee")
     entrada = st.text_input("Senha", type="password")
@@ -33,7 +32,7 @@ def _gate():
             st.success("Acesso liberado.")
             st.rerun()
         else:
-            st.error(f"Senha incorreta. (Dica: hoje seria {esperada})")
+            st.error(f"Senha incorreta.")
 
     if not st.session_state.get("_sig_ok", False):
         st.stop()
