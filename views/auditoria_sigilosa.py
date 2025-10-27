@@ -21,6 +21,7 @@ def senha_por_formula(palavra_base: str) -> str:
 
 def _gate():
     st.subheader("🔐 Acesso sigiloso")
+    st.caption("Padrão: <PALAVRA>@(dia+mês) — Ex.: 27/10 → Movee@37")
 
     palavra = st.secrets.get("SIGILOSO_PALAVRA", "Movee")
     entrada = st.text_input("Senha", type="password")
@@ -32,7 +33,7 @@ def _gate():
             st.success("Acesso liberado.")
             st.rerun()
         else:
-            st.error(f"Senha incorreta.")
+            st.error(f"Senha incorreta. (Dica: hoje seria {esperada})")
 
     if not st.session_state.get("_sig_ok", False):
         st.stop()
@@ -83,20 +84,38 @@ def _prep_faturamento(df: pd.DataFrame) -> pd.DataFrame:
 
 def _merge_all(op: pd.DataFrame, fa: pd.DataFrame) -> pd.DataFrame:
     """
-    Merge por (data, ent_id, turno). Como ID pode faltar, ainda exibimos por nome.
+    Merge por (data, ent_id, turno). Corrige 'ent_nome' duplicado preferindo o que existir.
     """
-    base = pd.merge(op, fa, on=["data", "ent_id", "turno"], how="outer", suffixes=("_op", "_fat"))
-    # preencher nome (caso venha só de um lado)
+    base = pd.merge(
+        op, fa,
+        on=["data", "ent_id", "turno"],
+        how="outer",
+        suffixes=("_op", "_fat")
+    )
+
+    # Corrigir nome duplicado: preferir op, se vazio usa fat (sem concatenar)
     if "ent_nome_op" in base.columns or "ent_nome_fat" in base.columns:
-        base["ent_nome"] = base.get("ent_nome_op").fillna("") + base.get("ent_nome_fat", "").fillna("")
-        base["ent_nome"] = base["ent_nome"].replace("", pd.NA)
+        name_op = base.get("ent_nome_op")
+        name_fat = base.get("ent_nome_fat")
+        if name_op is None:
+            base["ent_nome"] = name_fat
+        elif name_fat is None:
+            base["ent_nome"] = name_op
+        else:
+            base["ent_nome"] = name_op.where(name_op.notna() & (name_op.astype(str).str.strip() != ""), name_fat)
+        # remover colunas auxiliares
+        cols_drop = [c for c in ["ent_nome_op", "ent_nome_fat"] if c in base.columns]
+        base.drop(columns=cols_drop, inplace=True)
     else:
+        # já veio como ent_nome
         base["ent_nome"] = base.get("ent_nome")
+
     # garantir numéricos
     base["valor_operacional"] = pd.to_numeric(base.get("valor_operacional"), errors="coerce").fillna(0.0)
     base["valor_faturamento"] = pd.to_numeric(base.get("valor_faturamento"), errors="coerce").fillna(0.0)
     # Δ
     base["delta"] = base["valor_operacional"] - base["valor_faturamento"]
+
     return base
 
 # ----------------- View -----------------
@@ -128,12 +147,11 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
     )
 
     # ----------------- Filtro de período global -----------------
-    if not base.empty:
-        min_d, max_d = base["data"].min(), base["data"].max()
-    else:
+    if base.empty:
         st.info("Sem dados.")
         st.stop()
 
+    min_d, max_d = base["data"].min(), base["data"].max()
     periodo = st.date_input(
         "Período:", (min_d, max_d), min_value=min_d, max_value=max_d, format="DD/MM/YYYY"
     )
@@ -166,20 +184,16 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
         saida.rename(columns={"data": "DATA", "turno": "TURNO"}, inplace=True)
 
         st.subheader(f"Lista — {nome}")
-        vis = (
-            saida[["DATA", "TURNO", "VLROP", "VLRFAT", "DELTA"]]
-                .assign(
-                    VLROP=lambda d: d["VLROP"].round(2),
-                    VLRFAT=lambda d: d["VLRFAT"].round(2),
-                    DELTA=lambda d: d["DELTA"].round(2),
-                )
-                .style.format({"VLROP": "{:.2f}", "VLRFAT": "{:.2f}", "DELTA": "{:.2f}"})
-        )
+        vis = saida[["DATA", "TURNO", "VLROP", "VLRFAT", "DELTA"]].copy()
+        vis["VLROP"] = vis["VLROP"].round(2)
+        vis["VLRFAT"] = vis["VLRFAT"].round(2)
+        vis["DELTA"] = vis["DELTA"].round(2)
+
         st.dataframe(vis, use_container_width=True)
 
         st.download_button(
             "⬇️ Baixar CSV",
-            saida[["DATA", "TURNO", "VLROP", "VLRFAT", "DELTA"]].to_csv(index=False).encode("utf-8"),
+            vis.to_csv(index=False).encode("utf-8"),
             file_name=f"auditoria_{nome.replace(' ', '_')}.csv",
             mime="text/csv",
             use_container_width=True
@@ -206,20 +220,16 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
             saida = saida[saida["DELTA"].round(2) != 0]
 
         st.subheader("Lista geral")
-        vis = (
-            saida[["DATA", "ENTREGADOR", "TURNO", "VLROP", "VLRFAT", "DELTA"]]
-                .assign(
-                    VLROP=lambda d: d["VLROP"].round(2),
-                    VLRFAT=lambda d: d["VLRFAT"].round(2),
-                    DELTA=lambda d: d["DELTA"].round(2),
-                )
-                .style.format({"VLROP": "{:.2f}", "VLRFAT": "{:.2f}", "DELTA": "{:.2f}"})
-        )
+        vis = saida[["DATA", "ENTREGADOR", "TURNO", "VLROP", "VLRFAT", "DELTA"]].copy()
+        vis["VLROP"] = vis["VLROP"].round(2)
+        vis["VLRFAT"] = vis["VLRFAT"].round(2)
+        vis["DELTA"] = vis["DELTA"].round(2)
+
         st.dataframe(vis, use_container_width=True)
 
         st.download_button(
             "⬇️ Baixar CSV (geral)",
-            saida[["DATA", "ENTREGADOR", "TURNO", "VLROP", "VLRFAT", "DELTA"]].to_csv(index=False).encode("utf-8"),
+            vis.to_csv(index=False).encode("utf-8"),
             file_name="auditoria_geral.csv",
             mime="text/csv",
             use_container_width=True
