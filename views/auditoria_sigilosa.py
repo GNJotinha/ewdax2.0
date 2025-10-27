@@ -91,4 +91,25 @@ def render(_df_unused, _USUARIOS):
         delta = tot_op - tot_fa
         pct = (delta / tot_fa * 100) if tot_fa else 0
 
-        m1, m2, m3, m
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Operacional (R$)", f"{tot_op:,.2f}".replace(",", "."))
+        m2.metric("Faturamento (R$)", f"{tot_fa:,.2f}".replace(",", "."))
+        m3.metric("Δ (R$)", f"{delta:,.2f}".replace(",", "."))
+        m4.metric("Δ% x Fat", f"{pct:.2f}%".replace(".", ","))
+
+        vis = base[["data","ent_nome","turno","valor_operacional","valor_faturamento","delta","pct_diff","flag"]]
+        vis.rename(columns={
+            "data":"Data","ent_nome":"Entregador","turno":"Turno",
+            "valor_operacional":"Operacional (R$)","valor_faturamento":"Faturamento (R$)",
+            "delta":"Δ (R$)","pct_diff":"Δ%","flag":"⚑"
+        }, inplace=True)
+
+        st.dataframe(vis.style.format({
+            "Operacional (R$)":"{:.2f}",
+            "Faturamento (R$)":"{:.2f}",
+            "Δ (R$)":"{:.2f}",
+            "Δ%":"{:.2f}"
+        }), use_container_width=True)
+
+        st.download_button("⬇️ Baixar CSV", vis.to_csv(index=False).encode("utf-8"),
+                           file_name="auditoria_operacional_vs_faturamento.csv", mime="text/csv")
