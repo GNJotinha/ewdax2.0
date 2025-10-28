@@ -1,14 +1,24 @@
 # views/auditoria_sigilosa.py
 import pandas as pd
 import streamlit as st
+import unicodedata
 from auditoria_loader import (
     load_operacional_from_drive,
     load_faturamento_from_drive,
 )
 
 # =======================
-# Helpers de preparo
+# Helpers
 # =======================
+
+def _norm_txt(s: pd.Series) -> pd.Series:
+    """Normaliza texto removendo acentos, caixa e espaços duplicados."""
+    s = s.astype(str).str.strip().str.lower()
+    s = s.map(lambda x: unicodedata.normalize("NFKD", x).encode("ascii", "ignore").decode("ascii"))
+    s = s.str.replace(r"\s+", " ", regex=True)
+    return s
+
+
 def _prep_operacional(df: pd.DataFrame) -> pd.DataFrame:
     """
     Espera colunas:
@@ -20,7 +30,6 @@ def _prep_operacional(df: pd.DataFrame) -> pd.DataFrame:
     df["ent_id"] = df.get("id_da_pessoa_entregadora", "").astype(str)
     df["ent_nome"] = df.get("pessoa_entregadora", "").astype(str)
 
-    # valor operacional em REAIS (float) na base para visualização
     df["valor_operacional"] = pd.to_numeric(
         df.get("soma_das_taxas_das_corridas_aceitas"), errors="coerce"
     ).fillna(0) / 100.0
@@ -32,11 +41,12 @@ def _prep_operacional(df: pd.DataFrame) -> pd.DataFrame:
     )
     return grp
 
+
 def _prep_faturamento(df: pd.DataFrame) -> pd.DataFrame:
     """
     Espera colunas:
       data, periodo, id_da_pessoa_entregadora, ent_nome, valor, descricao
-    Filtra 'conclu' e agrega por data/entregador/turno.
+    Filtra APENAS "Corridas concluidas" e agrega.
     """
     df = df.copy()
     df["turno"] = df.get("periodo").astype(str) if "periodo" in df.columns else None
@@ -44,29 +54,27 @@ def _prep_faturamento(df: pd.DataFrame) -> pd.DataFrame:
     df["ent_nome"] = df.get("ent_nome", "").astype(str)
     df["valor"] = pd.to_numeric(df.get("valor"), errors="coerce").fillna(0.0)
 
-    # pega só lançamentos concluídos
-    df = df[df.get("descricao", "").astype(str).str.lower().str.contains("conclu", na=False)].copy()
+    # --- FILTRO EXATO ---
+    desc_norm = _norm_txt(df.get("descricao", ""))
+    mask = desc_norm.isin({"corridas concluidas", "corrida concluida"})
+    df = df[mask].copy()
 
     grp = (
         df.groupby(["data", "ent_id", "ent_nome", "turno"], dropna=False)["valor"]
           .sum()
           .reset_index()
-          .rename(columns={"valor": "valor_faturamento"})  # em REAIS
+          .rename(columns={"valor": "valor_faturamento"})
     )
     return grp
 
+
 def _merge_all(op: pd.DataFrame, fa: pd.DataFrame) -> pd.DataFrame:
-    """
-    Merge por (data, ent_id, turno). Corrige 'ent_nome' preferindo o que existir.
-    """
+    """Merge por data/ent_id/turno."""
     base = pd.merge(
-        op, fa,
-        on=["data", "ent_id", "turno"],
-        how="outer",
-        suffixes=("_op", "_fat")
+        op, fa, on=["data", "ent_id", "turno"], how="outer", suffixes=("_op", "_fat")
     )
 
-    # preferir nome do op; se vazio/NaN, usar nome do fat
+    # Nome entregador preferindo o do operacional
     if "ent_nome_op" in base.columns or "ent_nome_fat" in base.columns:
         name_op = base.get("ent_nome_op")
         name_fat = base.get("ent_nome_fat")
@@ -82,25 +90,25 @@ def _merge_all(op: pd.DataFrame, fa: pd.DataFrame) -> pd.DataFrame:
     else:
         base["ent_nome"] = base.get("ent_nome")
 
-    # garante floats em REAIS para visualização
     base["valor_operacional"] = pd.to_numeric(base.get("valor_operacional"), errors="coerce").fillna(0.0)
     base["valor_faturamento"] = pd.to_numeric(base.get("valor_faturamento"), errors="coerce").fillna(0.0)
     base["delta"] = base["valor_operacional"] - base["valor_faturamento"]
     return base
+
 
 def _require_sig():
     if not st.session_state.get("_sig_ok"):
         st.session_state.module = "views.auditoria_gate"
         st.rerun()
 
+
 # =======================
-# View
+# View principal
 # =======================
 def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
     _require_sig()
 
-    # Cabeçalho + encerrar acesso
-    col_l, col_r = st.columns([3,1])
+    col_l, col_r = st.columns([3, 1])
     with col_l:
         st.header("Comparativo OPERACIONAL X FINANCEIRO")
     with col_r:
@@ -111,7 +119,6 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
             st.session_state.module = "views.auditoria_gate"
             st.rerun()
 
-    # Botão de atualização
     col_a, _ = st.columns([1, 3])
     refresh = col_a.button("🔄 Atualizar do Drive", use_container_width=True)
 
@@ -126,14 +133,9 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
         st.info("Sem dados.")
         st.stop()
 
-    # Modo vindo da sidebar
     sig_modo = st.session_state.pop("sig_modo", None)
-    if sig_modo == "geral":
-        modo = "Lista geral (todos)"
-    else:
-        modo = "Lista por entregador"  # padrão
+    modo = "Lista geral (todos)" if sig_modo == "geral" else "Lista por entregador"
 
-    # Filtro de período global
     min_d, max_d = base["data"].min(), base["data"].max()
     periodo = st.date_input(
         "Período:", (min_d, max_d), min_value=min_d, max_value=max_d, format="DD/MM/YYYY"
@@ -142,7 +144,7 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
         d0, d1 = pd.to_datetime(periodo[0]).date(), pd.to_datetime(periodo[1]).date()
         base = base[(base["data"] >= d0) & (base["data"] <= d1)]
 
-    # ----------------- Modo: Lista por entregador -----------------
+    # ----------------- Lista por entregador -----------------
     if modo == "Lista por entregador":
         nomes = sorted(pd.Series(base["ent_nome"]).dropna().unique().tolist())
         nome = st.selectbox("Entregador", [None] + nomes, format_func=lambda x: "" if x is None else x, index=0)
@@ -159,7 +161,6 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
                   .reset_index()
         )
         saida["DELTA"] = saida["VLROP"] - saida["VLRFAT"]
-        saida = saida.sort_values(["data", "turno"]).reset_index(drop=True)
         saida.rename(columns={"data": "DATA", "turno": "TURNO"}, inplace=True)
 
         vis = saida[["DATA", "TURNO", "VLROP", "VLRFAT", "DELTA"]].copy()
@@ -169,7 +170,6 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
         st.subheader(f"Lista — {nome}")
         st.dataframe(vis, use_container_width=True)
 
-        # ---------- CSV em CENTAVOS (inteiro) ----------
         vis_csv = vis.copy()
         for c in ["VLROP", "VLRFAT", "DELTA"]:
             vis_csv[c] = (pd.to_numeric(vis_csv[c], errors="coerce").fillna(0) * 100).round(0).astype(int)
@@ -182,7 +182,7 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
             use_container_width=True
         )
 
-    # ----------------- Modo: Lista geral (todos) -----------------
+    # ----------------- Lista geral (todos) -----------------
     else:
         saida = (
             base.groupby(["data", "ent_nome", "turno"], dropna=False)
@@ -191,7 +191,6 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
                 .reset_index()
         )
         saida["DELTA"] = saida["VLROP"] - saida["VLRFAT"]
-        saida = saida.sort_values(["data", "ent_nome", "turno"]).reset_index(drop=True)
         saida.rename(columns={"data": "DATA", "ent_nome": "ENTREGADOR", "turno": "TURNO"}, inplace=True)
 
         only_diff = st.checkbox("Mostrar só divergências (DELTA ≠ 0)", value=False)
@@ -205,7 +204,6 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
         st.subheader("Lista geral")
         st.dataframe(vis, use_container_width=True)
 
-        # ---------- CSV em CENTAVOS (inteiro) ----------
         vis_csv = vis.copy()
         for c in ["VLROP", "VLRFAT", "DELTA"]:
             vis_csv[c] = (pd.to_numeric(vis_csv[c], errors="coerce").fillna(0) * 100).round(0).astype(int)
