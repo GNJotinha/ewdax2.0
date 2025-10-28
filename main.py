@@ -121,21 +121,27 @@ with st.sidebar:
         st.rerun()
     
      
-    # --- Área Sigilosa ---
-    admins_list = set(st.secrets.get("ADMINS", []))  # opcional: lista extra no secrets
+     # --- Área Sigilosa no menu esquerdo (apenas admin/dev) ---
+    admins_list = set(st.secrets.get("ADMINS", []))
     user_entry = USUARIOS.get(st.session_state.usuario, {}) or {}
     nivel = user_entry.get("nivel", "")
+    is_sigiloso = (nivel in ("admin", "dev")) or (st.session_state.usuario in admins_list)
     
-    # deixa ver se for admin OU dev OU listado em ADMINS
-    is_admin = (nivel in ("admin", "dev")) or (st.session_state.usuario in admins_list)
+    if is_sigiloso:
+        with st.expander("🔒 Área Sigilosa", expanded=True):
+            # Cada item define o módulo e o modo desejado
+            if st.button("Auditoria — Lista por entregador", use_container_width=True):
+                st.session_state.module = "views.auditoria_sigilosa"
+                st.session_state.sig_modo = "by_entregador"
+                st.session_state.open_cat = None
+                st.rerun()
     
-    if is_admin:
-        st.markdown("---")
-        st.markdown("### 🔒 Área Sigilosa")
-        if st.button("Auditoria Operacional × Faturamento", use_container_width=True):
-            st.session_state.module = "views.auditoria_sigilosa"
-            st.session_state.open_cat = None
-            st.rerun()
+            if st.button("Auditoria — Lista geral", use_container_width=True):
+                st.session_state.module = "views.auditoria_sigilosa"
+                st.session_state.sig_modo = "geral"
+                st.session_state.open_cat = None
+                st.rerun()
+
 
 
     # Submenus
