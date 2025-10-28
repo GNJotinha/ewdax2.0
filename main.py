@@ -145,9 +145,9 @@ with st.sidebar:
     is_sigiloso = (nivel in ("admin", "dev")) or (st.session_state.usuario in admins_list)
     
     if is_sigiloso:
-        with st.expander("🔒 Área Sigilosa", expanded=True):
+        with st.expander("Acesso restrito", expanded=True):
             # Lista por entregador
-            if st.button("Auditoria — Lista por entregador", use_container_width=True):
+            if st.button("Comparativo entregador", use_container_width=True):
                 st.session_state.sig_target = "by_entregador"
                 if st.session_state.get("_sig_ok"):  # já validou nesta sessão
                     st.session_state.sig_modo = "by_entregador"
@@ -158,7 +158,7 @@ with st.sidebar:
                 st.rerun()
     
             # Lista geral
-            if st.button("Auditoria — Lista geral", use_container_width=True):
+            if st.button("Comparativo geral", use_container_width=True):
                 st.session_state.sig_target = "geral"
                 if st.session_state.get("_sig_ok"):  # já validou nesta sessão
                     st.session_state.sig_modo = "geral"
