@@ -8,8 +8,8 @@ def _senha_por_formula(palavra_base: str) -> str:
     return f"{str(palavra_base).strip()}@{hoje.day * hoje.month}"
 
 def render(_df_unused, _USUARIOS):
-    st.header("🔒 Área Sigilosa")
-    st.subheader("Acesso restrito")
+    st.header("Acesso restrito")
+    st.subheader("Digite a senha diária")
 
     palavra = st.secrets.get("SIGILOSO_PALAVRA", "Movee")
     senha = st.text_input("Senha", type="password")
