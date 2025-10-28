@@ -19,9 +19,12 @@ def _prep_operacional(df: pd.DataFrame) -> pd.DataFrame:
     df["turno"] = df.get("periodo").astype(str) if "periodo" in df.columns else None
     df["ent_id"] = df.get("id_da_pessoa_entregadora", "").astype(str)
     df["ent_nome"] = df.get("pessoa_entregadora", "").astype(str)
+
+    # valor operacional em REAIS (float) na base para visualização
     df["valor_operacional"] = pd.to_numeric(
         df.get("soma_das_taxas_das_corridas_aceitas"), errors="coerce"
     ).fillna(0) / 100.0
+
     grp = (
         df.groupby(["data", "ent_id", "ent_nome", "turno"], dropna=False)["valor_operacional"]
           .sum()
@@ -40,12 +43,15 @@ def _prep_faturamento(df: pd.DataFrame) -> pd.DataFrame:
     df["ent_id"] = df.get("id_da_pessoa_entregadora", "").astype(str)
     df["ent_nome"] = df.get("ent_nome", "").astype(str)
     df["valor"] = pd.to_numeric(df.get("valor"), errors="coerce").fillna(0.0)
+
+    # pega só lançamentos concluídos
     df = df[df.get("descricao", "").astype(str).str.lower().str.contains("conclu", na=False)].copy()
+
     grp = (
         df.groupby(["data", "ent_id", "ent_nome", "turno"], dropna=False)["valor"]
           .sum()
           .reset_index()
-          .rename(columns={"valor": "valor_faturamento"})
+          .rename(columns={"valor": "valor_faturamento"})  # em REAIS
     )
     return grp
 
@@ -76,6 +82,7 @@ def _merge_all(op: pd.DataFrame, fa: pd.DataFrame) -> pd.DataFrame:
     else:
         base["ent_nome"] = base.get("ent_nome")
 
+    # garante floats em REAIS para visualização
     base["valor_operacional"] = pd.to_numeric(base.get("valor_operacional"), errors="coerce").fillna(0.0)
     base["valor_faturamento"] = pd.to_numeric(base.get("valor_faturamento"), errors="coerce").fillna(0.0)
     base["delta"] = base["valor_operacional"] - base["valor_faturamento"]
@@ -95,7 +102,7 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
     # Cabeçalho + encerrar acesso
     col_l, col_r = st.columns([3,1])
     with col_l:
-        st.header("Comparativo OPERACIONAL X FINANCEIRO)")
+        st.header("Comparativo OPERACIONAL X FINANCEIRO")
     with col_r:
         if st.button("🔓 Encerrar acesso", use_container_width=True):
             for k in ["_sig_ok", "sig_modo", "sig_target"]:
@@ -162,9 +169,14 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
         st.subheader(f"Lista — {nome}")
         st.dataframe(vis, use_container_width=True)
 
+        # ---------- CSV em CENTAVOS (inteiro) ----------
+        vis_csv = vis.copy()
+        for c in ["VLROP", "VLRFAT", "DELTA"]:
+            vis_csv[c] = (pd.to_numeric(vis_csv[c], errors="coerce").fillna(0) * 100).round(0).astype(int)
+
         st.download_button(
             "⬇️ Baixar CSV",
-            vis.to_csv(index=False).encode("utf-8"),
+            vis_csv.to_csv(index=False).encode("utf-8"),
             file_name=f"auditoria_{nome.replace(' ', '_')}.csv",
             mime="text/csv",
             use_container_width=True
@@ -193,9 +205,14 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
         st.subheader("Lista geral")
         st.dataframe(vis, use_container_width=True)
 
+        # ---------- CSV em CENTAVOS (inteiro) ----------
+        vis_csv = vis.copy()
+        for c in ["VLROP", "VLRFAT", "DELTA"]:
+            vis_csv[c] = (pd.to_numeric(vis_csv[c], errors="coerce").fillna(0) * 100).round(0).astype(int)
+
         st.download_button(
             "⬇️ Baixar CSV (geral)",
-            vis.to_csv(index=False).encode("utf-8"),
+            vis_csv.to_csv(index=False).encode("utf-8"),
             file_name="auditoria_geral.csv",
             mime="text/csv",
             use_container_width=True
