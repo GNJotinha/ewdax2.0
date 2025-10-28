@@ -95,7 +95,7 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
     # Cabeçalho + encerrar acesso
     col_l, col_r = st.columns([3,1])
     with col_l:
-        st.header("Comparativo OPERACIONAL X FATURAMENTO)")
+        st.header("Comparativo OPERACIONAL X FINANCEIRO)")
     with col_r:
         if st.button("🔓 Encerrar acesso", use_container_width=True):
             for k in ["_sig_ok", "sig_modo", "sig_target"]:
