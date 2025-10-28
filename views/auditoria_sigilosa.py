@@ -1,15 +1,10 @@
 # views/auditoria_sigilosa.py
-from datetime import date, datetime
-from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
-
 from auditoria_loader import (
     load_operacional_from_drive,
     load_faturamento_from_drive,
 )
-
-TZ = ZoneInfo("America/Sao_Paulo")
 
 # =======================
 # Helpers de preparo
@@ -86,25 +81,8 @@ def _merge_all(op: pd.DataFrame, fa: pd.DataFrame) -> pd.DataFrame:
     base["delta"] = base["valor_operacional"] - base["valor_faturamento"]
     return base
 
-# =======================
-# Gate helpers (expiração)
-# =======================
-def _sig_is_valid() -> bool:
-    ok = bool(st.session_state.get("_sig_ok"))
-    if not ok:
-        return False
-    until = st.session_state.get("_sig_until")  # ISO str ou None
-    if until is None:
-        # sessão somente
-        return True
-    try:
-        dt_until = datetime.fromisoformat(until)
-    except Exception:
-        return False
-    return datetime.now(TZ) <= dt_until
-
 def _require_sig():
-    if not _sig_is_valid():
+    if not st.session_state.get("_sig_ok"):
         st.session_state.module = "views.auditoria_gate"
         st.rerun()
 
@@ -114,13 +92,13 @@ def _require_sig():
 def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
     _require_sig()
 
-    # Cabeçalho + ação de encerrar/renovar
+    # Cabeçalho + encerrar acesso
     col_l, col_r = st.columns([3,1])
     with col_l:
         st.header("🕵️ Auditoria Operacional × Faturamento (Concluídas)")
     with col_r:
         if st.button("🔓 Encerrar acesso", use_container_width=True):
-            for k in ["_sig_ok", "_sig_until", "_sig_issued_at", "_sig_session_only"]:
+            for k in ["_sig_ok", "sig_modo", "sig_target"]:
                 st.session_state.pop(k, None)
             st.success("Acesso encerrado.")
             st.session_state.module = "views.auditoria_gate"
@@ -141,7 +119,7 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
         st.info("Sem dados.")
         st.stop()
 
-    # Modo vindo da sidebar (main.py define st.session_state.sig_modo)
+    # Modo vindo da sidebar
     sig_modo = st.session_state.pop("sig_modo", None)
     if sig_modo == "geral":
         modo = "Lista geral (todos)"
