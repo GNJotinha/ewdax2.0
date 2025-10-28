@@ -145,16 +145,26 @@ with st.sidebar:
     is_sigiloso = (nivel in ("admin", "dev")) or (st.session_state.usuario in admins_list)
     
     if is_sigiloso:
-        with st.expander("🔒 Área restrita", expanded=True):
+        with st.expander("🔒 Área Sigilosa", expanded=True):
+            # Lista por entregador
             if st.button("Auditoria — Lista por entregador", use_container_width=True):
                 st.session_state.sig_target = "by_entregador"
-                st.session_state.module = "views.auditoria_gate"   # SEMPRE passa pelo gate
+                if st.session_state.get("_sig_ok"):  # já validou nesta sessão
+                    st.session_state.sig_modo = "by_entregador"
+                    st.session_state.module = "views.auditoria_sigilosa"
+                else:
+                    st.session_state.module = "views.auditoria_gate"
                 st.session_state.open_cat = None
                 st.rerun()
     
+            # Lista geral
             if st.button("Auditoria — Lista geral", use_container_width=True):
                 st.session_state.sig_target = "geral"
-                st.session_state.module = "views.auditoria_gate"   # SEMPRE passa pelo gate
+                if st.session_state.get("_sig_ok"):  # já validou nesta sessão
+                    st.session_state.sig_modo = "geral"
+                    st.session_state.module = "views.auditoria_sigilosa"
+                else:
+                    st.session_state.module = "views.auditoria_gate"
                 st.session_state.open_cat = None
                 st.rerun()
 
