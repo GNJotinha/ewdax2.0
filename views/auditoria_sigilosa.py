@@ -8,9 +8,22 @@ from auditoria_loader import (
     load_faturamento_from_drive,
 )
 
-# ----------------- Gate: senha super simples -----------------
-def senha_por_formula(palavra_base: str) -> str:
+# =======================
+# Estilo (opcional)
+# =======================
+st.markdown("""
+<style>
+details[open] summary { border-bottom: 1px solid #2d333b; }
+details { border: 1px solid #2d333b; border-radius: 8px; padding: 4px 8px; }
+summary { font-weight: 600; }
+section[data-testid="stSelectbox"] > div { background: #161b22 !important; border-radius: 8px; }
+</style>
+""", unsafe_allow_html=True)
 
+# =======================
+# Gate: senha PALAVRA@(dia*mes)
+# =======================
+def senha_por_formula(palavra_base: str) -> str:
     hoje = date.today()
     dia, mes = hoje.day, hoje.month
     valor = dia * mes
@@ -18,10 +31,8 @@ def senha_por_formula(palavra_base: str) -> str:
 
 def _gate():
     st.subheader("Acesso restrito")
-
-    palavra = st.secrets.get("SIGILOSO_PALAVRA")
+    palavra = st.secrets.get("SIGILOSO_PALAVRA", "Movee")
     entrada = st.text_input("Senha", type="password")
-
     if st.button("Validar", type="primary", use_container_width=True):
         esperada = senha_por_formula(palavra)
         if entrada and entrada.strip() == esperada:
@@ -29,12 +40,13 @@ def _gate():
             st.success("Acesso liberado.")
             st.rerun()
         else:
-            st.error(f"Senha incorreta.")
-            
+            st.error("Senha incorreta.")
     if not st.session_state.get("_sig_ok", False):
         st.stop()
 
-# ----------------- Helpers de preparo -----------------
+# =======================
+# Helpers de preparo
+# =======================
 def _prep_operacional(df: pd.DataFrame) -> pd.DataFrame:
     """
     Espera colunas do loader enxuto:
@@ -42,15 +54,12 @@ def _prep_operacional(df: pd.DataFrame) -> pd.DataFrame:
       soma_das_taxas_das_corridas_aceitas
     """
     df = df.copy()
-    # turno/ident
     df["turno"] = df.get("periodo").astype(str) if "periodo" in df.columns else None
     df["ent_id"] = df.get("id_da_pessoa_entregadora", "").astype(str)
     df["ent_nome"] = df.get("pessoa_entregadora", "").astype(str)
-    # valor aceitas (centavos → reais)
     df["valor_operacional"] = pd.to_numeric(
         df.get("soma_das_taxas_das_corridas_aceitas"), errors="coerce"
     ).fillna(0) / 100.0
-    # agrega por dia/entregador/turno
     grp = (
         df.groupby(["data", "ent_id", "ent_nome", "turno"], dropna=False)["valor_operacional"]
           .sum()
@@ -80,7 +89,7 @@ def _prep_faturamento(df: pd.DataFrame) -> pd.DataFrame:
 
 def _merge_all(op: pd.DataFrame, fa: pd.DataFrame) -> pd.DataFrame:
     """
-    Merge por (data, ent_id, turno). Corrige 'ent_nome' duplicado preferindo o que existir.
+    Merge por (data, ent_id, turno). Corrige 'ent_nome' preferindo o que existir.
     """
     base = pd.merge(
         op, fa,
@@ -89,7 +98,7 @@ def _merge_all(op: pd.DataFrame, fa: pd.DataFrame) -> pd.DataFrame:
         suffixes=("_op", "_fat")
     )
 
-    # Corrigir nome duplicado: preferir op, se vazio usa fat (sem concatenar)
+    # preferir nome do op; se vazio/NaN, usar nome do fat
     if "ent_nome_op" in base.columns or "ent_nome_fat" in base.columns:
         name_op = base.get("ent_nome_op")
         name_fat = base.get("ent_nome_fat")
@@ -98,55 +107,49 @@ def _merge_all(op: pd.DataFrame, fa: pd.DataFrame) -> pd.DataFrame:
         elif name_fat is None:
             base["ent_nome"] = name_op
         else:
-            base["ent_nome"] = name_op.where(name_op.notna() & (name_op.astype(str).str.strip() != ""), name_fat)
-        # remover colunas auxiliares
-        cols_drop = [c for c in ["ent_nome_op", "ent_nome_fat"] if c in base.columns]
-        base.drop(columns=cols_drop, inplace=True)
+            base["ent_nome"] = name_op.where(
+                name_op.notna() & (name_op.astype(str).str.strip() != ""), name_fat
+            )
+        base.drop(columns=[c for c in ["ent_nome_op", "ent_nome_fat"] if c in base.columns], inplace=True)
     else:
-        # já veio como ent_nome
         base["ent_nome"] = base.get("ent_nome")
 
-    # garantir numéricos
     base["valor_operacional"] = pd.to_numeric(base.get("valor_operacional"), errors="coerce").fillna(0.0)
     base["valor_faturamento"] = pd.to_numeric(base.get("valor_faturamento"), errors="coerce").fillna(0.0)
-    # Δ
     base["delta"] = base["valor_operacional"] - base["valor_faturamento"]
-
     return base
 
-# ----------------- View -----------------
+# =======================
+# View
+# =======================
 def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
-    st.header("🕵️ Auditoria Sigilosa — Operacional × Faturamento (Concluídas)")
+    st.header("Acesso restrito")
     _gate()
 
-    # Controles de atualização
+    # Atualização de base
     col_a, col_b = st.columns([1, 3])
     refresh = col_a.button("🔄 Atualizar do Drive", use_container_width=True)
 
     with st.spinner("Carregando bases..."):
-        # Baixa (ou usa cache) e prepara
         raw_op = load_operacional_from_drive(force=refresh)
         raw_fa = load_faturamento_from_drive(force=refresh)
+        op = _prep_operacional(raw_op)
+        fa = _prep_faturamento(raw_fa)
+        base = _merge_all(op, fa)
 
-        op = _prep_operacional(raw_op)      # data, ent_id, ent_nome, turno, valor_operacional
-        fa = _prep_faturamento(raw_fa)      # data, ent_id, ent_nome, turno, valor_faturamento
-
-        base = _merge_all(op, fa)           # merge único pra servir ambos os modos
-
-    # ----------------- Menu de modos -----------------
-    st.markdown("### Modos")
-    modo = st.radio(
-        "Selecione um modo:",
-        ["Lista por entregador", "Lista geral (todos)"],
-        index=0,
-        horizontal=True
-    )
-
-    # ----------------- Filtro de período global -----------------
     if base.empty:
         st.info("Sem dados.")
         st.stop()
 
+    # Menu de modos (expander estilo sistema)
+    with st.expander("📂 Modos", expanded=False):
+        modo = st.selectbox(
+            "Selecione um modo",
+            ["Lista por entregador", "Lista geral (todos)"],
+            index=0
+        )
+
+    # Filtro de período global
     min_d, max_d = base["data"].min(), base["data"].max()
     periodo = st.date_input(
         "Período:", (min_d, max_d), min_value=min_d, max_value=max_d, format="DD/MM/YYYY"
@@ -165,8 +168,6 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
             st.stop()
 
         df_sel = base[base["ent_nome"] == nome].copy()
-
-        # agrega por DATA | TURNO
         saida = (
             df_sel.groupby(["data", "turno"], dropna=False)
                   .agg(VLROP=("valor_operacional", "sum"),
@@ -174,17 +175,13 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
                   .reset_index()
         )
         saida["DELTA"] = saida["VLROP"] - saida["VLRFAT"]
-        saida = saida.sort_values(["data", "turno"], ascending=[True, True]).reset_index(drop=True)
-
-        # renomeia cabeçalho
+        saida = saida.sort_values(["data", "turno"]).reset_index(drop=True)
         saida.rename(columns={"data": "DATA", "turno": "TURNO"}, inplace=True)
 
-        st.subheader(f"Lista — {nome}")
         vis = saida[["DATA", "TURNO", "VLROP", "VLRFAT", "DELTA"]].copy()
-        vis["VLROP"] = vis["VLROP"].round(2)
-        vis["VLRFAT"] = vis["VLRFAT"].round(2)
-        vis["DELTA"] = vis["DELTA"].round(2)
-
+        for c in ["VLROP", "VLRFAT", "DELTA"]:
+            vis[c] = vis[c].round(2)
+        st.subheader(f"Lista — {nome}")
         st.dataframe(vis, use_container_width=True)
 
         st.download_button(
@@ -197,7 +194,6 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
 
     # ----------------- Modo: Lista geral (todos) -----------------
     else:
-        # agrega por DATA | ENTREGADOR | TURNO
         saida = (
             base.groupby(["data", "ent_nome", "turno"], dropna=False)
                 .agg(VLROP=("valor_operacional", "sum"),
@@ -205,22 +201,17 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
                 .reset_index()
         )
         saida["DELTA"] = saida["VLROP"] - saida["VLRFAT"]
-        saida = saida.sort_values(["data", "ent_nome", "turno"], ascending=[True, True, True]).reset_index(drop=True)
-
-        # renomeia cabeçalho
+        saida = saida.sort_values(["data", "ent_nome", "turno"]).reset_index(drop=True)
         saida.rename(columns={"data": "DATA", "ent_nome": "ENTREGADOR", "turno": "TURNO"}, inplace=True)
 
-        # opção para mostrar só divergências
         only_diff = st.checkbox("Mostrar só divergências (DELTA ≠ 0)", value=False)
         if only_diff:
             saida = saida[saida["DELTA"].round(2) != 0]
 
-        st.subheader("Lista geral")
         vis = saida[["DATA", "ENTREGADOR", "TURNO", "VLROP", "VLRFAT", "DELTA"]].copy()
-        vis["VLROP"] = vis["VLROP"].round(2)
-        vis["VLRFAT"] = vis["VLRFAT"].round(2)
-        vis["DELTA"] = vis["DELTA"].round(2)
-
+        for c in ["VLROP", "VLRFAT", "DELTA"]:
+            vis[c] = vis[c].round(2)
+        st.subheader("Lista geral")
         st.dataframe(vis, use_container_width=True)
 
         st.download_button(
