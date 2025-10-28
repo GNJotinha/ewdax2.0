@@ -11,7 +11,7 @@ def render(_df_unused, _USUARIOS):
     st.header("Acesso restrito")
     st.subheader("Digite a senha diária")
 
-    palavra = st.secrets.get("SIGILOSO_PALAVRA", "Movee")
+    palavra = st.secrets.get("SIGILOSO_PALAVRA")
     senha = st.text_input("Senha", type="password")
 
     col1, col2 = st.columns([1,1])
