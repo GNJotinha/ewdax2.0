@@ -119,9 +119,6 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
             st.session_state.module = "views.auditoria_gate"
             st.rerun()
 
-    col_a, _ = st.columns([1, 3])
-    refresh = col_a.button("🔄 Atualizar do Drive", use_container_width=True)
-
     with st.spinner("Carregando bases..."):
         raw_op = load_operacional_from_drive(force=refresh)
         raw_fa = load_faturamento_from_drive(force=refresh)
