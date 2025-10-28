@@ -3,6 +3,9 @@ import streamlit as st
 
 from auth import autenticar, USUARIOS
 from data_loader import carregar_dados
+from datetime import datetime
+from zoneinfo import ZoneInfo
+TZ = ZoneInfo("America/Sao_Paulo")
 
 # =========================================================
 # 🔄 Carga ÚNICA do DF por render + suporte a hard refresh
@@ -121,7 +124,20 @@ with st.sidebar:
         st.rerun()
     
      
-     # --- Área Sigilosa no menu esquerdo (apenas admin/dev) ---
+def _sig_ok_now() -> bool:
+    ok = bool(st.session_state.get("_sig_ok"))
+    if not ok:
+        return False
+    until = st.session_state.get("_sig_until")  # ISO str ou None (sessão-only)
+    if until is None:
+        return True
+    try:
+        dt_until = datetime.fromisoformat(until)
+    except Exception:
+        return False
+    return datetime.now(TZ) <= dt_until
+
+    # --- Área Sigilosa no menu esquerdo (apenas admin/dev) ---
     admins_list = set(st.secrets.get("ADMINS", []))
     user_entry = USUARIOS.get(st.session_state.usuario, {}) or {}
     nivel = user_entry.get("nivel", "")
@@ -129,16 +145,23 @@ with st.sidebar:
     
     if is_sigiloso:
         with st.expander("🔒 Área Sigilosa", expanded=True):
-            # Cada item define o módulo e o modo desejado
             if st.button("Auditoria — Lista por entregador", use_container_width=True):
-                st.session_state.module = "views.auditoria_sigilosa"
-                st.session_state.sig_modo = "by_entregador"
+                st.session_state.sig_target = "by_entregador"
+                if _sig_ok_now():
+                    st.session_state.sig_modo = "by_entregador"
+                    st.session_state.module = "views.auditoria_sigilosa"
+                else:
+                    st.session_state.module = "views.auditoria_gate"
                 st.session_state.open_cat = None
                 st.rerun()
     
             if st.button("Auditoria — Lista geral", use_container_width=True):
-                st.session_state.module = "views.auditoria_sigilosa"
-                st.session_state.sig_modo = "geral"
+                st.session_state.sig_target = "geral"
+                if _sig_ok_now():
+                    st.session_state.sig_modo = "geral"
+                    st.session_state.module = "views.auditoria_sigilosa"
+                else:
+                    st.session_state.module = "views.auditoria_gate"
                 st.session_state.open_cat = None
                 st.rerun()
 
