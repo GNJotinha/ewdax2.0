@@ -10,20 +10,16 @@ from auditoria_loader import (
 
 # ----------------- Gate: senha super simples -----------------
 def senha_por_formula(palavra_base: str) -> str:
-    """
-    Senha = <PALAVRA>@(dia+mês)
-    Ex.: 27/10 -> Movee@37
-    """
+
     hoje = date.today()
     dia, mes = hoje.day, hoje.month
-    valor = dia + mes
+    valor = dia * mes
     return f"{str(palavra_base).strip()}@{valor}"
 
 def _gate():
-    st.subheader("🔐 Acesso sigiloso")
-    st.caption("Padrão: <PALAVRA>@(dia+mês) — Ex.: 27/10 → Movee@37")
+    st.subheader("Acesso restrito")
 
-    palavra = st.secrets.get("SIGILOSO_PALAVRA", "Movee")
+    palavra = st.secrets.get("SIGILOSO_PALAVRA")
     entrada = st.text_input("Senha", type="password")
 
     if st.button("Validar", type="primary", use_container_width=True):
@@ -33,8 +29,8 @@ def _gate():
             st.success("Acesso liberado.")
             st.rerun()
         else:
-            st.error(f"Senha incorreta. (Dica: hoje seria {esperada})")
-
+            st.error(f"Senha incorreta.")
+            
     if not st.session_state.get("_sig_ok", False):
         st.stop()
 
