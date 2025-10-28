@@ -1,5 +1,6 @@
 # views/auditoria_sigilosa.py
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
@@ -8,29 +9,7 @@ from auditoria_loader import (
     load_faturamento_from_drive,
 )
 
-# =======================
-# Gate: senha PALAVRA@(dia*mes)
-# =======================
-def senha_por_formula(palavra_base: str) -> str:
-    hoje = date.today()
-    dia, mes = hoje.day, hoje.month
-    valor = dia * mes
-    return f"{str(palavra_base).strip()}@{valor}"
-
-def _gate():
-    st.subheader("Acesso restrito")
-    palavra = st.secrets.get("SIGILOSO_PALAVRA", "Movee")
-    entrada = st.text_input("Senha", type="password")
-    if st.button("Validar", type="primary", use_container_width=True):
-        esperada = senha_por_formula(palavra)
-        if entrada and entrada.strip() == esperada:
-            st.session_state["_sig_ok"] = True
-            st.success("Acesso liberado.")
-            st.rerun()
-        else:
-            st.error("Senha incorreta.")
-    if not st.session_state.get("_sig_ok", False):
-        st.stop()
+TZ = ZoneInfo("America/Sao_Paulo")
 
 # =======================
 # Helpers de preparo
@@ -108,13 +87,46 @@ def _merge_all(op: pd.DataFrame, fa: pd.DataFrame) -> pd.DataFrame:
     return base
 
 # =======================
+# Gate helpers (expiração)
+# =======================
+def _sig_is_valid() -> bool:
+    ok = bool(st.session_state.get("_sig_ok"))
+    if not ok:
+        return False
+    until = st.session_state.get("_sig_until")  # ISO str ou None
+    if until is None:
+        # sessão somente
+        return True
+    try:
+        dt_until = datetime.fromisoformat(until)
+    except Exception:
+        return False
+    return datetime.now(TZ) <= dt_until
+
+def _require_sig():
+    if not _sig_is_valid():
+        st.session_state.module = "views.auditoria_gate"
+        st.rerun()
+
+# =======================
 # View
 # =======================
 def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
-    st.header("Acesso restrito")
-    _gate()
+    _require_sig()
 
-    # Atualização (força baixar do Drive ignorando cache)
+    # Cabeçalho + ação de encerrar/renovar
+    col_l, col_r = st.columns([3,1])
+    with col_l:
+        st.header("🕵️ Auditoria Operacional × Faturamento (Concluídas)")
+    with col_r:
+        if st.button("🔓 Encerrar acesso", use_container_width=True):
+            for k in ["_sig_ok", "_sig_until", "_sig_issued_at", "_sig_session_only"]:
+                st.session_state.pop(k, None)
+            st.success("Acesso encerrado.")
+            st.session_state.module = "views.auditoria_gate"
+            st.rerun()
+
+    # Botão de atualização
     col_a, _ = st.columns([1, 3])
     refresh = col_a.button("🔄 Atualizar do Drive", use_container_width=True)
 
@@ -129,7 +141,7 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
         st.info("Sem dados.")
         st.stop()
 
-    # --- Modo vindo da sidebar (main.py define st.session_state.sig_modo) ---
+    # Modo vindo da sidebar (main.py define st.session_state.sig_modo)
     sig_modo = st.session_state.pop("sig_modo", None)
     if sig_modo == "geral":
         modo = "Lista geral (todos)"
