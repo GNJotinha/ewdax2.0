@@ -133,7 +133,7 @@ def render(_df_unused: pd.DataFrame, _USUARIOS: dict):
         st.info("Sem dados.")
         st.stop()
 
-    sig_modo = st.session_state.pop("sig_modo", None)
+    sig_modo = st.session_state.get("sig_modo", None)
     modo = "Lista geral (todos)" if sig_modo == "geral" else "Lista por entregador"
 
     min_d, max_d = base["data"].min(), base["data"].max()
