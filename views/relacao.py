@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from shared import sub_options_with_livre, apply_sub_filter
-from relatorios import gerar_dados  # mantido do original
+from relatorios import gerar_dados  # mantido pq já existia
 from utils import calcular_tempo_online
 
 
@@ -85,7 +85,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             st.info("❌ Nenhum entregador encontrado com os filtros aplicados.")
             return
 
-        # se não montou período no radio, monta aqui do próprio df
+        # garante período se não veio de cima
         if not periodo_txt:
             dmin = df_sel["data"].min()
             dmax = df_sel["data"].max()
@@ -106,7 +106,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             .reset_index()
         )
 
-        # garante int
         for c in ["ofertadas", "aceitas", "rejeitadas", "completas", "turnos"]:
             agg[c] = pd.to_numeric(agg[c], errors="coerce").fillna(0).astype(int)
 
@@ -130,7 +129,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             * 100
         ).round(1)
 
-        # ordena do melhor pro pior
+        # ordena por aceitação
         agg = agg.sort_values("Aceitação (%)", ascending=False).reset_index(drop=True)
 
         # ====================================================
@@ -162,7 +161,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         ]
         tabela = tabela[cols_show]
 
-        # função pra pintar a aceitação
         def colorir_aceitacao(val):
             try:
                 v = float(val)
@@ -184,27 +182,44 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.dataframe(styled, use_container_width=True)
 
         # ====================================================
-        # 🧾 relatório estilo "saídas"
+        # 🧾 relatório estilo zap
         # ====================================================
-        blocos = []
 
-        # cabeçalho
+        # subpraça no topo
+        if not filtro_subpraca:
+            sub_txt = "**Subpraça:** TODOS"
+        elif len(filtro_subpraca) == 1:
+            sub_txt = f"**Subpraça:** {filtro_subpraca[0]}"
+        else:
+            sub_txt = f"**Subpraça:** {', '.join(filtro_subpraca)}"
+
+        # turno no topo
+        if not filtro_turno:
+            turno_txt = "**Turno:** TODOS"
+        elif len(filtro_turno) == 1:
+            turno_txt = f"**Turno:** {filtro_turno[0]}"
+        else:
+            turno_txt = f"**Turno:** {', '.join(filtro_turno)}"
+
+        blocos = []
+        blocos.append(sub_txt)
+        blocos.append(turno_txt)
         blocos.append(f"*Período de análise {periodo_txt}*")
 
-        # por entregador (na mesma ordem da tabela)
         for _, row in tabela.iterrows():
             nome = row["Entregador"]
-            # recorte do cara pra calcular tempo online real
+            # recorte pra tempo online
             chunk = df_sel[df_sel["pessoa_entregadora"] == nome].copy()
-            tempo_online = calcular_tempo_online(chunk)  # já vem %
+            tempo_online = calcular_tempo_online(chunk)  # em %
+
             ofert = int(row["Ofertadas"])
             aceit = int(row["Aceitas"])
             rejei = int(row["Rejeitadas"])
             compl = int(row["Completas"])
 
-            pct_acc = row["Aceitação (%)"]
-            pct_rej = row["Rejeição (%)"]
-            pct_comp = row["Conclusão (%)"]
+            pct_acc = float(row["Aceitação (%)"])
+            pct_rej = float(row["Rejeição (%)"])
+            pct_comp = float(row["Conclusão (%)"])
 
             linhas = [
                 f"*{nome}*",
