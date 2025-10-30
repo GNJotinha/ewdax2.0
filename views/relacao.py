@@ -9,7 +9,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     st.header("Relação de Entregadores")
 
     # ---------------------------
-    # base normalizada
+    # Base normalizada
     # ---------------------------
     df_f = df.copy()
     df_f["data_do_periodo"] = pd.to_datetime(
@@ -18,7 +18,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     df_f["data"] = df_f["data_do_periodo"].dt.date
 
     # ---------------------------
-    # filtros (iguais ao original)
+    # Filtros
     # ---------------------------
     subpracas = sub_options_with_livre(df_f, praca_scope="SAO PAULO")
     filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
@@ -33,13 +33,15 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         ("Período contínuo", "Dias específicos"),
         horizontal=True,
     )
-    dias_escolhidos: list[pd.Timestamp] = []
+    dias_escolhidos = []
 
     if tipo_periodo == "Período contínuo":
         data_min = df_f["data"].min()
         data_max = df_f["data"].max()
         periodo = st.date_input(
-            "Selecione o intervalo de datas:", [data_min, data_max], format="DD/MM/YYYY"
+            "Selecione o intervalo de datas:",
+            [data_min, data_max],
+            format="DD/MM/YYYY",
         )
         if len(periodo) == 2:
             dias_escolhidos = list(
@@ -56,10 +58,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         )
 
     # ---------------------------
-    # botão
+    # Botão principal
     # ---------------------------
     if st.button("Gerar", use_container_width=True):
-        # aplica filtros
         df_sel = df_f.copy()
         df_sel = apply_sub_filter(df_sel, filtro_subpraca, praca_scope="SAO PAULO")
         if filtro_turno:
@@ -72,81 +73,44 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             return
 
         # ====================================================
-        # 🔢 agregação por entregador
+        # 🔢 Agregação por entregador
         # ====================================================
         agg = (
             df_sel.groupby("pessoa_entregadora", dropna=True)
             .agg(
                 turnos=("data", "count"),
-                ofertadas=(
-                    "numero_de_corridas_ofertadas",
-                    "sum",
-                ),
-                aceitas=(
-                    "numero_de_corridas_aceitas",
-                    "sum",
-                ),
-                rejeitadas=(
-                    "numero_de_corridas_rejeitadas",
-                    "sum",
-                ),
-                completas=(
-                    "numero_de_corridas_completadas",
-                    "sum",
-                ),
+                ofertadas=("numero_de_corridas_ofertadas", "sum"),
+                aceitas=("numero_de_corridas_aceitas", "sum"),
+                rejeitadas=("numero_de_corridas_rejeitadas", "sum"),
+                completas=("numero_de_corridas_completadas", "sum"),
             )
             .reset_index()
         )
 
-        # proteções
-        agg["ofertadas"] = pd.to_numeric(agg["ofertadas"], errors="coerce").fillna(0)
-        agg["aceitas"] = pd.to_numeric(agg["aceitas"], errors="coerce").fillna(0)
-        agg["rejeitadas"] = pd.to_numeric(agg["rejeitadas"], errors="coerce").fillna(0)
-        agg["completas"] = pd.to_numeric(agg["completas"], errors="coerce").fillna(0)
-        agg["turnos"] = pd.to_numeric(agg["turnos"], errors="coerce").fillna(0)
+        # cálculo de taxas
+        agg["Aceitação (%)"] = (
+            (agg["aceitas"] / agg["ofertadas"]).replace([np.inf, -np.inf], 0).fillna(0)
+            * 100
+        ).round(1)
+        agg["Rejeição (%)"] = (
+            (agg["rejeitadas"] / agg["ofertadas"])
+            .replace([np.inf, -np.inf], 0)
+            .fillna(0)
+            * 100
+        ).round(1)
+        agg["Conclusão (%)"] = (
+            (agg["completas"] / agg["aceitas"]).replace([np.inf, -np.inf], 0).fillna(0)
+            * 100
+        ).round(1)
 
-        # taxa de aceitação
-        agg["tx_acc"] = agg.apply(
-            lambda r: (r["aceitas"] / r["ofertadas"]) if r["ofertadas"] > 0 else 0.0,
-            axis=1,
-        )
-
-        # estabilidade (volume dentro do próprio período)
-        max_ofertadas = max(1, float(agg["ofertadas"].max()))
-        agg["estab"] = np.log1p(agg["ofertadas"]) / np.log1p(max_ofertadas)
-
-        # score final: 70% taxa + 30% volume
-        PESO_TAXA = 0.7
-        PESO_ESTAB = 0.3
-        agg["score"] = (PESO_TAXA * agg["tx_acc"]) + (PESO_ESTAB * agg["estab"])
-
-        # ORDEM: melhor -> pior
-        agg = agg.sort_values(
-            ["score", "ofertadas"], ascending=[False, False]
-        ).reset_index(drop=True)
+        # ordena do melhor pro pior (por aceitação)
+        agg = agg.sort_values("Aceitação (%)", ascending=False).reset_index(drop=True)
 
         # ============================
-        # 📊 tabela final (com números)
+        # 📊 Tabela completa e clara
         # ============================
-        st.subheader("👤 Entregadores encontrados")
-
-        tabela = agg.copy()
-        tabela["Aceitação (%)"] = (tabela["tx_acc"] * 100).round(1)
-        tabela["Estabilidade (%)"] = (tabela["estab"] * 100).round(0)
-        tabela["Score (0-100)"] = (tabela["score"] * 100).round(1)
-
-        cols_show = [
-            "pessoa_entregadora",
-            "Aceitação (%)",
-            "ofertadas",
-            "aceitas",
-            "rejeitadas",
-            "completas",
-            "turnos",
-            "Estabilidade (%)",
-            "Score (0-100)",
-        ]
-        tabela = tabela[cols_show].rename(
+        st.subheader("👤 Entregadores encontrados (ordenado por aceitação)")
+        tabela = agg.rename(
             columns={
                 "pessoa_entregadora": "Entregador",
                 "ofertadas": "Ofertadas",
@@ -156,14 +120,24 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 "turnos": "Turnos",
             }
         )
-
-        st.dataframe(tabela, use_container_width=True)
+        cols_show = [
+            "Entregador",
+            "Aceitação (%)",
+            "Rejeição (%)",
+            "Conclusão (%)",
+            "Ofertadas",
+            "Aceitas",
+            "Rejeitadas",
+            "Completas",
+            "Turnos",
+        ]
+        st.dataframe(tabela[cols_show], use_container_width=True)
 
         # ============================
-        # 🧾 blocos de texto na MESMA ordem
+        # 🧾 Blocos (mesma ordem)
         # ============================
         blocos = []
-        for nome in agg["pessoa_entregadora"].tolist():
+        for nome in tabela["Entregador"].tolist():
             chunk = df_sel[df_sel["pessoa_entregadora"] == nome]
             bloco = gerar_dados(nome, None, None, chunk)
             if bloco:
