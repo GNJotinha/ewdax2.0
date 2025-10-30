@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from shared import sub_options_with_livre, apply_sub_filter
-from relatorios import gerar_dados  # mantido porque já existia no módulo
+from relatorios import gerar_dados  # mantido do original
 from utils import calcular_tempo_online
 
 
@@ -117,14 +117,12 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             .fillna(0)
             * 100
         ).round(1)
-
         agg["Rejeição (%)"] = (
             (agg["rejeitadas"] / agg["ofertadas"])
             .replace([np.inf, -np.inf], 0)
             .fillna(0)
             * 100
         ).round(1)
-
         agg["Conclusão (%)"] = (
             (agg["completas"] / agg["aceitas"])
             .replace([np.inf, -np.inf], 0)
@@ -187,38 +185,13 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.dataframe(styled, use_container_width=True)
 
         # ==============================================================
-        # Relatório estilo WhatsApp
+        # Relatório estilo WhatsApp (sem subpraça/turno no topo)
         # ==============================================================
-        # Subpraça
-        if filtro_subpraca:
-            if len(filtro_subpraca) == 1:
-                sub_txt = f"**Subpraça:** {filtro_subpraca[0]}"
-            else:
-                sub_txt = f"**Subpraça:** {', '.join(filtro_subpraca)}"
-        else:
-            subs_df = df_sel.get("sub_praca")
-            if subs_df is not None:
-                subs_unicas = [
-                    s for s in subs_df.dropna().unique().tolist() if str(s).strip() != ""
-                ]
-                if len(subs_unicas) == 1:
-                    sub_txt = f"**Subpraça:** {subs_unicas[0]}"
-                elif len(subs_unicas) > 1:
-                    sub_txt = f"**Subpraça:** {', '.join(subs_unicas)}"
-                else:
-                    sub_txt = "**Subpraça:** TODOS"
-            else:
-                sub_txt = "**Subpraça:** TODOS"
-
-
-
         blocos = []
-        blocos.append(sub_txt)
         blocos.append(f"*Período de análise {periodo_txt}*")
 
         for _, row in tabela.iterrows():
             nome = row["Entregador"]
-            # recorte do entregador pra tempo online real
             chunk = df_sel[df_sel["pessoa_entregadora"] == nome].copy()
             tempo_online = calcular_tempo_online(chunk)
 
