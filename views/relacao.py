@@ -210,26 +210,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             else:
                 sub_txt = "**Subpraça:** TODOS"
 
-        # Turno
-        if filtro_turno:
-            if len(filtro_turno) == 1:
-                turno_txt = f"**Turno:** {filtro_turno[0]}"
-            else:
-                turno_txt = f"**Turno:** {', '.join(filtro_turno)}"
-        else:
-            turnos_df = df_sel.get("periodo")
-            if turnos_df is not None:
-                turnos_unicos = [
-                    t for t in turnos_df.dropna().unique().tolist() if str(t).strip() != ""
-                ]
-                if len(turnos_unicos) == 1:
-                    turno_txt = f"**Turno:** {turnos_unicos[0]}"
-                elif len(turnos_unicos) > 1:
-                    turno_txt = f"**Turno:** {', '.join(turnos_unicos)}"
-                else:
-                    turno_txt = "**Turno:** TODOS"
-            else:
-                turno_txt = "**Turno:** TODOS"
+
 
         blocos = []
         blocos.append(sub_txt)
