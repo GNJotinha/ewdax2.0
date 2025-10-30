@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from shared import sub_options_with_livre, apply_sub_filter
-from relatorios import gerar_dados  # ainda importo pq já estava no original
+from relatorios import gerar_dados  # mantido do original
+from utils import calcular_tempo_online
 
 
 def render(df: pd.DataFrame, _USUARIOS: dict):
@@ -18,7 +19,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     df_f["data"] = df_f["data_do_periodo"].dt.date
 
     # ---------------------------
-    # filtros (iguais ao original)
+    # filtros
     # ---------------------------
     subpracas = sub_options_with_livre(df_f, praca_scope="SAO PAULO")
     filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
@@ -48,10 +49,10 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             dias_escolhidos = list(
                 pd.date_range(start=periodo[0], end=periodo[1]).date
             )
-            periodo_txt = f"{periodo[0].strftime('%d/%m/%Y')} a {periodo[1].strftime('%d/%m/%Y')}"
+            periodo_txt = f"{periodo[0].strftime('%d/%m')} á {periodo[1].strftime('%d/%m')}"
         elif len(periodo) == 1:
             dias_escolhidos = [periodo[0]]
-            periodo_txt = periodo[0].strftime("%d/%m/%Y")
+            periodo_txt = periodo[0].strftime("%d/%m")
     else:
         dias_opcoes = sorted([d for d in df_f["data"].dropna().unique()])
         dias_escolhidos = st.multiselect(
@@ -61,11 +62,11 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         )
         if dias_escolhidos:
             if len(dias_escolhidos) == 1:
-                periodo_txt = dias_escolhidos[0].strftime("%d/%m/%Y")
+                periodo_txt = dias_escolhidos[0].strftime("%d/%m")
             else:
                 periodo_txt = (
-                    f"{min(dias_escolhidos).strftime('%d/%m/%Y')} a "
-                    f"{max(dias_escolhidos).strftime('%d/%m/%Y')}"
+                    f"{min(dias_escolhidos).strftime('%d/%m')} á "
+                    f"{max(dias_escolhidos).strftime('%d/%m')}"
                 )
 
     # ---------------------------
@@ -83,6 +84,12 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         if df_sel.empty:
             st.info("❌ Nenhum entregador encontrado com os filtros aplicados.")
             return
+
+        # se não montou período no radio, monta aqui do próprio df
+        if not periodo_txt:
+            dmin = df_sel["data"].min()
+            dmax = df_sel["data"].max()
+            periodo_txt = f"{dmin.strftime('%d/%m')} á {dmax.strftime('%d/%m')}"
 
         # ====================================================
         # 🔢 agregação por entregador
@@ -177,43 +184,37 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.dataframe(styled, use_container_width=True)
 
         # ====================================================
-        # 🧾 relatório simplificado (estilo saídas)
+        # 🧾 relatório estilo "saídas"
         # ====================================================
-
-        # nome da subpraça no topo
-        if not filtro_subpraca:
-            titulo_sub = "Todas / Mistas"
-        elif len(filtro_subpraca) == 1:
-            titulo_sub = filtro_subpraca[0]
-        else:
-            titulo_sub = ", ".join(filtro_subpraca)
-
-        if not periodo_txt:
-            # fallback pro período real dos dados filtrados
-            dmin = df_sel["data"].min()
-            dmax = df_sel["data"].max()
-            periodo_txt = f"{dmin.strftime('%d/%m/%Y')} a {dmax.strftime('%d/%m/%Y')}"
-
         blocos = []
+
+        # cabeçalho
+        blocos.append(f"*Período de análise {periodo_txt}*")
+
+        # por entregador (na mesma ordem da tabela)
         for _, row in tabela.iterrows():
             nome = row["Entregador"]
-            linha = [
+            # recorte do cara pra calcular tempo online real
+            chunk = df_sel[df_sel["pessoa_entregadora"] == nome].copy()
+            tempo_online = calcular_tempo_online(chunk)  # já vem %
+            ofert = int(row["Ofertadas"])
+            aceit = int(row["Aceitas"])
+            rejei = int(row["Rejeitadas"])
+            compl = int(row["Completas"])
+
+            pct_acc = row["Aceitação (%)"]
+            pct_rej = row["Rejeição (%)"]
+            pct_comp = row["Conclusão (%)"]
+
+            linhas = [
                 f"*{nome}*",
-                f"- Aceitação: {row['Aceitação (%)']:.1f}%",
-                f"- Ofertadas: {int(row['Ofertadas'])}",
-                f"- Aceitas: {int(row['Aceitas'])}",
-                f"- Rejeitadas: {int(row['Rejeitadas'])}",
-                f"- Completas: {int(row['Completas'])}",
-                f"- Turnos: {int(row['Turnos'])}",
+                f"- Tempo online: {tempo_online:.2f}%",
+                f"- Ofertadas: {ofert}",
+                f"- Aceitas: {aceit} ({pct_acc:.2f}%)",
+                f"- Rejeitadas: {rejei} ({pct_rej:.2f}%)",
+                f"- Completas: {compl} ({pct_comp:.2f}%)",
             ]
-            blocos.append("\n".join(linha))
+            blocos.append("\n".join(linhas))
 
-        texto_final = (
-            f"*{titulo_sub}*\n"
-            f"*Período de análise:* {periodo_txt}\n\n"
-            + "\n\n".join(blocos)
-            if blocos
-            else "Sem dados."
-        )
-
+        texto_final = "\n\n".join(blocos)
         st.text_area("Resultado:", value=texto_final, height=500)
