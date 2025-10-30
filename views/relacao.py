@@ -214,7 +214,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
         blocos = []
         blocos.append(sub_txt)
-        blocos.append(turno_txt)
         blocos.append(f"*Período de análise {periodo_txt}*")
 
         for _, row in tabela.iterrows():
