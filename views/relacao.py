@@ -2,14 +2,14 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from shared import sub_options_with_livre, apply_sub_filter
-from relatorios import gerar_dados
+from relatorios import gerar_dados  # ainda importo pq já estava no original
 
 
 def render(df: pd.DataFrame, _USUARIOS: dict):
     st.header("Relação de Entregadores")
 
     # ---------------------------
-    # Base normalizada
+    # base normalizada
     # ---------------------------
     df_f = df.copy()
     df_f["data_do_periodo"] = pd.to_datetime(
@@ -18,7 +18,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     df_f["data"] = df_f["data_do_periodo"].dt.date
 
     # ---------------------------
-    # Filtros
+    # filtros (iguais ao original)
     # ---------------------------
     subpracas = sub_options_with_livre(df_f, praca_scope="SAO PAULO")
     filtro_subpraca = st.multiselect("Filtrar por subpraça:", subpracas)
@@ -33,8 +33,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         ("Período contínuo", "Dias específicos"),
         horizontal=True,
     )
-    dias_escolhidos = []
+    dias_escolhidos: list = []
 
+    periodo_txt = ""
     if tipo_periodo == "Período contínuo":
         data_min = df_f["data"].min()
         data_max = df_f["data"].max()
@@ -47,8 +48,10 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             dias_escolhidos = list(
                 pd.date_range(start=periodo[0], end=periodo[1]).date
             )
+            periodo_txt = f"{periodo[0].strftime('%d/%m/%Y')} a {periodo[1].strftime('%d/%m/%Y')}"
         elif len(periodo) == 1:
             dias_escolhidos = [periodo[0]]
+            periodo_txt = periodo[0].strftime("%d/%m/%Y")
     else:
         dias_opcoes = sorted([d for d in df_f["data"].dropna().unique()])
         dias_escolhidos = st.multiselect(
@@ -56,11 +59,20 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             dias_opcoes,
             format_func=lambda x: x.strftime("%d/%m/%Y"),
         )
+        if dias_escolhidos:
+            if len(dias_escolhidos) == 1:
+                periodo_txt = dias_escolhidos[0].strftime("%d/%m/%Y")
+            else:
+                periodo_txt = (
+                    f"{min(dias_escolhidos).strftime('%d/%m/%Y')} a "
+                    f"{max(dias_escolhidos).strftime('%d/%m/%Y')}"
+                )
 
     # ---------------------------
-    # Botão principal
+    # botão
     # ---------------------------
     if st.button("Gerar", use_container_width=True):
+        # aplica filtros
         df_sel = df_f.copy()
         df_sel = apply_sub_filter(df_sel, filtro_subpraca, praca_scope="SAO PAULO")
         if filtro_turno:
@@ -73,7 +85,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             return
 
         # ====================================================
-        # 🔢 Agregação por entregador
+        # 🔢 agregação por entregador
         # ====================================================
         agg = (
             df_sel.groupby("pessoa_entregadora", dropna=True)
@@ -87,9 +99,15 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             .reset_index()
         )
 
-        # cálculo de taxas
+        # garante int
+        for c in ["ofertadas", "aceitas", "rejeitadas", "completas", "turnos"]:
+            agg[c] = pd.to_numeric(agg[c], errors="coerce").fillna(0).astype(int)
+
+        # taxas
         agg["Aceitação (%)"] = (
-            (agg["aceitas"] / agg["ofertadas"]).replace([np.inf, -np.inf], 0).fillna(0)
+            (agg["aceitas"] / agg["ofertadas"])
+            .replace([np.inf, -np.inf], 0)
+            .fillna(0)
             * 100
         ).round(1)
         agg["Rejeição (%)"] = (
@@ -99,17 +117,20 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             * 100
         ).round(1)
         agg["Conclusão (%)"] = (
-            (agg["completas"] / agg["aceitas"]).replace([np.inf, -np.inf], 0).fillna(0)
+            (agg["completas"] / agg["aceitas"])
+            .replace([np.inf, -np.inf], 0)
+            .fillna(0)
             * 100
         ).round(1)
 
-        # ordena do melhor pro pior (por aceitação)
+        # ordena do melhor pro pior
         agg = agg.sort_values("Aceitação (%)", ascending=False).reset_index(drop=True)
 
-        # ============================
-        # 📊 Tabela com cores na aceitação
-        # ============================
+        # ====================================================
+        # 📊 tabela estilizada
+        # ====================================================
         st.subheader("👤 Entregadores encontrados (ordenado por aceitação)")
+
         tabela = agg.rename(
             columns={
                 "pessoa_entregadora": "Entregador",
@@ -134,28 +155,65 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         ]
         tabela = tabela[cols_show]
 
-        # função pra colorir a coluna de aceitação
+        # função pra pintar a aceitação
         def colorir_aceitacao(val):
-            color = "#2ECC71" if val >= 60 else "#E74C3C"  # verde ou vermelho
+            try:
+                v = float(val)
+            except Exception:
+                v = 0.0
+            color = "#2ECC71" if v >= 60 else "#E74C3C"
             return f"background-color: {color}; color: white;"
 
-        styled = tabela.style.applymap(colorir_aceitacao, subset=["Aceitação (%)"])
+        styled = (
+            tabela.style
+            .format({
+                "Aceitação (%)": "{:.1f}",
+                "Rejeição (%)": "{:.1f}",
+                "Conclusão (%)": "{:.1f}",
+            })
+            .applymap(colorir_aceitacao, subset=["Aceitação (%)"])
+        )
 
         st.dataframe(styled, use_container_width=True)
 
-        # ============================
-        # 🧾 Blocos (mesma ordem)
-        # ============================
+        # ====================================================
+        # 🧾 relatório simplificado (estilo saídas)
+        # ====================================================
+
+        # nome da subpraça no topo
+        if not filtro_subpraca:
+            titulo_sub = "Todas / Mistas"
+        elif len(filtro_subpraca) == 1:
+            titulo_sub = filtro_subpraca[0]
+        else:
+            titulo_sub = ", ".join(filtro_subpraca)
+
+        if not periodo_txt:
+            # fallback pro período real dos dados filtrados
+            dmin = df_sel["data"].min()
+            dmax = df_sel["data"].max()
+            periodo_txt = f"{dmin.strftime('%d/%m/%Y')} a {dmax.strftime('%d/%m/%Y')}"
+
         blocos = []
-        for nome in tabela["Entregador"].tolist():
-            chunk = df_sel[df_sel["pessoa_entregadora"] == nome]
-            bloco = gerar_dados(nome, None, None, chunk)
-            if bloco:
-                blocos.append(bloco.strip())
+        for _, row in tabela.iterrows():
+            nome = row["Entregador"]
+            linha = [
+                f"*{nome}*",
+                f"- Aceitação: {row['Aceitação (%)']:.1f}%",
+                f"- Ofertadas: {int(row['Ofertadas'])}",
+                f"- Aceitas: {int(row['Aceitas'])}",
+                f"- Rejeitadas: {int(row['Rejeitadas'])}",
+                f"- Completas: {int(row['Completas'])}",
+                f"- Turnos: {int(row['Turnos'])}",
+            ]
+            blocos.append("\n".join(linha))
 
         texto_final = (
-            "\n" + ("\n" + "—" * 40 + "\n").join(blocos)
+            f"*{titulo_sub}*\n"
+            f"*Período de análise:* {periodo_txt}\n\n"
+            + "\n\n".join(blocos)
             if blocos
-            else "Sem blocos gerados para os filtros."
+            else "Sem dados."
         )
+
         st.text_area("Resultado:", value=texto_final, height=500)
