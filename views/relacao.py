@@ -107,7 +107,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         agg = agg.sort_values("Aceitação (%)", ascending=False).reset_index(drop=True)
 
         # ============================
-        # 📊 Tabela completa e clara
+        # 📊 Tabela com cores na aceitação
         # ============================
         st.subheader("👤 Entregadores encontrados (ordenado por aceitação)")
         tabela = agg.rename(
@@ -120,6 +120,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 "turnos": "Turnos",
             }
         )
+
         cols_show = [
             "Entregador",
             "Aceitação (%)",
@@ -131,7 +132,16 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             "Completas",
             "Turnos",
         ]
-        st.dataframe(tabela[cols_show], use_container_width=True)
+        tabela = tabela[cols_show]
+
+        # função pra colorir a coluna de aceitação
+        def colorir_aceitacao(val):
+            color = "#2ECC71" if val >= 60 else "#E74C3C"  # verde ou vermelho
+            return f"background-color: {color}; color: white;"
+
+        styled = tabela.style.applymap(colorir_aceitacao, subset=["Aceitação (%)"])
+
+        st.dataframe(styled, use_container_width=True)
 
         # ============================
         # 🧾 Blocos (mesma ordem)
