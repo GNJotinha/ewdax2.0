@@ -81,37 +81,67 @@ def gerar_dados(nome, mes, ano, df):
 
 
 def gerar_simplicado(nome, mes, ano, df):
+    """
+    Gera bloco simplificado para WhatsApp, SOMENTE com:
+      * título do mês
+      * tempo online
+      * turnos
+      * corridas (ofertadas/aceitas/rejeitadas/completas)
+
+    Sem repetir o nome do entregador aqui (o nome vem antes, na tela).
+    Formato de saída (exemplo):
+
+    *Agosto*
+    Tempo online: 88.8%
+    Turnos realizados: 117
+    * Ofertadas: 426
+    * Aceitas: 425 (99.8%)
+    * Rejeitadas: 1 (0.2%)
+    * Completas: 415 (97.6%)
+    """
     nome_norm = normalizar(nome)
-    dados = df[(df["pessoa_entregadora_normalizado"] == nome_norm) &
-               (df["mes"] == mes) & (df["ano"] == ano)]
+    dados = df[
+        (df["pessoa_entregadora_normalizado"] == nome_norm)
+        & (df["mes"] == mes)
+        & (df["ano"] == ano)
+    ]
+
+    # nomes dos meses
+    meses_pt = [
+        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ]
+    mes_nome = meses_pt[mes - 1] if 1 <= mes <= 12 else f"{mes:02d}/{ano}"
+
     if dados.empty:
-        return None
+        # Ainda assim devolve o título do mês pra não quebrar o layout
+        return f"*{mes_nome}*\nSem dados disponíveis para esse período."
 
     tempo_pct = calcular_tempo_online(dados)
     turnos = len(dados)
-    ofertadas = int(dados["numero_de_corridas_ofertadas"].sum())
-    aceitas   = int(dados["numero_de_corridas_aceitas"].sum())
-    rejeitadas= int(dados["numero_de_corridas_rejeitadas"].sum())
-    completas = int(dados["numero_de_corridas_completadas"].sum())
+
+    ofertadas  = int(dados["numero_de_corridas_ofertadas"].sum())
+    aceitas    = int(dados["numero_de_corridas_aceitas"].sum())
+    rejeitadas = int(dados["numero_de_corridas_rejeitadas"].sum())
+    completas  = int(dados["numero_de_corridas_completadas"].sum())
+
     tx_aceitas    = round(aceitas    / ofertadas * 100, 1) if ofertadas else 0.0
     tx_rejeitadas = round(rejeitadas / ofertadas * 100, 1) if ofertadas else 0.0
     tx_completas  = round(completas  / aceitas   * 100, 1) if aceitas   else 0.0
 
-    meses_pt = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
-    periodo = f"{meses_pt[mes-1]}/{ano}"
-    return f"""{nome} – {periodo}
+    # Aqui NÃO tem linha em branco no meio: só quebras simples (\n)
+    bloco = (
+        f"*{mes_nome}*\n"
+        f"Tempo online: {tempo_pct}%\n"
+        f"Turnos realizados: {turnos}\n"
+        f"* Ofertadas: {ofertadas}\n"
+        f"* Aceitas: {aceitas} ({tx_aceitas}%)\n"
+        f"* Rejeitadas: {rejeitadas} ({tx_rejeitadas}%)\n"
+        f"* Completas: {completas} ({tx_completas}%)"
+    )
 
-Tempo online: {tempo_pct}%
+    return bloco
 
-Turnos realizados: {turnos}
-
-Corridas:
-* Ofertadas: {ofertadas}
-* Aceitas: {aceitas} ({tx_aceitas}%)
-* Rejeitadas: {rejeitadas} ({tx_rejeitadas}%)
-* Completas: {completas} ({tx_completas}%)
-"""
 
 
 def gerar_alertas_de_faltas(df):
