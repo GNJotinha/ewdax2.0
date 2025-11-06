@@ -37,7 +37,7 @@ def gerar_texto(nome, periodo, dias_esperados, presencas, faltas, tempo_pct,
 def gerar_dados(nome, mes, ano, df):
     nome_norm = normalizar(nome)
     dados = df[(df["pessoa_entregadora_normalizado"] == nome_norm)]
-        if mes and ano:
+    if mes and ano:
             dados = dados[(dados["mes"] == mes) & (dados["ano"] == ano)]
     if dados.empty:
         return None
