@@ -105,6 +105,7 @@ MENU = {
         "Lista de Ativos": "views.lista_ativos",
         "Comparar ativos": "views.comparar",
         "Saídas": "views.saidas",
+        "Categorias metas": "views.sh_aceitacao",
 
     },
     "Dashboards": {
