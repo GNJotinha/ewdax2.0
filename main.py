@@ -1,209 +1,355 @@
-import importlib
-import pandas as pd
 import streamlit as st
-from datetime import datetime
-from zoneinfo import ZoneInfo
+import pandas as pd
+import calendar
+from relatorios import classificar_entregadores
 
-from auth import autenticar, USUARIOS
-from data_loader import carregar_dados
 
-TZ = ZoneInfo("America/Sao_Paulo")
+# ---------------------- Helpers básicos ---------------------- #
 
-# =========================================================
-# 🔄 Carga ÚNICA do DF por render + suporte a hard refresh
-# =========================================================
-def get_df_once():
+def _ativacao_mask(df_chunk: pd.DataFrame) -> pd.Series:
+    """True para linhas em que houve alguma atuação (SH, corridas etc.)."""
+    if df_chunk is None or df_chunk.empty:
+        return pd.Series(False, index=(df_chunk.index if df_chunk is not None else []))
+
+    seg = pd.to_numeric(df_chunk.get("segundos_abs", 0), errors="coerce").fillna(0)
+    ofe = pd.to_numeric(df_chunk.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0)
+    ace = pd.to_numeric(df_chunk.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0)
+    com = pd.to_numeric(df_chunk.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0)
+    return (seg > 0) | (ofe > 0) | (ace > 0) | (com > 0)
+
+
+def _projecao_sh(df_mes: pd.DataFrame, sh_atual: float, mes: int, ano: int) -> tuple[float, int, int, int]:
     """
-    Carrega o df uma única vez por render.
-    Se o usuário clicou em 'Atualizar dados', força baixar do Drive.
+    Retorna (sh_proj, dias_mes, dias_passados, dias_ativos).
+
+    Projeção conservadora:
+      - exige pelo menos 3 dias ativos no mês
+      - limita média SH/dia ativo em 10h
+      - projeta SH_extra = média_dia_ativo * dias_restantes
+      - cap de SH projetado em 180h (não precisa mais que isso pra saber se bate 120)
     """
-    prefer = st.session_state.pop("force_refresh", False)
-    ts = pd.Timestamp.now().timestamp() if prefer else None
-    return carregar_dados(prefer_drive=prefer, _ts=ts)
+    dias_mes = calendar.monthrange(ano, mes)[1]
 
-# -------------------------------------------------------------------
-# Config da página
-# -------------------------------------------------------------------
-st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
+    if df_mes.empty or sh_atual <= 0:
+        return 0.0, dias_mes, 0, 0
 
-# -------------------------------------------------------------------
-# Estilo
-# -------------------------------------------------------------------
-st.markdown(
+    # datas do mês
+    if "data_do_periodo" in df_mes.columns:
+        datas = pd.to_datetime(df_mes["data_do_periodo"], errors="coerce")
+    else:
+        datas = pd.to_datetime(df_mes["data"], errors="coerce")
+    datas = datas.dropna()
+
+    if datas.empty:
+        return float(sh_atual), dias_mes, 0, 0
+
+    # considera só datas do mês/ano alvo
+    datas_mes = datas[(datas.dt.month == mes) & (datas.dt.year == ano)]
+    if datas_mes.empty:
+        return float(sh_atual), dias_mes, 0, 0
+
+    ultimo_dia = datas_mes.max()
+    dia_atual_mes = int(ultimo_dia.day)
+
+    # dias com atuação
+    mask_ativo = _ativacao_mask(df_mes)
+    datas_ativas = datas_mes[mask_ativo.reindex(df_mes.index, fill_value=False)]
+    dias_ativos = int(datas_ativas.dt.date.nunique()) if not datas_ativas.empty else 0
+
+    # pouco dado => não inventa projeção
+    if dias_ativos < 3 or dia_atual_mes <= 0:
+        return float(sh_atual), dias_mes, dia_atual_mes, dias_ativos
+
+    # média por dia ativo, com teto
+    media_sh_dia_ativo = sh_atual / dias_ativos
+    media_sh_dia_ativo = float(min(media_sh_dia_ativo, 10.0))  # teto 10h/dia
+
+    dias_restantes = max(dias_mes - dia_atual_mes, 0)
+    sh_extra = media_sh_dia_ativo * dias_restantes
+
+    # cap em 180h pra não ficar bizarro
+    sh_proj = min(sh_atual + sh_extra, 180.0)
+    return float(sh_proj), dias_mes, dia_atual_mes, dias_ativos
+
+
+def _score_proximidade(
+    sh_proj: float,
+    acc: float,
+    conc: float,
+    sh_meta: float = 120.0,
+    acc_meta: float = 65.0,
+    conc_meta: float = 95.0,
+) -> float:
     """
-    <style>
-        body { background-color: #0e1117; color: #c9d1d9; }
-        .stButton>button {
-            background-color: #1f6feb;
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-weight: bold;
-        }
-        .stButton>button:hover { background-color: #388bfd; }
-        .stSidebar { background-color: #161b22; }
-        h1, h2, h3 { color: #58a6ff; }
-        .stSelectbox, .stMultiSelect, .stTextInput {
-            background-color: #21262d;
-            color: #c9d1d9;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+    Score 0–100 de quão perto está do Premium, usando projeção de SH.
+    Penaliza base muito baixa e clampa em [0, 100].
+    """
+    # normaliza cada critério em [0,1]
+    p_sh = min(max(sh_proj / sh_meta, 0.0), 1.0) if sh_meta > 0 else 0.0
+    p_acc = min(max(acc / acc_meta, 0.0), 1.0) if acc_meta > 0 else 0.0
+    p_con = min(max(conc / conc_meta, 0.0), 1.0) if conc_meta > 0 else 0.0
 
-# ---------------------------------------------------------
-# Estado inicial
-# ---------------------------------------------------------
-if "logado" not in st.session_state:
-    st.session_state.logado = False
-    st.session_state.usuario = ""
+    score = (0.4 * p_sh + 0.3 * p_acc + 0.3 * p_con) * 100.0
 
-if "module" not in st.session_state:
-    # default = Home
-    st.session_state.module = "views.home"
+    # se os números ainda são muito baixos, dá uma segurada
+    if sh_proj < 40 or acc < 40 or conc < 60:
+        score *= 0.7
 
-if "open_cat" not in st.session_state:
-    st.session_state.open_cat = None
+    score = max(0.0, min(score, 100.0))
+    return float(round(score, 1))
 
-# ---------------------------------------------------------
-# Login
-# ---------------------------------------------------------
-if not st.session_state.logado:
-    st.title("🔐 Login do Painel")
-    usuario = st.text_input("Usuário")
-    senha = st.text_input("Senha", type="password")
-    if st.button("Entrar", use_container_width=True):
-        if autenticar(usuario, senha):
-            st.session_state.logado = True
-            st.session_state.usuario = usuario
-            st.rerun()
+
+def _tipo_acao(
+    row,
+    sh_meta: float = 120.0,
+    acc_meta: float = 65.0,
+    conc_meta: float = 95.0,
+) -> str:
+    """Texto de qual “coaching” faz mais sentido."""
+    cat = str(row.get("categoria", "") or "")
+    if cat == "Premium":
+        return "✅ Já Premium"
+
+    sh_proj = float(row.get("sh_proj", 0.0))
+    acc = float(row.get("aceitacao_%", 0.0))
+    conc = float(row.get("conclusao_%", 0.0))
+
+    need_sh = sh_proj + 1e-6 < sh_meta
+    need_acc = acc + 1e-6 < acc_meta
+    need_conc = conc + 1e-6 < conc_meta
+
+    if not need_sh and (need_acc or need_conc):
+        return "🎯 Ajustar qualidade (aceitação/conclusão)"
+    if need_sh and not (need_acc or need_conc):
+        return "⏱️ Aumentar SH"
+    if need_sh and (need_acc or need_conc):
+        return "🔁 Ajustar SH + qualidade"
+    return "✅ Manter performance"
+
+
+# ---------------------- View principal ---------------------- #
+
+def render(df: pd.DataFrame, _USUARIOS: dict):
+    st.header("🚀 Quase Premium – Projeção e Oportunidades")
+
+    if df is None or df.empty:
+        st.info("Sem dados carregados.")
+        return
+
+    if "mes" not in df.columns or "ano" not in df.columns:
+        st.error("Base sem colunas 'mes' e 'ano'.")
+        return
+
+    # Filtro de período (igual outras telas)
+    col1, col2 = st.columns(2)
+    mes_sel = col1.selectbox("Mês", list(range(1, 13)))
+    anos_disp = sorted(df["ano"].dropna().unique().tolist(), reverse=True)
+    ano_sel = col2.selectbox("Ano", anos_disp)
+
+    df_mes = df[(df["mes"] == mes_sel) & (df["ano"] == ano_sel)].copy()
+    if df_mes.empty:
+        st.info("Nenhum dado para o período selecionado.")
+        return
+
+    # Classificação mensal usando as regras já existentes
+    df_cat = classificar_entregadores(df, mes_sel, ano_sel)
+    if df_cat.empty:
+        st.info("Nenhum entregador classificado para esse período.")
+        return
+
+    # Garante coluna 'data' (date)
+    if "data" not in df_mes.columns:
+        if "data_do_periodo" in df_mes.columns:
+            df_mes["data"] = pd.to_datetime(df_mes["data_do_periodo"], errors="coerce").dt.date
         else:
-            st.error("Usuário ou senha incorretos")
-    st.stop()
+            st.error("Base sem coluna de data ('data' ou 'data_do_periodo').")
+            return
 
-st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
+    # KPIs gerais de categoria
+    cont = (
+        df_cat["categoria"]
+        .value_counts()
+        .reindex(["Premium", "Conectado", "Casual", "Flutuante"])
+        .fillna(0)
+        .astype(int)
+    )
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("🏆 Premium", int(cont.get("Premium", 0)))
+    c2.metric("🎯 Conectado", int(cont.get("Conectado", 0)))
+    c3.metric("👍 Casual", int(cont.get("Casual", 0)))
+    c4.metric("↩ Flutuante", int(cont.get("Flutuante", 0)))
 
-# ---------------------------------------------------------
-# Menu (sem item duplicado de Início)
-# ---------------------------------------------------------
-MENU = {
-    "Desempenho do Entregador": {
-        "Ver geral": "views.ver_geral",
-        "Simplificada (WhatsApp)": "views.simplificada",
-        "Relatório Customizado": "views.relatorio_custom",
-        "Perfil do Entregador": "views.perfil_entregador",
-    },
-    "Relatórios": {
-        "Alertas de Faltas": "views.faltas",
-        "Relação de Entregadores": "views.relacao",
-        "Categorias de Entregadores": "views.categorias",
-        "Categorias (metas)": "views.quasepremium",
-        "Relatórios Subpraças": "views.rel_subpraca",
-        "Resumos": "views.resumos",
-        "Lista de Ativos": "views.lista_ativos",
-        "Comparar ativos": "views.comparar",
-        "Saídas": "views.saidas",
-        
-    },
-    "Dashboards": {
-        "UTR": "views.utr",
-        "Indicadores Gerais": "views.indicadores",
-    },
-}
+    # ---------------------- Monta base com projeção ---------------------- #
 
-# ---------------------------------------------------------
-# Helper: validade do acesso sigiloso
-# ---------------------------------------------------------
-def _sig_ok_now() -> bool:
-    ok = bool(st.session_state.get("_sig_ok"))
-    if not ok:
-        return False
-    until = st.session_state.get("_sig_until")  # ISO str ou None (sessão-only)
-    if until is None:
-        return True
-    try:
-        dt_until = datetime.fromisoformat(until)
-    except Exception:
-        return False
-    return datetime.now(TZ) <= dt_until
+    registros = []
+    sh_meta, acc_meta, conc_meta = 120.0, 65.0, 95.0
 
-# ---------------------------------------------------------
-# Sidebar
-# ---------------------------------------------------------
-with st.sidebar:
-    st.markdown("### Navegação")
-    # Botão Home dedicado
-    if st.button("Início", use_container_width=True):
-        st.session_state.module = "views.home"
-        st.session_state.open_cat = None
-        st.rerun()
-    
-    # --- Área Sigilosa no menu esquerdo (apenas admin/dev) ---
-    admins_list = set(st.secrets.get("ADMINS", []))
-    user_entry = USUARIOS.get(st.session_state.usuario, {}) or {}
-    nivel = user_entry.get("nivel", "")
-    is_sigiloso = (nivel in ("admin", "dev")) or (st.session_state.usuario in admins_list)
-    
-    if is_sigiloso:
-        with st.expander("Acesso restrito", expanded=True):
-            # Lista por entregador
-            if st.button("Comparativo entregador", use_container_width=True):
-                st.session_state.sig_target = "by_entregador"
-                if st.session_state.get("_sig_ok"):  # já validou nesta sessão
-                    st.session_state.sig_modo = "by_entregador"
-                    st.session_state.module = "views.auditoria_sigilosa"
-                else:
-                    st.session_state.module = "views.auditoria_gate"
-                st.session_state.open_cat = None
-                st.rerun()
-    
-            # Lista geral
-            if st.button("Comparativo geral", use_container_width=True):
-                st.session_state.sig_target = "geral"
-                if st.session_state.get("_sig_ok"):  # já validou nesta sessão
-                    st.session_state.sig_modo = "geral"
-                    st.session_state.module = "views.auditoria_sigilosa"
-                else:
-                    st.session_state.module = "views.auditoria_gate"
-                st.session_state.open_cat = None
-                st.rerun()
+    for _, row in df_cat.iterrows():
+        nome = row["pessoa_entregadora"]
+        chunk = df_mes[df_mes["pessoa_entregadora"] == nome].copy()
 
+        sh_atual = float(row.get("supply_hours", 0.0))
+        acc = float(row.get("aceitacao_%", 0.0))
+        conc = float(row.get("conclusao_%", 0.0))
 
-    # Submenus
-    for cat, opts in MENU.items():
-        if isinstance(opts, str):
-            if st.button(cat, use_container_width=True):
-                st.session_state.module = opts
-                st.session_state.open_cat = None
-                st.rerun()
-        else:
-            expanded = (st.session_state.open_cat == cat)
-            with st.expander(cat, expanded=expanded):
-                for label, module in opts.items():
-                    if st.button(label, key=f"btn_{cat}_{label}", use_container_width=True):
-                        st.session_state.module = module
-                        st.session_state.open_cat = cat
-                        st.rerun()
+        sh_proj, dias_mes, dias_passados, dias_ativos = _projecao_sh(chunk, sh_atual, mes_sel, ano_sel)
+        media_dia_ativo = (sh_atual / dias_ativos) if dias_ativos > 0 else 0.0
 
-# ---------------------------------------------------------
-# Dados (evita carregar a base inteira na área sigilosa)
-# ---------------------------------------------------------
-mod = st.session_state.module
-if mod in ("views.auditoria_sigilosa", "views.auditoria_gate"):
-    df = pd.DataFrame()  # não precisa aqui
-else:
-    df = carregar_dados(prefer_drive=st.session_state.pop("force_refresh", False))
-    if st.session_state.pop("just_refreshed", False):
-        st.success("✅ Base atualizada a partir do Google Drive.")
+        faltam_sh = max(sh_meta - sh_proj, 0.0)
+        faltam_acc = max(acc_meta - acc, 0.0)
+        faltam_conc = max(conc_meta - conc, 0.0)
 
-# ---------------------------------------------------------
-# Roteador
-# ---------------------------------------------------------
-try:
-    page = importlib.import_module(st.session_state.module)
-except Exception as e:
-    st.error(f"Erro ao carregar módulo **{st.session_state.module}**: {e}")
-else:
-    page.render(df, USUARIOS)
+        score = _score_proximidade(
+            sh_proj,
+            acc,
+            conc,
+            sh_meta=sh_meta,
+            acc_meta=acc_meta,
+            conc_meta=conc_meta,
+        )
+
+        registros.append(
+            {
+                "pessoa_entregadora": nome,
+                "categoria": row.get("categoria"),
+                "supply_hours": sh_atual,
+                "aceitacao_%": acc,
+                "conclusao_%": conc,
+                "dias_ativos": dias_ativos,
+                "dias_passados_no_mes": dias_passados,
+                "dias_mes": dias_mes,
+                "media_sh_dia_ativo": media_dia_ativo,
+                "sh_proj": sh_proj,
+                "faltam_sh_para_premium": faltam_sh,
+                "faltam_acc_pontos": faltam_acc,
+                "faltam_conc_pontos": faltam_conc,
+                "score_proximidade": score,
+            }
+        )
+
+    base = pd.DataFrame(registros)
+    if base.empty:
+        st.info("Sem base para projeção.")
+        return
+
+    base["tipo_acao"] = base.apply(_tipo_acao, axis=1)
+
+    # badge visual pros bem próximos
+    def _badge_score(row):
+        s = float(row["score_proximidade"])
+        if s >= 95:
+            return "🔥 Muito perto"
+        if s >= 85:
+            return "🚀 Quase lá"
+        if s >= 70:
+            return "👀 Bom potencial"
+        return "🧱 Longe ainda"
+
+    base["tag_proximidade"] = base.apply(_badge_score, axis=1)
+
+    # ---------------------- Filtros e exibição ---------------------- #
+
+    score_min = st.slider(
+        "Filtrar por score mínimo de proximidade",
+        min_value=0,
+        max_value=100,
+        value=70,
+        step=5,
+        help="Mostra apenas quem está mais perto de virar Premium, considerando projeção de SH + aceitação + conclusão.",
+    )
+
+    # (opcional) não mostrar já Premium se quiser focar em 'quase'
+    mostrar_premium = st.checkbox("Incluir quem já é Premium na lista", value=False)
+
+    base_f = base[base["score_proximidade"] >= score_min].copy()
+    if not mostrar_premium:
+        base_f = base_f[base_f["categoria"] != "Premium"]
+
+    base_f = base_f.sort_values(
+        ["score_proximidade", "supply_hours"], ascending=[False, False]
+    )
+
+    st.subheader(f"Candidatos a Premium – {mes_sel:02d}/{ano_sel}")
+
+    if base_f.empty:
+        st.info("Nenhum entregador com score acima do limite selecionado.")
+    else:
+        cols_show = [
+            "pessoa_entregadora",
+            "categoria",
+            "score_proximidade",
+            "tag_proximidade",
+            "supply_hours",
+            "sh_proj",
+            "media_sh_dia_ativo",
+            "dias_ativos",
+            "aceitacao_%",
+            "conclusao_%",
+            "faltam_sh_para_premium",
+            "faltam_acc_pontos",
+            "faltam_conc_pontos",
+            "tipo_acao",
+        ]
+
+        fmt = {
+            "score_proximidade": "{:.1f}",
+            "supply_hours": "{:.1f}",
+            "sh_proj": "{:.1f}",
+            "media_sh_dia_ativo": "{:.2f}",
+            "aceitacao_%": "{:.1f}",
+            "conclusao_%": "{:.1f}",
+            "faltam_sh_para_premium": "{:.1f}",
+            "faltam_acc_pontos": "{:.1f}",
+            "faltam_conc_pontos": "{:.1f}",
+        }
+
+        st.dataframe(
+            base_f[cols_show]
+            .rename(
+                columns={
+                    "pessoa_entregadora": "Entregador",
+                    "categoria": "Categoria",
+                    "score_proximidade": "Score proximidade",
+                    "tag_proximidade": "Tag",
+                    "supply_hours": "SH atual (h)",
+                    "sh_proj": "SH proj. (h)",
+                    "media_sh_dia_ativo": "Média SH/dia ativo",
+                    "dias_ativos": "Dias ativos",
+                    "aceitacao_%": "Aceitação %",
+                    "conclusao_%": "Conclusão %",
+                    "faltam_sh_para_premium": "Faltam SH (proj.)",
+                    "faltam_acc_pontos": "Faltam p.p. aceitação",
+                    "faltam_conc_pontos": "Faltam p.p. conclusão",
+                    "tipo_acao": "Tipo de ação",
+                }
+            )
+            .style.format(fmt),
+            use_container_width=True,
+        )
+
+        csv = base_f[cols_show].to_csv(index=False, decimal=",").encode("utf-8")
+        st.download_button(
+            "⬇️ Baixar CSV (candidatos a Premium)",
+            data=csv,
+            file_name=f"quase_premium_{ano_sel}_{mes_sel:02d}.csv",
+            mime="text/csv",
+        )
+
+    with st.expander("ℹ️ Como o score é calculado?"):
+        st.markdown(
+            """
+            - O **score de proximidade (0–100)** considera:
+              - Projeção de **SH** até o fim do mês (peso 40%)
+              - **Aceitação** atual (peso 30%)
+              - **Conclusão** atual (peso 30%)
+            - Metas usadas para Premium:
+              - SH ≥ **120h**
+              - Aceitação ≥ **65%**
+              - Conclusão ≥ **95%**
+            - A projeção de SH:
+              - usa média de horas por **dia ativo**
+              - exige pelo menos **3 dias ativos** no mês
+              - limita a média em 10h/dia e o total projetado em 180h,
+                pra evitar projeções irreais no começo do mês.
+            """
+        )
