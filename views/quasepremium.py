@@ -304,30 +304,4 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         mime="text/csv",
     )
 
-    # ---------- Explicação dos cálculos ----------
-    with st.expander("ℹ️ Entenda os cálculos"):
-        st.markdown(
-            """
-            **Critérios de Premium (os mesmos da tela de Categorias):**
-            - SH (Supply Hours) ≥ **120h** no mês  
-            - Aceitação ≥ **65%**  
-            - Conclusão ≥ **95%**
 
-            **Para cada entregador, no mês selecionado:**
-            - **SH no mês (h)**: vem de `classificar_entregadores`, somando as horas do mês.
-            - **Dias ativos no mês**: quantidade de dias em que ele teve tempo ou corridas > 0.
-            - **Média SH/dia ativo**: `SH no mês ÷ dias ativos`.
-            - **SH projetado (h)**: `Média SH/dia ativo × número de dias do mês`
-              (se ele mantiver o mesmo ritmo de horas quando está ativo).
-            - **Aceitação %** e **Conclusão %**: também vêm de `classificar_entregadores`.
-            - **Faltam SH**: quanto ainda falta para chegar em **120h** no mês.
-            - **Faltam p.p. aceitação**: diferença para os **65%** de aceitação.
-            - **Faltam p.p. conclusão**: diferença para os **95%** de conclusão.
-            - **Critérios Premium batidos**: quantos desses 3 limites ele já atingiu (0, 1, 2 ou 3).
-            - **Tag**:
-                - 🏆 Já Premium      → já está Premium.
-                - 🚀 Quase Premium   → já cumpre 2 dos 3 critérios.
-                - 👀 Bom potencial   → cumpre 1 dos 3.
-                - 🧱 Longe ainda     → ainda não bate nenhum critério.
-            """
-        )
