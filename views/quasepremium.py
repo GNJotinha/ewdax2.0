@@ -20,55 +20,57 @@ def _ativacao_mask(df_chunk: pd.DataFrame) -> pd.Series:
 
 def _projecao_sh(df_mes: pd.DataFrame, sh_atual: float, mes: int, ano: int) -> tuple[float, int, int, int]:
     """
-    Retorna (sh_proj, dias_mes, dias_passados, dias_ativos).
+    Retorna (sh_proj, dias_mes, dias_passados, dias_ativos)
 
-    Projeção conservadora:
-      - exige pelo menos 3 dias ativos no mês
-      - limita média SH/dia ativo em 10h
-      - projeta SH_extra = média_dia_ativo * dias_restantes
-      - cap de SH projetado em 180h (não precisa mais que isso pra saber se bate 120)
+    Projeção com realismo:
+      - exige pelo menos 6 dias ativos
+      - aplica fator de confiança (menos dias = menor projeção)
+      - nunca projeta mais que o dobro do SH atual
+      - cap global em 160h
     """
     dias_mes = calendar.monthrange(ano, mes)[1]
-
     if df_mes.empty or sh_atual <= 0:
         return 0.0, dias_mes, 0, 0
 
-    # datas do mês
+    # datas válidas
     if "data_do_periodo" in df_mes.columns:
         datas = pd.to_datetime(df_mes["data_do_periodo"], errors="coerce")
     else:
         datas = pd.to_datetime(df_mes["data"], errors="coerce")
     datas = datas.dropna()
 
-    if datas.empty:
-        return float(sh_atual), dias_mes, 0, 0
-
-    # considera só datas do mês/ano alvo
+    # só o mês/ano alvo
     datas_mes = datas[(datas.dt.month == mes) & (datas.dt.year == ano)]
     if datas_mes.empty:
         return float(sh_atual), dias_mes, 0, 0
 
-    ultimo_dia = datas_mes.max()
-    dia_atual_mes = int(ultimo_dia.day)
+    dia_atual_mes = int(datas_mes.max().day)
 
     # dias com atuação
     mask_ativo = _ativacao_mask(df_mes)
     datas_ativas = datas_mes[mask_ativo.reindex(df_mes.index, fill_value=False)]
     dias_ativos = int(datas_ativas.dt.date.nunique()) if not datas_ativas.empty else 0
 
-    # pouco dado => não inventa projeção
-    if dias_ativos < 3 or dia_atual_mes <= 0:
+    # base mínima pra arriscar projeção
+    if dias_ativos < 6 or dia_atual_mes <= 0:
         return float(sh_atual), dias_mes, dia_atual_mes, dias_ativos
 
-    # média por dia ativo, com teto
     media_sh_dia_ativo = sh_atual / dias_ativos
     media_sh_dia_ativo = float(min(media_sh_dia_ativo, 10.0))  # teto 10h/dia
 
     dias_restantes = max(dias_mes - dia_atual_mes, 0)
-    sh_extra = media_sh_dia_ativo * dias_restantes
 
-    # cap em 180h pra não ficar bizarro
-    sh_proj = min(sh_atual + sh_extra, 180.0)
+    # fator de confiança: começo de mês projeta menos
+    # ratio <=1 -> elevar a 1.5 deixa ainda menor
+    ratio = dias_ativos / max(dia_atual_mes, 1)
+    fator_confianca = min(ratio ** 1.5, 1.0)
+
+    sh_extra = media_sh_dia_ativo * dias_restantes * fator_confianca
+
+    sh_proj = sh_atual + sh_extra
+    # nunca mais que o dobro do atual nem mais que 160h
+    sh_proj = min(sh_proj, sh_atual * 2, 160.0)
+
     return float(sh_proj), dias_mes, dia_atual_mes, dias_ativos
 
 
@@ -76,13 +78,14 @@ def _score_proximidade(
     sh_proj: float,
     acc: float,
     conc: float,
+    dias_ativos: int,
     sh_meta: float = 120.0,
     acc_meta: float = 65.0,
     conc_meta: float = 95.0,
 ) -> float:
     """
-    Score 0–100 de quão perto está do Premium, usando projeção de SH.
-    Penaliza base muito baixa e clampa em [0, 100].
+    Score 0–100 de quão perto está do Premium.
+    Considera projeção de SH + taxas, e penaliza pouca base de dias ativos.
     """
     # normaliza cada critério em [0,1]
     p_sh = min(max(sh_proj / sh_meta, 0.0), 1.0) if sh_meta > 0 else 0.0
@@ -91,9 +94,15 @@ def _score_proximidade(
 
     score = (0.4 * p_sh + 0.3 * p_acc + 0.3 * p_con) * 100.0
 
-    # se os números ainda são muito baixos, dá uma segurada
+    # se números muito baixos, segura
     if sh_proj < 40 or acc < 40 or conc < 60:
         score *= 0.7
+
+    # penaliza poucos dias ativos
+    if dias_ativos < 6:
+        score *= 0.5
+    elif dias_ativos < 10:
+        score *= 0.8
 
     score = max(0.0, min(score, 100.0))
     return float(round(score, 1))
@@ -203,6 +212,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             sh_proj,
             acc,
             conc,
+            dias_ativos,
             sh_meta=sh_meta,
             acc_meta=acc_meta,
             conc_meta=conc_meta,
@@ -258,7 +268,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         help="Mostra apenas quem está mais perto de virar Premium, considerando projeção de SH + aceitação + conclusão.",
     )
 
-    # (opcional) não mostrar já Premium se quiser focar em 'quase'
     mostrar_premium = st.checkbox("Incluir quem já é Premium na lista", value=False)
 
     base_f = base[base["score_proximidade"] >= score_min].copy()
@@ -345,11 +354,3 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             - Metas usadas para Premium:
               - SH ≥ **120h**
               - Aceitação ≥ **65%**
-              - Conclusão ≥ **95%**
-            - A projeção de SH:
-              - usa média de horas por **dia ativo**
-              - exige pelo menos **3 dias ativos** no mês
-              - limita a média em 10h/dia e o total projetado em 180h,
-                pra evitar projeções irreais no começo do mês.
-            """
-        )
