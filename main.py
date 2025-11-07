@@ -99,7 +99,7 @@ MENU = {
         "Alertas de Faltas": "views.faltas",
         "Relação de Entregadores": "views.relacao",
         "Categorias de Entregadores": "views.categorias",
-        "Categorias (metas)": "views.categorias_metas",
+        "Categorias (metas)": "views.quasepremium",
         "Relatórios Subpraças": "views.rel_subpraca",
         "Resumos": "views.resumos",
         "Lista de Ativos": "views.lista_ativos",
