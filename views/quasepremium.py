@@ -366,3 +366,4 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
               - ou os números de SH/aceitação/conclusão ainda são muito baixos.
             """
         )
+
