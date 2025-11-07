@@ -7,7 +7,10 @@ from relatorios import classificar_entregadores
 # ---------------------- Helpers básicos ---------------------- #
 
 def _ativacao_mask(df_chunk: pd.DataFrame) -> pd.Series:
-    """True para linhas em que houve alguma atuação (SH, corridas etc.)."""
+    """
+    Retorna uma Series booleana marcando linhas onde houve atuação
+    (tempo online ou corridas > 0).
+    """
     if df_chunk is None or df_chunk.empty:
         return pd.Series(False, index=(df_chunk.index if df_chunk is not None else []))
 
@@ -20,27 +23,31 @@ def _ativacao_mask(df_chunk: pd.DataFrame) -> pd.Series:
 
 def _projecao_sh(df_mes: pd.DataFrame, sh_atual: float, mes: int, ano: int) -> tuple[float, int, int, int]:
     """
-    Retorna (sh_proj, dias_mes, dias_passados, dias_ativos)
+    Calcula projeção de SH do entregador até o fim do mês.
 
-    Projeção com realismo:
-      - exige pelo menos 6 dias ativos
-      - aplica fator de confiança (menos dias = menor projeção)
-      - nunca projeta mais que o dobro do SH atual
-      - cap global em 160h
+    Retorna: (sh_proj, dias_mes, dias_passados, dias_ativos)
+
+    Regras de "realismo":
+      - exige pelo menos 6 dias ativos no mês pra projetar
+      - aplica fator de confiança:
+          quanto menor o % de dias ativos até agora, mais conservadora a projeção
+      - limita média SH/dia ativo em 10h
+      - nunca projeta mais que 2x o SH atual
+      - cap global em 160h (não precisa mais que isso pra avaliar Premium)
     """
     dias_mes = calendar.monthrange(ano, mes)[1]
+
     if df_mes.empty or sh_atual <= 0:
         return 0.0, dias_mes, 0, 0
 
-    # datas válidas
+    # datas "reais" do mês
     if "data_do_periodo" in df_mes.columns:
         datas = pd.to_datetime(df_mes["data_do_periodo"], errors="coerce")
     else:
         datas = pd.to_datetime(df_mes["data"], errors="coerce")
     datas = datas.dropna()
 
-    # só o mês/ano alvo
-    datas_mes = datas[(datas.dt.month == mes) & (datas.dt.year == ano)]
+    datas_mes = datas[(datas.dt.year == ano) & (datas.dt.month == mes)]
     if datas_mes.empty:
         return float(sh_atual), dias_mes, 0, 0
 
@@ -55,20 +62,20 @@ def _projecao_sh(df_mes: pd.DataFrame, sh_atual: float, mes: int, ano: int) -> t
     if dias_ativos < 6 or dia_atual_mes <= 0:
         return float(sh_atual), dias_mes, dia_atual_mes, dias_ativos
 
-    media_sh_dia_ativo = sh_atual / dias_ativos
-    media_sh_dia_ativo = float(min(media_sh_dia_ativo, 10.0))  # teto 10h/dia
+    # média de horas por dia ativo (teto 10h/dia)
+    media_sh_dia_ativo = sh_atual / dias_ativos if dias_ativos > 0 else 0.0
+    media_sh_dia_ativo = float(min(media_sh_dia_ativo, 10.0))
 
     dias_restantes = max(dias_mes - dia_atual_mes, 0)
 
-    # fator de confiança: começo de mês projeta menos
-    # ratio <=1 -> elevar a 1.5 deixa ainda menor
+    # fator de confiança: quanto mais dias ativos vs dias passados, maior
     ratio = dias_ativos / max(dia_atual_mes, 1)
-    fator_confianca = min(ratio ** 1.5, 1.0)
+    fator_confianca = min(ratio ** 1.5, 1.0)  # começo de mês fica bem mais conservador
 
     sh_extra = media_sh_dia_ativo * dias_restantes * fator_confianca
 
     sh_proj = sh_atual + sh_extra
-    # nunca mais que o dobro do atual nem mais que 160h
+    # nunca mais que 2x o atual, nem mais que 160h
     sh_proj = min(sh_proj, sh_atual * 2, 160.0)
 
     return float(sh_proj), dias_mes, dia_atual_mes, dias_ativos
@@ -85,20 +92,21 @@ def _score_proximidade(
 ) -> float:
     """
     Score 0–100 de quão perto está do Premium.
-    Considera projeção de SH + taxas, e penaliza pouca base de dias ativos.
+    Considera projeção de SH + aceitação + conclusão e penaliza pouca base.
     """
     # normaliza cada critério em [0,1]
     p_sh = min(max(sh_proj / sh_meta, 0.0), 1.0) if sh_meta > 0 else 0.0
     p_acc = min(max(acc / acc_meta, 0.0), 1.0) if acc_meta > 0 else 0.0
     p_con = min(max(conc / conc_meta, 0.0), 1.0) if conc_meta > 0 else 0.0
 
+    # pesos: SH 40%, aceitação 30%, conclusão 30%
     score = (0.4 * p_sh + 0.3 * p_acc + 0.3 * p_con) * 100.0
 
-    # se números muito baixos, segura
+    # se números ainda muito baixos, segura a empolgação
     if sh_proj < 40 or acc < 40 or conc < 60:
         score *= 0.7
 
-    # penaliza poucos dias ativos
+    # penalização por pouca consistência de atuação no mês
     if dias_ativos < 6:
         score *= 0.5
     elif dias_ativos < 10:
@@ -114,7 +122,13 @@ def _tipo_acao(
     acc_meta: float = 65.0,
     conc_meta: float = 95.0,
 ) -> str:
-    """Texto de qual “coaching” faz mais sentido."""
+    """
+    Classifica qual tipo de ação faz mais sentido pro entregador:
+      - aumentar SH
+      - melhorar qualidade
+      - ambos
+      - ou já está ok
+    """
     cat = str(row.get("categoria", "") or "")
     if cat == "Premium":
         return "✅ Já Premium"
@@ -149,7 +163,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.error("Base sem colunas 'mes' e 'ano'.")
         return
 
-    # Filtro de período (igual outras telas)
+    # Filtro de período (mes/ano) igual outras telas
     col1, col2 = st.columns(2)
     mes_sel = col1.selectbox("Mês", list(range(1, 13)))
     anos_disp = sorted(df["ano"].dropna().unique().tolist(), reverse=True)
@@ -160,13 +174,13 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.info("Nenhum dado para o período selecionado.")
         return
 
-    # Classificação mensal usando as regras já existentes
+    # Classificação mensal com as regras existentes de categoria
     df_cat = classificar_entregadores(df, mes_sel, ano_sel)
     if df_cat.empty:
         st.info("Nenhum entregador classificado para esse período.")
         return
 
-    # Garante coluna 'data' (date)
+    # Garante coluna 'data'
     if "data" not in df_mes.columns:
         if "data_do_periodo" in df_mes.columns:
             df_mes["data"] = pd.to_datetime(df_mes["data_do_periodo"], errors="coerce").dt.date
@@ -244,7 +258,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     base["tipo_acao"] = base.apply(_tipo_acao, axis=1)
 
-    # badge visual pros bem próximos
+    # Tag visual pra bater o olho
     def _badge_score(row):
         s = float(row["score_proximidade"])
         if s >= 95:
@@ -366,4 +380,3 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
               - ou os números de SH/aceitação/conclusão ainda são muito baixos.
             """
         )
-
