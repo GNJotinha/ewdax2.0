@@ -94,6 +94,7 @@ MENU = {
         "Simplificada (WhatsApp)": "views.simplificada",
         "Relatório Customizado": "views.relatorio_custom",
         "Perfil do Entregador": "views.perfil_entregador",
+        "Melhores do Mês: "views.top_mensal",
     },
     "Relatórios": {
         "Alertas de Faltas": "views.faltas",
