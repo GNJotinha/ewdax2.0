@@ -1,0 +1,316 @@
+import streamlit as st
+import pandas as pd
+import calendar
+from relatorios import classificar_entregadores
+
+
+def _ativacao_mask(df_chunk: pd.DataFrame) -> pd.Series:
+    """True para linhas em que houve alguma atuação (SH, corridas etc.)."""
+    if df_chunk is None or df_chunk.empty:
+        return pd.Series(False, index=df_chunk.index if df_chunk is not None else [])
+    seg = pd.to_numeric(df_chunk.get("segundos_abs", 0), errors="coerce").fillna(0)
+    ofe = pd.to_numeric(df_chunk.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0)
+    ace = pd.to_numeric(df_chunk.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0)
+    com = pd.to_numeric(df_chunk.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0)
+    return (seg > 0) | (ofe > 0) | (ace > 0) | (com > 0)
+
+
+def _projecao_sh(df_mes: pd.DataFrame, sh_atual: float, mes: int, ano: int) -> tuple[float, int, int, int]:
+    """
+    Retorna (sh_proj, dias_mes, dias_passados, dias_ativos)
+
+    - dias_passados = último dia com dado na base (do próprio mês)
+    - dias_ativos   = quantos dias com atuação
+    - sh_proj       = projeção de SH no fim do mês, considerando:
+        * média SH/dia_ativo
+        * % de dias ativos até agora
+    """
+    if df_mes.empty or sh_atual <= 0:
+        dias_mes = calendar.monthrange(ano, mes)[1]
+        return 0.0, dias_mes, 0, 0
+
+    # garante datetime
+    datas = pd.to_datetime(
+        df_mes["data_do_periodo"] if "data_do_periodo" in df_mes.columns else df_mes["data"],
+        errors="coerce"
+    )
+    datas = datas.dropna()
+    if datas.empty:
+        dias_mes = calendar.monthrange(ano, mes)[1]
+        return sh_atual, dias_mes, 0, 0
+
+    ultimo_dia = datas.max()
+    if (ultimo_dia.month != mes) or (ultimo_dia.year != ano):
+        # se a base tiver “sobra” de outros meses, filtra
+        datas = datas[(datas.dt.month == mes) & (datas.dt.year == ano)]
+        if datas.empty:
+            dias_mes = calendar.monthrange(ano, mes)[1]
+            return sh_atual, dias_mes, 0, 0
+        ultimo_dia = datas.max()
+
+    dia_atual_mes = int(ultimo_dia.day)
+    dias_mes = calendar.monthrange(ano, mes)[1]
+
+    # dias com atuação
+    mask_ativo = _ativacao_mask(df_mes)
+    datas_ativas = datas[mask_ativo.reindex(df_mes.index, fill_value=False)]
+    dias_ativos = int(datas_ativas.dt.date.nunique()) if not datas_ativas.empty else 0
+
+    if dia_atual_mes <= 0 or dias_ativos <= 0:
+        return sh_atual, dias_mes, dia_atual_mes, dias_ativos
+
+    media_sh_dia_ativo = sh_atual / dias_ativos
+    # % de dias em que ele atuou até agora
+    pct_dias_ativos = dias_ativos / max(dia_atual_mes, 1)
+
+    if dia_atual_mes >= dias_mes:
+        # mês já “fechado” na base → projeção = atual
+        return float(sh_atual), dias_mes, dia_atual_mes, dias_ativos
+
+    dias_restantes = dias_mes - dia_atual_mes
+    sh_extra = media_sh_dia_ativo * pct_dias_ativos * dias_restantes
+    sh_proj = float(sh_atual + sh_extra)
+    return sh_proj, dias_mes, dia_atual_mes, dias_ativos
+
+
+def _score_proximidade(
+    sh_proj: float,
+    acc: float,
+    conc: float,
+    sh_meta: float = 120.0,
+    acc_meta: float = 65.0,
+    conc_meta: float = 95.0,
+) -> float:
+    # normaliza cada critério em [0,1]
+    p_sh = min(max(sh_proj / sh_meta, 0.0), 1.0) if sh_meta > 0 else 0.0
+    p_acc = min(max(acc / acc_meta, 0.0), 1.0) if acc_meta > 0 else 0.0
+    p_con = min(max(conc / conc_meta, 0.0), 1.0) if conc_meta > 0 else 0.0
+
+    score = (0.4 * p_sh + 0.3 * p_acc + 0.3 * p_con) * 100.0
+    return float(round(score, 1))
+
+
+def _tipo_acao(
+    row,
+    sh_meta: float = 120.0,
+    acc_meta: float = 65.0,
+    conc_meta: float = 95.0,
+) -> str:
+    cat = str(row.get("categoria", "") or "")
+    if cat == "Premium":
+        return "✅ Já Premium"
+
+    sh_proj = float(row.get("sh_proj", 0.0))
+    acc = float(row.get("aceitacao_%", 0.0))
+    conc = float(row.get("conclusao_%", 0.0))
+
+    need_sh = sh_proj < sh_meta
+    need_acc = acc < acc_meta
+    need_conc = conc < conc_meta
+
+    if not need_sh and (need_acc or need_conc):
+        return "🎯 Ajustar qualidade (aceitação/conclusão)"
+    if need_sh and not (need_acc or need_conc):
+        return "⏱️ Aumentar SH"
+    if need_sh and (need_acc or need_conc):
+        return "🔁 Ajustar SH + qualidade"
+    return "✅ Manter performance"
+
+
+def render(df: pd.DataFrame, _USUARIOS: dict):
+    st.header("🚀 Quase Premium – Projeção e Oportunidades")
+
+    if df is None or df.empty:
+        st.info("Sem dados carregados.")
+        return
+
+    if "mes" not in df.columns or "ano" not in df.columns:
+        st.error("Base sem colunas 'mes' e 'ano'.")
+        return
+
+    # Seletor de mês/ano (igual outras telas)
+    col1, col2 = st.columns(2)
+    mes_sel = col1.selectbox("Mês", list(range(1, 13)))
+    anos_disp = sorted(df["ano"].dropna().unique().tolist(), reverse=True)
+    ano_sel = col2.selectbox("Ano", anos_disp)
+
+    # Recorte da base do mês/ano
+    df_mes = df[(df["mes"] == mes_sel) & (df["ano"] == ano_sel)].copy()
+    if df_mes.empty:
+        st.info("Nenhum dado para o período selecionado.")
+        return
+
+    # Classificação mensal (usa as mesmas regras de categoria)
+    df_cat = classificar_entregadores(df, mes_sel, ano_sel)
+    if df_cat.empty:
+        st.info("Nenhum entregador classificado para esse período.")
+        return
+
+    # Garantir colunas básicas de data
+    if "data" not in df_mes.columns:
+        if "data_do_periodo" in df_mes.columns:
+            df_mes["data"] = pd.to_datetime(df_mes["data_do_periodo"], errors="coerce").dt.date
+        else:
+            st.error("Base sem coluna de data ('data' ou 'data_do_periodo').")
+            return
+
+    # KPIs de categorias (contexto geral)
+    cont = (
+        df_cat["categoria"]
+        .value_counts()
+        .reindex(["Premium", "Conectado", "Casual", "Flutuante"])
+        .fillna(0)
+        .astype(int)
+    )
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("🏆 Premium", int(cont.get("Premium", 0)))
+    c2.metric("🎯 Conectado", int(cont.get("Conectado", 0)))
+    c3.metric("👍 Casual", int(cont.get("Casual", 0)))
+    c4.metric("↩ Flutuante", int(cont.get("Flutuante", 0)))
+
+    # Junta com projeções
+    registros = []
+    for _, row in df_cat.iterrows():
+        nome = row["pessoa_entregadora"]
+        chunk = df_mes[df_mes["pessoa_entregadora"] == nome].copy()
+
+        sh_atual = float(row.get("supply_hours", 0.0))
+        acc = float(row.get("aceitacao_%", 0.0))
+        conc = float(row.get("conclusao_%", 0.0))
+
+        sh_proj, dias_mes, dias_passados, dias_ativos = _projecao_sh(chunk, sh_atual, mes_sel, ano_sel)
+        media_dia_ativo = (sh_atual / dias_ativos) if dias_ativos > 0 else 0.0
+
+        # gaps até Premium usando projeção
+        sh_meta, acc_meta, conc_meta = 120.0, 65.0, 95.0
+        faltam_sh = max(sh_meta - sh_proj, 0.0)
+        faltam_acc = max(acc_meta - acc, 0.0)
+        faltam_conc = max(conc_meta - conc, 0.0)
+
+        score = _score_proximidade(
+            sh_proj,
+            acc,
+            conc,
+            sh_meta=sh_meta,
+            acc_meta=acc_meta,
+            conc_meta=conc_meta,
+        )
+
+        registros.append(
+            {
+                "pessoa_entregadora": nome,
+                "categoria": row.get("categoria"),
+                "supply_hours": sh_atual,
+                "aceitacao_%": acc,
+                "conclusao_%": conc,
+                "dias_ativos": dias_ativos,
+                "dias_passados_no_mes": dias_passados,
+                "dias_mes": dias_mes,
+                "media_sh_dia_ativo": media_dia_ativo,
+                "sh_proj": sh_proj,
+                "faltam_sh_para_premium": faltam_sh,
+                "faltam_acc_pontos": faltam_acc,
+                "faltam_conc_pontos": faltam_conc,
+                "score_proximidade": score,
+            }
+        )
+
+    base = pd.DataFrame(registros)
+    if base.empty:
+        st.info("Sem base para projeção.")
+        return
+
+    base["tipo_acao"] = base.apply(_tipo_acao, axis=1)
+
+    # Filtro por score mínimo
+    score_min = st.slider(
+        "Filtrar por score mínimo de proximidade",
+        min_value=0,
+        max_value=100,
+        value=70,
+        step=5,
+        help="Mostra apenas quem está mais perto de virar Premium, considerando projeção de SH + aceitação + conclusão.",
+    )
+
+    base_f = base[base["score_proximidade"] >= score_min].copy()
+    base_f = base_f.sort_values(["score_proximidade", "supply_hours"], ascending=[False, False])
+
+    st.subheader(f"Candidatos a Premium – {mes_sel:02d}/{ano_sel}")
+    if base_f.empty:
+        st.info("Nenhum entregador com score acima do limite selecionado.")
+    else:
+        cols_show = [
+            "pessoa_entregadora",
+            "categoria",
+            "score_proximidade",
+            "supply_hours",
+            "sh_proj",
+            "media_sh_dia_ativo",
+            "dias_ativos",
+            "aceitacao_%",
+            "conclusao_%",
+            "faltam_sh_para_premium",
+            "faltam_acc_pontos",
+            "faltam_conc_pontos",
+            "tipo_acao",
+        ]
+        fmt = {
+            "score_proximidade": "{:.1f}",
+            "supply_hours": "{:.1f}",
+            "sh_proj": "{:.1f}",
+            "media_sh_dia_ativo": "{:.2f}",
+            "aceitacao_%": "{:.1f}",
+            "conclusao_%": "{:.1f}",
+            "faltam_sh_para_premium": "{:.1f}",
+            "faltam_acc_pontos": "{:.1f}",
+            "faltam_conc_pontos": "{:.1f}",
+        }
+        st.dataframe(
+            base_f[cols_show]
+            .rename(
+                columns={
+                    "pessoa_entregadora": "Entregador",
+                    "categoria": "Categoria",
+                    "score_proximidade": "Score proximidade",
+                    "supply_hours": "SH atual (h)",
+                    "sh_proj": "SH proj. (h)",
+                    "media_sh_dia_ativo": "Média SH/dia ativo",
+                    "dias_ativos": "Dias ativos",
+                    "aceitacao_%": "Aceitação %",
+                    "conclusao_%": "Conclusão %",
+                    "faltam_sh_para_premium": "Faltam SH (proj.)",
+                    "faltam_acc_pontos": "Faltam p.p. aceitação",
+                    "faltam_conc_pontos": "Faltam p.p. conclusão",
+                    "tipo_acao": "Tipo de ação",
+                }
+            )
+            .style.format(fmt),
+            use_container_width=True,
+        )
+
+        # Download
+        csv = base_f[cols_show].to_csv(index=False, decimal=",").encode("utf-8")
+        st.download_button(
+            "⬇️ Baixar CSV (candidatos a Premium)",
+            data=csv,
+            file_name=f"quase_premium_{ano_sel}_{mes_sel:02d}.csv",
+            mime="text/csv",
+        )
+
+    # Explicação rápida
+    with st.expander("ℹ️ Como o score é calculado?"):
+        st.markdown(
+            """
+            - O **score de proximidade (0–100)** considera:
+              - Projeção de **SH** até o fim do mês (peso 40%)
+              - **Aceitação** atual (peso 30%)
+              - **Conclusão** atual (peso 30%)
+            - As metas de Premium usadas são:
+              - SH ≥ **120h**
+              - Aceitação ≥ **65%**
+              - Conclusão ≥ **95%**
+            - A projeção de SH leva em conta:
+              - Média de horas por **dia ativo**
+              - Percentual de dias em que o entregador atuou até agora no mês
+            """
+        )
