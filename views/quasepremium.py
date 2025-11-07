@@ -91,6 +91,25 @@ def _tag_proximidade(n_hits: int, categoria: str) -> str:
     return "🧱 Longe ainda"
 
 
+def _fmt_1(v):
+    """Formata com 1 casa decimal."""
+    try:
+        return f"{float(v):.1f}"
+    except Exception:
+        return v
+
+
+def _fmt_1_blank_zero(v):
+    """1 casa decimal, mas troca zero por '—' pra não poluir."""
+    try:
+        val = float(v)
+        if abs(val) < 1e-9:
+            return "—"
+        return f"{val:.1f}"
+    except Exception:
+        return v
+
+
 # =========================
 # View principal
 # =========================
@@ -140,6 +159,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     # ---------- Construção da base "quase premium" ----------
     registros = []
     sh_meta, acc_meta, conc_meta = 120.0, 65.0, 95.0
+    dias_totais_mes = calendar.monthrange(ano_sel, mes_sel)[1]
 
     for _, row in df_cat.iterrows():
         nome = row["pessoa_entregadora"]
@@ -154,7 +174,10 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         dias_ativos = _dias_ativos_entregador(chunk, mes_sel, ano_sel)
         media_sh_dia_ativo = (sh / dias_ativos) if dias_ativos > 0 else 0.0
 
-        # quanto falta pra bater os critérios de Premium
+        # projeção simples: se mantiver essa média de SH/dia ativo o mês todo
+        sh_proj = media_sh_dia_ativo * dias_totais_mes
+
+        # quanto falta pra bater os critérios de Premium (sem projeção)
         faltam_sh = max(sh_meta - sh, 0.0)
         faltam_acc = max(acc_meta - acc, 0.0)
         faltam_conc = max(conc_meta - conc, 0.0)
@@ -167,6 +190,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 "pessoa_entregadora": nome,
                 "categoria": categoria,
                 "supply_hours": sh,
+                "sh_proj": sh_proj,
                 "aceitacao_%": acc,
                 "conclusao_%": conc,
                 "dias_ativos": dias_ativos,
@@ -205,9 +229,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     base_f = base_f[base_f["premium_hits"] >= min_hits]
 
-    # ordena: primeiro quem tem mais critérios batidos, depois SH maior
+    # ordena: primeiro quem tem mais critérios batidos, depois maior SH projetado
     base_f = base_f.sort_values(
-        ["premium_hits", "supply_hours"],
+        ["premium_hits", "sh_proj"],
         ascending=[False, False]
     )
 
@@ -222,6 +246,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         "tag_proximidade",
         "premium_hits_desc",
         "supply_hours",
+        "sh_proj",
         "media_sh_dia_ativo",
         "dias_ativos",
         "aceitacao_%",
@@ -231,17 +256,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         "faltam_conc_pontos",
     ]
 
-    fmt = {
-        "supply_hours": "{:.1f}",
-        "media_sh_dia_ativo": "{:.2f}",
-        "aceitacao_%": "{:.1f}",
-        "conclusao_%": "{:.1f}",
-        "faltam_sh_para_premium": "{:.1f}",
-        "faltam_acc_pontos": "{:.1f}",
-        "faltam_conc_pontos": "{:.1f}",
-    }
-
-    st.dataframe(
+    renamed = (
         base_f[cols_show]
         .rename(
             columns={
@@ -250,6 +265,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 "tag_proximidade": "Tag",
                 "premium_hits_desc": "Critérios Premium batidos",
                 "supply_hours": "SH no mês (h)",
+                "sh_proj": "SH projetado (h)",
                 "media_sh_dia_ativo": "Média SH/dia ativo",
                 "dias_ativos": "Dias ativos no mês",
                 "aceitacao_%": "Aceitação %",
@@ -259,12 +275,28 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 "faltam_conc_pontos": "Faltam p.p. conclusão",
             }
         )
-        .style.format(fmt),
-        use_container_width=True,
     )
 
+    styled = (
+        renamed
+        .style.format(
+            {
+                "SH no mês (h)": _fmt_1,
+                "SH projetado (h)": _fmt_1,
+                "Média SH/dia ativo": _fmt_1,
+                "Aceitação %": _fmt_1,
+                "Conclusão %": _fmt_1,
+                "Faltam SH": _fmt_1_blank_zero,
+                "Faltam p.p. aceitação": _fmt_1_blank_zero,
+                "Faltam p.p. conclusão": _fmt_1_blank_zero,
+            }
+        )
+    )
+
+    st.dataframe(styled, use_container_width=True)
+
     # ---------- Download CSV ----------
-    csv = base_f[cols_show].to_csv(index=False, decimal=",").encode("utf-8")
+    csv = renamed.to_csv(index=False, decimal=",").encode("utf-8")
     st.download_button(
         "⬇️ Baixar CSV (quase Premium)",
         data=csv,
@@ -276,24 +308,26 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     with st.expander("ℹ️ Entenda os cálculos"):
         st.markdown(
             """
-            **Critérios de Premium (mesmos da tela de Categorias):**
-            - SH (Supply Hours) ≥ **120h** no mês
-            - Aceitação ≥ **65%**
+            **Critérios de Premium (os mesmos da tela de Categorias):**
+            - SH (Supply Hours) ≥ **120h** no mês  
+            - Aceitação ≥ **65%**  
             - Conclusão ≥ **95%**
 
-            **Para cada entregador no mês selecionado:**
-            - `SH no mês (h)`: vem da função `classificar_entregadores`, somando o tempo do mês.
-            - `Dias ativos no mês`: quantos dias ele atuou (teve tempo ou corridas > 0).
-            - `Média SH/dia ativo`: SH no mês dividido pelos dias ativos.
-            - `Aceitação %` e `Conclusão %`: também vem de `classificar_entregadores` (métricas mensais).
-            - `Faltam SH`: quanto falta para chegar em **120h** no mês (se já passou, mostra 0).
-            - `Faltam p.p. aceitação`: quanto falta em **pontos percentuais** para chegar em 65%.
-            - `Faltam p.p. conclusão`: quanto falta em **pontos percentuais** para chegar em 95%.
-            - `Critérios Premium batidos`: quantos desses 3 limites ele já atingiu (0, 1, 2 ou 3).
-            - `Tag`:
-                - 🏆 Já Premium      → Já está na categoria Premium.
-                - 🚀 Quase Premium   → Já cumpre 2 dos 3 critérios.
-                - 👀 Bom potencial   → Cumpre 1 dos 3 critérios.
-                - 🧱 Longe ainda     → Não bate nenhum critério ainda.
+            **Para cada entregador, no mês selecionado:**
+            - **SH no mês (h)**: vem de `classificar_entregadores`, somando as horas do mês.
+            - **Dias ativos no mês**: quantidade de dias em que ele teve tempo ou corridas > 0.
+            - **Média SH/dia ativo**: `SH no mês ÷ dias ativos`.
+            - **SH projetado (h)**: `Média SH/dia ativo × número de dias do mês`
+              (se ele mantiver o mesmo ritmo de horas quando está ativo).
+            - **Aceitação %** e **Conclusão %**: também vêm de `classificar_entregadores`.
+            - **Faltam SH**: quanto ainda falta para chegar em **120h** no mês.
+            - **Faltam p.p. aceitação**: diferença para os **65%** de aceitação.
+            - **Faltam p.p. conclusão**: diferença para os **95%** de conclusão.
+            - **Critérios Premium batidos**: quantos desses 3 limites ele já atingiu (0, 1, 2 ou 3).
+            - **Tag**:
+                - 🏆 Já Premium      → já está Premium.
+                - 🚀 Quase Premium   → já cumpre 2 dos 3 critérios.
+                - 👀 Bom potencial   → cumpre 1 dos 3.
+                - 🧱 Longe ainda     → ainda não bate nenhum critério.
             """
         )
