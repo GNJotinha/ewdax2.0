@@ -354,3 +354,15 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             - Metas usadas para Premium:
               - SH ≥ **120h**
               - Aceitação ≥ **65%**
+              - Conclusão ≥ **95%**
+            - A projeção de SH:
+              - usa média de horas por **dia ativo**
+              - exige pelo menos **6 dias ativos** no mês
+              - aplica um fator de confiança (quanto mais cedo no mês, mais conservador)
+              - limita a média em 10h/dia e o total projetado em 160h,
+                e nunca projeta mais que o dobro do SH atual.
+            - O score ainda é penalizado quando:
+              - o entregador tem poucos dias ativos (<10),
+              - ou os números de SH/aceitação/conclusão ainda são muito baixos.
+            """
+        )
