@@ -204,21 +204,30 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     base_f = base_f[base_f["premium_hits"] >= min_hits]
 
-    base_f = base_f.sort_values(
-        ["premium_hits", "supply_hours"], ascending=[False, False]
-    )
+    base_f = base_f.sort_values(["premium_hits", "supply_hours"], ascending=[False, False])
 
     if base_f.empty:
         st.info("Nenhum entregador dentro dos filtros atuais.")
         return
 
-    # ---------- Destacar SH alto + aceitação baixa ----------
-    SH_ALTO = 100  # pode ajustar conforme a operação
+    # ---------- Destaques ----------
+    SH_ALTO = 100       # define o que é "bom SH"
+    SH_BAIXO = 60       # define o que é "baixo SH"
     ACEITACAO_BAIXA = 65
+    ACEITACAO_ALTA = 75
 
     def highlight_row(row):
-        if row["supply_hours"] >= SH_ALTO and row["aceitacao_%"] < ACEITACAO_BAIXA:
-            return ["background-color: #ffcccc"] * len(row)  # vermelho claro
+        try:
+            sh = row["SH no mês (h)"]
+            acc = row["Aceitação %"]
+            # vermelho: trabalha muito, mas rejeita muito
+            if sh >= SH_ALTO and acc < ACEITACAO_BAIXA:
+                return ["background-color: #ffcccc"] * len(row)
+            # amarelo: trabalha pouco, mas tem bom comportamento
+            elif sh <= SH_BAIXO and acc >= ACEITACAO_ALTA:
+                return ["background-color: #fff5ba"] * len(row)
+        except KeyError:
+            pass
         return [""] * len(row)
 
     # ---------- Tabela ----------
@@ -287,23 +296,25 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     with st.expander("ℹ️ Entenda os cálculos"):
         st.markdown(
             """
-            **Critérios de Premium (os mesmos da tela de Categorias):**
-            - SH (Supply Hours) ≥ **120h** no mês  
-            - Aceitação ≥ **65%**  
+            **Critérios de Premium:**
+            - SH ≥ **120h**
+            - Aceitação ≥ **65%**
             - Conclusão ≥ **95%**
 
             **Projeção de SH:**  
-            - Calculada como `média de SH por dia ativo × total de dias do mês`.
-            - Mostra o **potencial** se o entregador mantiver o mesmo ritmo de horas/dia ativo.
+            - Média de SH por dia ativo × número total de dias do mês.  
+              Mostra o **potencial** do entregador se mantiver o mesmo ritmo.
 
-            **Destaque em vermelho:**  
-            - Mostra quem tem **SH alto (≥ 100h)** mas **aceitação baixa (< 65%)**.  
-              São os entregadores que trabalham muito, mas rejeitam demais as corridas.
+            **Destaques de cor:**  
+            - 🔴 Vermelho → SH alto (≥ 100h) e Aceitação baixa (< 65%)  
+              → Trabalha muito, mas rejeita demais as corridas.  
+            - 🟡 Amarelo → SH baixo (≤ 60h) e Aceitação alta (≥ 75%)  
+              → Bom comportamento, mas pouca presença — precisa trabalhar mais dias.
 
             **Tags de proximidade:**  
-            - 🏆 Já Premium → já está Premium  
+            - 🏆 Já Premium → já é Premium  
             - 🚀 Quase Premium → cumpre 2 de 3 critérios  
             - 👀 Bom potencial → cumpre 1 de 3  
-            - 🧱 Longe ainda → ainda não bateu nenhum critério
+            - 🧱 Longe ainda → não bateu nenhum critério
             """
         )
