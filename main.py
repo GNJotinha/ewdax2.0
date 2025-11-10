@@ -148,7 +148,7 @@ with st.sidebar:
     is_sigiloso = (nivel in ("admin", "dev")) or (st.session_state.usuario in admins_list)
 
     if is_sigiloso:
-        with st.expander("Acesso restrito", expanded=True):
+        with st.expander("Acesso restrito", expanded=False):
             # Lista por entregador
             if st.button("Comparativo entregador", use_container_width=True):
                 st.session_state.sig_target = "by_entregador"
