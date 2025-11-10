@@ -64,7 +64,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     df_mes_atual = df[(df.get("mes") == mes_atual) & (df.get("ano") == ano_atual)].copy()
 
     # ---------------------------------------------------------
-    # Horas realizadas (mantido)
+    # Horas realizadas
     # ---------------------------------------------------------
     if tipo_grafico == "Horas realizadas":
         mensal_horas = (
@@ -110,7 +110,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         return
 
     # ---------------------------------------------------------
-    # Entregadores ativos (mantido)
+    # Entregadores ativos
     # ---------------------------------------------------------
     if tipo_grafico == "Entregadores ativos":
         mensal = (
@@ -154,7 +154,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         return
 
     # ---------------------------------------------------------
-    # Genéricos: ofertadas/aceitas/rejeitadas/completadas
+    # Corridas ofertadas / aceitas / rejeitadas / completadas
     # ---------------------------------------------------------
     col_map = {
         "Corridas ofertadas": ("numero_de_corridas_ofertadas", "Corridas ofertadas por mês", "Corridas"),
@@ -187,34 +187,42 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         # Label no formato: "N (x.xx UTR)"
         mensal["label"] = mensal.apply(lambda r: f"{int(r['valor'])} ({r['utr']:.2f} UTR)", axis=1)
 
-        fig = px.bar(
-            mensal,
-            x="mes_rotulo",
-            y="valor",
-            text="label",
-            title=titulo,
-            labels={"mes_rotulo": "Mês/Ano", "valor": label},
-            template="plotly_dark",
-            color_discrete_sequence=PRIMARY_COLOR,
-        )
-        fig.update_traces(texttemplate="<b>%{text}</b>", textposition="outside")
-    else:
-        fig = px.bar(
-            mensal,
-            x="mes_rotulo",
-            y="valor",
-            text="valor",
-            title=titulo,
-            labels={"mes_rotulo": "Mês/Ano", "valor": label},
-            template="plotly_dark",
-            color_discrete_sequence=PRIMARY_COLOR,
-        )
-        fig.update_traces(texttemplate="<b>%{text}</b>", textposition="outside")
+    elif tipo_grafico == "Corridas aceitas":
+        ref = df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum().rename(columns={"numero_de_corridas_ofertadas": "ref"})
+        mensal = mensal.merge(ref, on="mes_ano", how="left")
+        mensal["pct"] = (mensal["valor"] / mensal["ref"] * 100).fillna(0)
+        mensal["label"] = mensal.apply(lambda r: f"{int(r['valor'])} ({r['pct']:.0f}%)", axis=1)
 
+    elif tipo_grafico == "Corridas rejeitadas":
+        ref = df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum().rename(columns={"numero_de_corridas_ofertadas": "ref"})
+        mensal = mensal.merge(ref, on="mes_ano", how="left")
+        mensal["pct"] = (mensal["valor"] / mensal["ref"] * 100).fillna(0)
+        mensal["label"] = mensal.apply(lambda r: f"{int(r['valor'])} ({r['pct']:.0f}%)", axis=1)
+
+    elif tipo_grafico == "Corridas completadas":
+        ref = df.groupby("mes_ano", as_index=False)["numero_de_corridas_aceitas"].sum().rename(columns={"numero_de_corridas_aceitas": "ref"})
+        mensal = mensal.merge(ref, on="mes_ano", how="left")
+        mensal["pct"] = (mensal["valor"] / mensal["ref"] * 100).fillna(0)
+        mensal["label"] = mensal.apply(lambda r: f"{int(r['valor'])} ({r['pct']:.0f}%)", axis=1)
+    else:
+        mensal["label"] = mensal["valor"].astype(str)
+
+    # ---------- Gráfico ----------
+    fig = px.bar(
+        mensal,
+        x="mes_rotulo",
+        y="valor",
+        text="label",
+        title=titulo,
+        labels={"mes_rotulo": "Mês/Ano", "valor": label},
+        template="plotly_dark",
+        color_discrete_sequence=PRIMARY_COLOR,
+    )
+    fig.update_traces(texttemplate="<b>%{text}</b>", textposition="outside")
     fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---------- Por dia (mês atual) — linha e só quantidade ----------
+    # ---------- Por dia ----------
     por_dia = (
         df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
         .groupby("dia", as_index=False)[col].sum()
