@@ -30,6 +30,9 @@ def _utr_media_mensal(df: pd.DataFrame, mes: int, ano: int) -> float:
 def render(df: pd.DataFrame, _USUARIOS: dict):
     st.header("📊 Indicadores Gerais")
 
+    # ---------------------------------------------------------
+    # Tipo de gráfico
+    # ---------------------------------------------------------
     tipo_grafico = st.radio(
         "Tipo de gráfico:",
         [
@@ -55,13 +58,92 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             help="Como calcular a UTR exibida no gráfico MENSAL de ofertadas."
         )
 
-    # Recortes temporais
+    # ---------------------------------------------------------
+    # Datas base
+    # ---------------------------------------------------------
     hoje = pd.Timestamp.today()
     mes_atual = int(hoje.month)
     ano_atual = int(hoje.year)
 
     df = _ensure_mes_ano(df)
-    df_mes_atual = df[(df.get("mes") == mes_atual) & (df.get("ano") == ano_atual)].copy()
+
+    # ---------------------------------------------------------
+    # Filtros por praça / turno (se existirem)
+    # ---------------------------------------------------------
+    praca_col = None
+    for cand in ("praca", "praça", "subpraca", "sub_praca"):
+        if cand in df.columns:
+            praca_col = cand
+            break
+
+    turno_col = None
+    for cand in ("turno", "tipo_turno", "periodo"):
+        if cand in df.columns:
+            turno_col = cand
+            break
+
+    col_f1, col_f2 = st.columns(2)
+
+    praca_sel = None
+    if praca_col is not None:
+        op_praca = ["Todas"] + sorted(df[praca_col].dropna().unique().tolist())
+        praca_sel = col_f1.selectbox("Praça", op_praca, index=0)
+    turno_sel = None
+    if turno_col is not None:
+        op_turno = ["Todos"] + sorted(df[turno_col].dropna().unique().tolist())
+        turno_sel = col_f2.selectbox("Turno", op_turno, index=0)
+
+    # aplica filtros
+    if praca_col is not None and praca_sel not in (None, "Todas"):
+        df = df[df[praca_col] == praca_sel]
+    if turno_col is not None and turno_sel not in (None, "Todos"):
+        df = df[df[turno_col] == turno_sel]
+
+    # df do ano atual (já filtrado por praça/turno)
+    if "ano" in df.columns:
+        df_ano_atual = df[df["ano"] == ano_atual].copy()
+    else:
+        # fallback: tenta pela data
+        if "data" in df.columns:
+            df["data"] = pd.to_datetime(df["data"], errors="coerce")
+            df_ano_atual = df[df["data"].dt.year == ano_atual].copy()
+        else:
+            df_ano_atual = df.copy()
+
+    # df do mês atual (já filtrado)
+    if {"mes", "ano"}.issubset(df.columns):
+        df_mes_atual = df[(df.get("mes") == mes_atual) & (df.get("ano") == ano_atual)].copy()
+    else:
+        if "data" in df.columns:
+            df["data"] = pd.to_datetime(df["data"], errors="coerce")
+            df_mes_atual = df[
+                (df["data"].dt.month == mes_atual) & (df["data"].dt.year == ano_atual)
+            ].copy()
+        else:
+            df_mes_atual = df.copy()
+
+    # ---------------------------------------------------------
+    # Visão geral do ano (números gerais)
+    # ---------------------------------------------------------
+    st.markdown("### 📅 Números gerais do ano atual")
+
+    tot_ofert = df_ano_atual.get("numero_de_corridas_ofertadas", pd.Series(dtype=float)).sum()
+    tot_aceit = df_ano_atual.get("numero_de_corridas_aceitas", pd.Series(dtype=float)).sum()
+    tot_rej   = df_ano_atual.get("numero_de_corridas_rejeitadas", pd.Series(dtype=float)).sum()
+    tot_comp  = df_ano_atual.get("numero_de_corridas_completadas", pd.Series(dtype=float)).sum()
+
+    tx_aceit_ano = (tot_aceit / tot_ofert * 100) if tot_ofert > 0 else 0
+    tx_comp_ano  = (tot_comp / tot_aceit * 100) if tot_aceit > 0 else 0
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Ofertadas (ano)", f"{int(tot_ofert):,}".replace(",", "."))
+    c2.metric("Aceitas (ano)", f"{int(tot_aceit):,}".replace(",", "."),
+              help=f"Taxa de aceitação: {tx_aceit_ano:.1f}%")
+    c3.metric("Rejeitadas (ano)", f"{int(tot_rej):,}".replace(",", "."))
+    c4.metric("Completadas (ano)", f"{int(tot_comp):,}".replace(",", "."),
+              help=f"Taxa de completude: {tx_comp_ano:.1f}%")
+
+    st.divider()
 
     # ---------------------------------------------------------
     # Horas realizadas
@@ -207,7 +289,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     else:
         mensal["label"] = mensal["valor"].astype(str)
 
-    # ---------- Gráfico ----------
+    # ---------- Gráfico mensal ----------
     fig = px.bar(
         mensal,
         x="mes_rotulo",
@@ -222,21 +304,24 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---------- Por dia ----------
-    por_dia = (
-        df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-        .groupby("dia", as_index=False)[col].sum()
-        .rename(columns={col: "valor"})
-        .sort_values("dia")
-    )
+    # ---------- Por dia (mês atual) ----------
+    if not df_mes_atual.empty:
+        por_dia = (
+            df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
+            .groupby("dia", as_index=False)[col].sum()
+            .rename(columns={col: "valor"})
+            .sort_values("dia")
+        )
 
-    fig2 = px.line(
-        por_dia,
-        x="dia",
-        y="valor",
-        title=f"📈 {label} por dia (mês atual)",
-        labels={"dia": "Dia", "valor": label},
-        template="plotly_dark",
-    )
-    fig2.update_layout(margin=dict(t=60, b=30, l=40, r=40))
-    st.plotly_chart(fig2, use_container_width=True)
+        fig2 = px.line(
+            por_dia,
+            x="dia",
+            y="valor",
+            title=f"📈 {label} por dia (mês atual)",
+            labels={"dia": "Dia", "valor": label},
+            template="plotly_dark",
+        )
+        fig2.update_layout(margin=dict(t=60, b=30, l=40, r=40))
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.info("Sem dados no mês atual.")
