@@ -318,4 +318,5 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         title=f"📊 {label} por dia (mês atual)",
         labels={"dia": "Dia", "valor": label},
         template="plotly_dark",
+    )
        
