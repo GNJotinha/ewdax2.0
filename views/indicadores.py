@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -316,5 +317,8 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     fig2.update_traces(texttemplate="<b>%{text}</b>", textposition="outside")
     fig2.update_layout(
         margin=dict(t=60, b=30, l=40, r=40),
-        xaxis=dict
+        xaxis=dict(tickmode="linear", tick0=1, dtick=1),
     )
+    st.plotly_chart(fig2, use_container_width=True)
+
+    _render_resumo_ano()
