@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from relatorios import utr_por_entregador_turno
 
 PRIMARY_COLOR = ["#00BFFF"]  # paleta padrão
@@ -150,7 +151,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         )
 
     # ---------------------------------------------------------
-    # Horas realizadas (igual estava)
+    # Horas realizadas
     # ---------------------------------------------------------
     if tipo_grafico == "Horas realizadas":
         mensal_horas = (
@@ -183,15 +184,14 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
                 .sort_values("dia")
             )
-            fig_d = px.line(
-                por_dia,
-                x="dia",
-                y="horas",
-                title="📈 Horas por dia (mês atual)",
-                labels={"dia": "Dia", "horas": "Horas"},
-                template="plotly_dark",
-            )
-            fig_d.update_layout(margin=dict(t=60, b=30, l=40, r=40))
+            # Combo: barras (horas) + linha (mm3 de horas)
+            mm3 = por_dia["horas"].rolling(window=3, min_periods=1).mean()
+            fig_d = go.Figure()
+            fig_d.add_bar(x=por_dia["dia"], y=por_dia["horas"], text=por_dia["horas"].map(lambda v: f"{v:.1f}h"),
+                          textposition="outside", name="Horas", marker=dict(color="#00BFFF"))
+            fig_d.add_scatter(x=por_dia["dia"], y=mm3, mode="lines+markers", name="Tendência (MM3)", line=dict(width=2))
+            fig_d.update_layout(title="📊 Horas por dia (mês atual)", template="plotly_dark",
+                                margin=dict(t=60, b=30, l=40, r=40), xaxis_title="Dia", yaxis_title="Horas")
             st.metric("⏱️ Horas realizadas no mês", f"{por_dia['horas'].sum():.2f}h")
             st.plotly_chart(fig_d, use_container_width=True)
         else:
@@ -201,7 +201,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         return
 
     # ---------------------------------------------------------
-    # Entregadores ativos (igual estava)
+    # Entregadores ativos
     # ---------------------------------------------------------
     if tipo_grafico == "Entregadores ativos":
         mensal = (
@@ -232,15 +232,14 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 .rename(columns={"pessoa_entregadora": "entregadores"})
                 .sort_values("dia")
             )
-            fig2 = px.line(
-                por_dia,
-                x="dia",
-                y="entregadores",
-                title="📈 Entregadores por dia (mês atual)",
-                labels={"dia": "Dia", "entregadores": "Entregadores"},
-                template="plotly_dark",
-            )
-            fig2.update_layout(margin=dict(t=60, b=30, l=40, r=40))
+            # Combo: barras (N) + linha (mm3)
+            mm3 = por_dia["entregadores"].rolling(window=3, min_periods=1).mean()
+            fig2 = go.Figure()
+            fig2.add_bar(x=por_dia["dia"], y=por_dia["entregadores"], text=por_dia["entregadores"].astype(int).astype(str),
+                         textposition="outside", name="Entregadores", marker=dict(color="#00BFFF"))
+            fig2.add_scatter(x=por_dia["dia"], y=mm3, mode="lines+markers", name="Tendência (MM3)", line=dict(width=2))
+            fig2.update_layout(title="📊 Entregadores por dia (mês atual)", template="plotly_dark",
+                               margin=dict(t=60, b=30, l=40, r=40), xaxis_title="Dia", yaxis_title="Entregadores")
             st.plotly_chart(fig2, use_container_width=True)
         else:
             st.info("Sem dados no mês atual.")
@@ -321,9 +320,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             .rename(columns={"numero_de_corridas_ofertadas": "ref"})
         )
         mensal = mensal.merge(ref, on="mes_ano", how="left")
-        mensal["pct"] = (mensal["valor"] / mensal["ref"] * 100).fillna(0)
+        mensal["pct"] = (mensal["valor"] / mensal["ref"] * 100).where(mensal["ref"] > 0, 0.0)
         mensal["label"] = mensal.apply(
-            lambda r: f"{int(r['valor'])} ({r['pct']:.0f}%)", axis=1
+            lambda r: f"{int(r['valor'])} ({r['pct']:.1f}%)", axis=1
         )
 
     elif tipo_grafico == "Corridas rejeitadas":
@@ -333,9 +332,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             .rename(columns={"numero_de_corridas_ofertadas": "ref"})
         )
         mensal = mensal.merge(ref, on="mes_ano", how="left")
-        mensal["pct"] = (mensal["valor"] / mensal["ref"] * 100).fillna(0)
+        mensal["pct"] = (mensal["valor"] / mensal["ref"] * 100).where(mensal["ref"] > 0, 0.0)
         mensal["label"] = mensal.apply(
-            lambda r: f"{int(r['valor'])} ({r['pct']:.0f}%)", axis=1
+            lambda r: f"{int(r['valor'])} ({r['pct']:.1f}%)", axis=1
         )
 
     elif tipo_grafico == "Corridas completadas":
@@ -345,9 +344,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             .rename(columns={"numero_de_corridas_aceitas": "ref"})
         )
         mensal = mensal.merge(ref, on="mes_ano", how="left")
-        mensal["pct"] = (mensal["valor"] / mensal["ref"] * 100).fillna(0)
+        mensal["pct"] = (mensal["valor"] / mensal["ref"] * 100).where(mensal["ref"] > 0, 0.0)
         mensal["label"] = mensal.apply(
-            lambda r: f"{int(r['valor'])} ({r['pct']:.0f}%)", axis=1
+            lambda r: f"{int(r['valor'])} ({r['pct']:.1f}%)", axis=1
         )
     else:
         mensal["label"] = mensal["valor"].astype(str)
@@ -366,24 +365,120 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---------- Por dia (mês atual) — linha e só quantidade ----------
-    por_dia = (
+    # ---------- Por dia (mês atual) — COMBO: barras + linha (% ou UTR) ----------
+    # Base completa por dia para derivar % e UTR
+    por_dia_base = (
         df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-        .groupby("dia", as_index=False)[col]
-        .sum()
-        .rename(columns={col: "valor"})
+        .groupby("dia", as_index=False)[
+            [
+                "numero_de_corridas_ofertadas",
+                "numero_de_corridas_aceitas",
+                "numero_de_corridas_rejeitadas",
+                "numero_de_corridas_completadas",
+                "segundos_abs",
+                "pessoa_entregadora",
+            ]
+        ]
+        .agg({
+            "numero_de_corridas_ofertadas": "sum",
+            "numero_de_corridas_aceitas": "sum",
+            "numero_de_corridas_rejeitadas": "sum",
+            "numero_de_corridas_completadas": "sum",
+            "segundos_abs": "sum",
+            "pessoa_entregadora": "nunique",
+        })
+        .rename(columns={
+            "numero_de_corridas_ofertadas": "ofe",
+            "numero_de_corridas_aceitas": "ace",
+            "numero_de_corridas_rejeitadas": "rej",
+            "numero_de_corridas_completadas": "com",
+            "segundos_abs": "seg",
+            "pessoa_entregadora": "entregadores",
+        })
         .sort_values("dia")
     )
 
-    fig2 = px.line(
-        por_dia,
-        x="dia",
-        y="valor",
-        title=f"📈 {label} por dia (mês atual)",
-        labels={"dia": "Dia", "valor": label},
-        template="plotly_dark",
+    if por_dia_base.empty:
+        st.info("Sem dados no mês atual.")
+        _render_resumo_ano()
+        return
+
+    por_dia_base["horas"] = por_dia_base["seg"] / 3600.0
+    por_dia_base["acc_pct"] = (por_dia_base["ace"] / por_dia_base["ofe"] * 100).where(por_dia_base["ofe"] > 0, 0.0)
+    por_dia_base["rej_pct"] = (por_dia_base["rej"] / por_dia_base["ofe"] * 100).where(por_dia_base["ofe"] > 0, 0.0)
+    por_dia_base["comp_pct"] = (por_dia_base["com"] / por_dia_base["ace"] * 100).where(por_dia_base["ace"] > 0, 0.0)
+    por_dia_base["utr"] = (por_dia_base["ofe"] / por_dia_base["horas"]).where(por_dia_base["horas"] > 0, 0.0)
+
+    def _mma3(s: pd.Series) -> pd.Series:
+        return s.rolling(window=3, min_periods=1).mean()
+
+    # Seleção conforme o tipo
+    if tipo_grafico == "Corridas ofertadas":
+        y_bar = por_dia_base["ofe"]
+        y_line = por_dia_base["utr"]                   # UTR diária
+        label_bar = por_dia_base.apply(lambda r: f"{int(r['ofe'])} ({r['utr']:.2f} UTR)", axis=1)
+        y2_title = "UTR (ofertadas/h)"
+        line_name = "UTR diária"
+        use_y2 = True
+    elif tipo_grafico == "Corridas aceitas":
+        y_bar = por_dia_base["ace"]
+        y_line = _mma3(por_dia_base["acc_pct"])
+        label_bar = por_dia_base.apply(lambda r: f"{int(r['ace'])} ({r['acc_pct']:.1f}%)", axis=1)
+        y2_title = "%"
+        line_name = "% aceitação (MM3)"
+        use_y2 = True
+    elif tipo_grafico == "Corridas rejeitadas":
+        y_bar = por_dia_base["rej"]
+        y_line = _mma3(por_dia_base["rej_pct"])
+        label_bar = por_dia_base.apply(lambda r: f"{int(r['rej'])} ({r['rej_pct']:.1f}%)", axis=1)
+        y2_title = "%"
+        line_name = "% rejeição (MM3)"
+        use_y2 = True
+    elif tipo_grafico == "Corridas completadas":
+        y_bar = por_dia_base["com"]
+        y_line = _mma3(por_dia_base["comp_pct"])
+        label_bar = por_dia_base.apply(lambda r: f"{int(r['com'])} ({r['comp_pct']:.1f}%)", axis=1)
+        y2_title = "%"
+        line_name = "% conclusão (MM3)"
+        use_y2 = True
+    else:
+        # fallback (não deve cair aqui porque horas/ativos já retornaram antes)
+        y_bar = por_dia_base["ofe"]
+        y_line = _mma3(y_bar)
+        label_bar = por_dia_base["ofe"].astype(int).astype(str)
+        y2_title = None
+        line_name = "Tendência (MM3)"
+        use_y2 = False
+
+    fig2 = go.Figure()
+    fig2.add_bar(
+        x=por_dia_base["dia"],
+        y=y_bar,
+        text=label_bar,
+        textposition="outside",
+        name=label,
+        marker=dict(color="#00BFFF"),
     )
-    fig2.update_layout(margin=dict(t=60, b=30, l=40, r=40))
+    fig2.add_scatter(
+        x=por_dia_base["dia"],
+        y=y_line,
+        mode="lines+markers",
+        name=line_name,
+        line=dict(width=2),
+        yaxis="y2" if use_y2 else "y",
+    )
+
+    layout = dict(
+        title=f"📊 {label} por dia (mês atual)",
+        template="plotly_dark",
+        margin=dict(t=60, b=30, l=40, r=40),
+        xaxis=dict(title="Dia"),
+        yaxis=dict(title=label),
+    )
+    if use_y2:
+        layout["yaxis2"] = dict(title=y2_title, overlaying="y", side="right", showgrid=False)
+
+    fig2.update_layout(**layout)
     st.plotly_chart(fig2, use_container_width=True)
 
     _render_resumo_ano()
