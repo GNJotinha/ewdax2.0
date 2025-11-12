@@ -317,3 +317,4 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     fig2.update_layout(
         margin=dict(t=60, b=30, l=40, r=40),
         xaxis=dict
+    )
