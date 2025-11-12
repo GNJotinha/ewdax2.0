@@ -184,14 +184,19 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
                 .sort_values("dia")
             )
-            # Combo: barras (horas) + linha (mm3 de horas)
-            mm3 = por_dia["horas"].rolling(window=3, min_periods=1).mean()
-            fig_d = go.Figure()
-            fig_d.add_bar(x=por_dia["dia"], y=por_dia["horas"], text=por_dia["horas"].map(lambda v: f"{v:.1f}h"),
-                          textposition="outside", name="Horas", marker=dict(color="#00BFFF"))
-            fig_d.add_scatter(x=por_dia["dia"], y=mm3, mode="lines+markers", name="Tendência (MM3)", line=dict(width=2))
-            fig_d.update_layout(title="📊 Horas por dia (mês atual)", template="plotly_dark",
-                                margin=dict(t=60, b=30, l=40, r=40), xaxis_title="Dia", yaxis_title="Horas")
+            # linha separada (como era antes)
+            fig_d = px.line(
+                por_dia,
+                x="dia",
+                y="horas",
+                title="📈 Horas por dia (mês atual)",
+                labels={"dia": "Dia", "horas": "Horas"},
+                template="plotly_dark",
+            )
+            fig_d.update_layout(
+                margin=dict(t=60, b=30, l=40, r=40),
+                xaxis=dict(tickmode="linear", tick0=1, dtick=1),
+            )
             st.metric("⏱️ Horas realizadas no mês", f"{por_dia['horas'].sum():.2f}h")
             st.plotly_chart(fig_d, use_container_width=True)
         else:
@@ -232,14 +237,18 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 .rename(columns={"pessoa_entregadora": "entregadores"})
                 .sort_values("dia")
             )
-            # Combo: barras (N) + linha (mm3)
-            mm3 = por_dia["entregadores"].rolling(window=3, min_periods=1).mean()
-            fig2 = go.Figure()
-            fig2.add_bar(x=por_dia["dia"], y=por_dia["entregadores"], text=por_dia["entregadores"].astype(int).astype(str),
-                         textposition="outside", name="Entregadores", marker=dict(color="#00BFFF"))
-            fig2.add_scatter(x=por_dia["dia"], y=mm3, mode="lines+markers", name="Tendência (MM3)", line=dict(width=2))
-            fig2.update_layout(title="📊 Entregadores por dia (mês atual)", template="plotly_dark",
-                               margin=dict(t=60, b=30, l=40, r=40), xaxis_title="Dia", yaxis_title="Entregadores")
+            fig2 = px.line(
+                por_dia,
+                x="dia",
+                y="entregadores",
+                title="📈 Entregadores por dia (mês atual)",
+                labels={"dia": "Dia", "entregadores": "Entregadores"},
+                template="plotly_dark",
+            )
+            fig2.update_layout(
+                margin=dict(t=60, b=30, l=40, r=40),
+                xaxis=dict(tickmode="linear", tick0=1, dtick=1),
+            )
             st.plotly_chart(fig2, use_container_width=True)
         else:
             st.info("Sem dados no mês atual.")
@@ -365,8 +374,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---------- Por dia (mês atual) — COMBO: barras + linha (% ou UTR) ----------
-    # Base completa por dia para derivar % e UTR
+    # ---------- Por dia (mês atual) — BARRAS (sem linha) + opcional linha separada ----------
     por_dia_base = (
         df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
         .groupby("dia", as_index=False)[
@@ -404,81 +412,85 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         return
 
     por_dia_base["horas"] = por_dia_base["seg"] / 3600.0
-    por_dia_base["acc_pct"] = (por_dia_base["ace"] / por_dia_base["ofe"] * 100).where(por_dia_base["ofe"] > 0, 0.0)
-    por_dia_base["rej_pct"] = (por_dia_base["rej"] / por_dia_base["ofe"] * 100).where(por_dia_base["ofe"] > 0, 0.0)
+    por_dia_base["acc_pct"]  = (por_dia_base["ace"] / por_dia_base["ofe"] * 100).where(por_dia_base["ofe"] > 0, 0.0)
+    por_dia_base["rej_pct"]  = (por_dia_base["rej"] / por_dia_base["ofe"] * 100).where(por_dia_base["ofe"] > 0, 0.0)
     por_dia_base["comp_pct"] = (por_dia_base["com"] / por_dia_base["ace"] * 100).where(por_dia_base["ace"] > 0, 0.0)
     por_dia_base["utr"] = (por_dia_base["ofe"] / por_dia_base["horas"]).where(por_dia_base["horas"] > 0, 0.0)
 
-    def _mma3(s: pd.Series) -> pd.Series:
-        return s.rolling(window=3, min_periods=1).mean()
-
-    # Seleção conforme o tipo
+    # Seleção por tipo (barras + labels)
     if tipo_grafico == "Corridas ofertadas":
         y_bar = por_dia_base["ofe"]
-        y_line = por_dia_base["utr"]                   # UTR diária
-        label_bar = por_dia_base.apply(lambda r: f"{int(r['ofe'])} ({r['utr']:.2f} UTR)", axis=1)
-        y2_title = "UTR (ofertadas/h)"
-        line_name = "UTR diária"
-        use_y2 = True
+        bar_label = por_dia_base.apply(lambda r: f"{int(r['ofe'])} ({r['utr']:.2f} UTR)", axis=1)
+        line_series = por_dia_base["utr"]
+        line_title = "UTR diária"
+        line_y_label = "UTR (ofertadas/h)"
     elif tipo_grafico == "Corridas aceitas":
         y_bar = por_dia_base["ace"]
-        y_line = _mma3(por_dia_base["acc_pct"])
-        label_bar = por_dia_base.apply(lambda r: f"{int(r['ace'])} ({r['acc_pct']:.1f}%)", axis=1)
-        y2_title = "%"
-        line_name = "% aceitação (MM3)"
-        use_y2 = True
+        bar_label = por_dia_base.apply(lambda r: f"{int(r['ace'])} ({r['acc_pct']:.1f}%)", axis=1)
+        line_series = por_dia_base["acc_pct"]
+        line_title = "% aceitação (diário)"
+        line_y_label = "%"
     elif tipo_grafico == "Corridas rejeitadas":
         y_bar = por_dia_base["rej"]
-        y_line = _mma3(por_dia_base["rej_pct"])
-        label_bar = por_dia_base.apply(lambda r: f"{int(r['rej'])} ({r['rej_pct']:.1f}%)", axis=1)
-        y2_title = "%"
-        line_name = "% rejeição (MM3)"
-        use_y2 = True
+        bar_label = por_dia_base.apply(lambda r: f"{int(r['rej'])} ({r['rej_pct']:.1f}%)", axis=1)
+        line_series = por_dia_base["rej_pct"]
+        line_title = "% rejeição (diário)"
+        line_y_label = "%"
     elif tipo_grafico == "Corridas completadas":
         y_bar = por_dia_base["com"]
-        y_line = _mma3(por_dia_base["comp_pct"])
-        label_bar = por_dia_base.apply(lambda r: f"{int(r['com'])} ({r['comp_pct']:.1f}%)", axis=1)
-        y2_title = "%"
-        line_name = "% conclusão (MM3)"
-        use_y2 = True
+        bar_label = por_dia_base.apply(lambda r: f"{int(r['com'])} ({r['comp_pct']:.1f}%)", axis=1)
+        line_series = por_dia_base["comp_pct"]
+        line_title = "% conclusão (diário)"
+        line_y_label = "%"
     else:
-        # fallback (não deve cair aqui porque horas/ativos já retornaram antes)
+        # fallback
         y_bar = por_dia_base["ofe"]
-        y_line = _mma3(y_bar)
-        label_bar = por_dia_base["ofe"].astype(int).astype(str)
-        y2_title = None
-        line_name = "Tendência (MM3)"
-        use_y2 = False
+        bar_label = por_dia_base["ofe"].astype(int).astype(str)
+        line_series = None
+        line_title = ""
+        line_y_label = ""
 
-    fig2 = go.Figure()
-    fig2.add_bar(
+    # Barras (sem linha)
+    fig_b = go.Figure()
+    fig_b.add_bar(
         x=por_dia_base["dia"],
         y=y_bar,
-        text=label_bar,
+        text=bar_label,
         textposition="outside",
+        cliponaxis=False,
         name=label,
         marker=dict(color="#00BFFF"),
     )
-    fig2.add_scatter(
-        x=por_dia_base["dia"],
-        y=y_line,
-        mode="lines+markers",
-        name=line_name,
-        line=dict(width=2),
-        yaxis="y2" if use_y2 else "y",
-    )
-
-    layout = dict(
+    fig_b.update_layout(
         title=f"📊 {label} por dia (mês atual)",
         template="plotly_dark",
-        margin=dict(t=60, b=30, l=40, r=40),
-        xaxis=dict(title="Dia"),
+        margin=dict(t=80, b=30, l=40, r=40),
+        bargap=0.25,
+        xaxis=dict(
+            title="Dia",
+            tickmode="linear",  # 1 em 1
+            tick0=1,
+            dtick=1,
+        ),
         yaxis=dict(title=label),
+        showlegend=False,
     )
-    if use_y2:
-        layout["yaxis2"] = dict(title=y2_title, overlaying="y", side="right", showgrid=False)
+    st.plotly_chart(fig_b, use_container_width=True)
 
-    fig2.update_layout(**layout)
-    st.plotly_chart(fig2, use_container_width=True)
+    # Opcional: gráfico de linha separado (como antes)
+    if st.toggle("Mostrar gráfico de linha separado (tendência)", value=False) and line_series is not None:
+        fig_l = px.line(
+            por_dia_base,
+            x="dia",
+            y=line_series,
+            title=f"📈 {line_title}",
+            labels={"dia": "Dia", "y": line_y_label},
+            template="plotly_dark",
+        )
+        fig_l.update_layout(
+            margin=dict(t=60, b=30, l=40, r=40),
+            xaxis=dict(tickmode="linear", tick0=1, dtick=1),
+        )
+        st.plotly_chart(fig_l, use_container_width=True)
 
     _render_resumo_ano()
