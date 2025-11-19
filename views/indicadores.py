@@ -64,9 +64,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     df = _ensure_mes_ano(df)
 
     # ---------------------------------------------------------
-    # Filtros (subpraça) e turno
+    # Filtros (subpraça), turno e entregador
     # ---------------------------------------------------------
-    col_f1, col_f2 = st.columns(2)
+    col_f1, col_f2, col_f3 = st.columns([1, 1, 2])
 
     # Subpraça (com 'LIVRE' quando praca=SAO PAULO e sub_praca nulo)
     sub_opts = sub_options_with_livre(df, praca_scope="SAO PAULO")
@@ -75,48 +75,62 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     # Turno (se existir)
     turno_col = next((c for c in ("turno", "tipo_turno", "periodo") if c in df.columns), None)
-    turno_sel = None
     if turno_col is not None:
         op_turno = ["Todos"] + sorted(df[turno_col].dropna().unique().tolist())
         turno_sel = col_f2.selectbox("Turno", op_turno, index=0)
         if turno_sel != "Todos":
             df = df[df[turno_col] == turno_sel]
 
-    # ---------------------------------------------------------
-    # Recortes temporais
-    # ---------------------------------------------------------
-    hoje = pd.Timestamp.today()
-    mes_atual = int(hoje.month)
-    ano_atual = int(hoje.year)
-
-    df_mes_atual = df[(df.get("mes") == mes_atual) & (df.get("ano") == ano_atual)].copy()
-    df_ano_atual = df[df.get("ano") == ano_atual].copy()
+    # Entregador(es)
+    ent_opts = sorted(df.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().unique().tolist())
+    ent_sel = col_f3.multiselect("Entregador(es)", ent_opts)
+    if ent_sel:
+        df = df[df["pessoa_entregadora"].isin(ent_sel)]
 
     # ---------------------------------------------------------
-    # Helper: resumo anual
+    # Seletor de Mês/Ano para o GRÁFICO DIÁRIO (passa a obedecer filtros)
+    # ---------------------------------------------------------
+    # pega o último mês/ano disponível já considerando filtros aplicados
+    try:
+        ultimo_ts = pd.to_datetime(df["mes_ano"]).max()
+        default_mes = int(ultimo_ts.month) if pd.notna(ultimo_ts) else int(pd.to_datetime(df["mes_ano"]).dt.month.max())
+        default_ano = int(ultimo_ts.year) if pd.notna(ultimo_ts) else int(pd.to_datetime(df["mes_ano"]).dt.year.max())
+    except Exception:
+        default_mes = int(pd.to_datetime(df.get("data_do_periodo", df.get("data")), errors="coerce").dt.month.max())
+        default_ano = int(pd.to_datetime(df.get("data_do_periodo", df.get("data")), errors="coerce").dt.year.max())
+
+    anos_disp = sorted([int(x) for x in df.get("ano", pd.Series(dtype=object)).dropna().unique().tolist()], reverse=True) or [default_ano]
+    col_p1, col_p2 = st.columns(2)
+    mes_diario = col_p1.selectbox("Mês (gráfico diário)", list(range(1, 13)), index=max(0, default_mes - 1))
+    ano_idx = anos_disp.index(default_ano) if default_ano in anos_disp else 0
+    ano_diario = col_p2.selectbox("Ano (gráfico diário)", anos_disp, index=ano_idx)
+
+    # Slices de tempo
+    df_mes_ref = df[(df.get("mes") == mes_diario) & (df.get("ano") == ano_diario)].copy()
+    df_ano_ref = df[df.get("ano") == ano_diario].copy()
+
+    # ---------------------------------------------------------
+    # Helper: resumo anual (do ano selecionado no seletor)
     # ---------------------------------------------------------
     def _render_resumo_ano():
-        """Mostra os números gerais do ano (em baixo, letra maior)."""
-        tot_ofert = df_ano_atual.get("numero_de_corridas_ofertadas", pd.Series(dtype=float)).sum()
-        tot_aceit = df_ano_atual.get("numero_de_corridas_aceitas", pd.Series(dtype=float)).sum()
-        tot_rej = df_ano_atual.get("numero_de_corridas_rejeitadas", pd.Series(dtype=float)).sum()
-        tot_comp = df_ano_atual.get("numero_de_corridas_completadas", pd.Series(dtype=float)).sum()
+        """Mostra os números gerais do ANO selecionado (em baixo, letra maior)."""
+        tot_ofert = df_ano_ref.get("numero_de_corridas_ofertadas", pd.Series(dtype=float)).sum()
+        tot_aceit = df_ano_ref.get("numero_de_corridas_aceitas", pd.Series(dtype=float)).sum()
+        tot_rej = df_ano_ref.get("numero_de_corridas_rejeitadas", pd.Series(dtype=float)).sum()
+        tot_comp = df_ano_ref.get("numero_de_corridas_completadas", pd.Series(dtype=float)).sum()
 
         tx_aceit_ano = (tot_aceit / tot_ofert * 100) if tot_ofert > 0 else 0.0
         tx_rej_ano = (tot_rej / tot_ofert * 100) if tot_ofert > 0 else 0.0
         tx_comp_ano = (tot_comp / tot_aceit * 100) if tot_aceit > 0 else 0.0
 
         # Ativos = entregadores únicos no ano
-        if "pessoa_entregadora" in df_ano_atual.columns:
-            tot_sh = df_ano_atual["pessoa_entregadora"].nunique()
-        else:
-            tot_sh = 0
+        tot_sh = int(df_ano_ref.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().nunique())
 
         # Horas realizadas no ano
-        tot_horas = df_ano_atual.get("segundos_abs", pd.Series(dtype=float)).sum() / 3600.0
+        tot_horas = df_ano_ref.get("segundos_abs", pd.Series(dtype=float)).sum() / 3600.0
 
         st.divider()
-        st.markdown("### 📅 Números gerais do ano atual")
+        st.markdown("### 📅 Números gerais do ano selecionado")
         st.markdown(
             (
                 "<div style='font-size:1.1rem; line-height:1.7; margin-top:0.5em;'>"
@@ -155,9 +169,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         fig_m.update_layout(margin=dict(t=60, b=30, l=40, r=40))
         st.plotly_chart(fig_m, use_container_width=True)
 
-        if not df_mes_atual.empty:
+        if not df_mes_ref.empty:
             por_dia = (
-                df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
+                df_mes_ref.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
                 .groupby("dia", as_index=False)["segundos_abs"].sum()
                 .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
                 .sort_values("dia")
@@ -173,17 +187,17 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 name="Horas"
             )
             fig_d.update_layout(
-                title="📊 Horas por dia (mês atual)",
+                title=f"📊 Horas por dia ({mes_diario:02d}/{ano_diario})",
                 template="plotly_dark",
                 margin=dict(t=60, b=30, l=40, r=40),
                 xaxis_title="Dia",
                 yaxis_title="Horas",
                 xaxis=dict(tickmode="linear", dtick=1)  # dias certinhos
             )
-            st.metric("⏱️ Horas realizadas no mês", f"{por_dia['horas'].sum():.2f}h")
+            st.metric("⏱️ Horas no mês selecionado", f"{por_dia['horas'].sum():.2f}h")
             st.plotly_chart(fig_d, use_container_width=True)
         else:
-            st.info("Sem dados no mês atual.")
+            st.info("Sem dados no mês selecionado.")
 
         _render_resumo_ano()
         return
@@ -211,9 +225,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
         st.plotly_chart(fig, use_container_width=True)
 
-        if not df_mes_atual.empty:
+        if not df_mes_ref.empty:
             por_dia = (
-                df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
+                df_mes_ref.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
                 .groupby("dia", as_index=False)["pessoa_entregadora"].nunique()
                 .rename(columns={"pessoa_entregadora": "entregadores"})
                 .sort_values("dia")
@@ -229,7 +243,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 name="Entregadores"
             )
             fig2.update_layout(
-                title="📊 Entregadores por dia (mês atual)",
+                title=f"📊 Entregadores por dia ({mes_diario:02d}/{ano_diario})",
                 template="plotly_dark",
                 margin=dict(t=60, b=30, l=40, r=40),
                 xaxis_title="Dia",
@@ -238,7 +252,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             )
             st.plotly_chart(fig2, use_container_width=True)
         else:
-            st.info("Sem dados no mês atual.")
+            st.info("Sem dados no mês selecionado.")
 
         _render_resumo_ano()
         return
@@ -330,9 +344,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---------- Por dia (mês atual) — SÓ BARRAS ----------
+    # ---------- Por dia (mês SELECIONADO) — SÓ BARRAS ----------
     por_dia_base = (
-        df_mes_atual.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
+        df_mes_ref.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
         .groupby("dia", as_index=False)[
             [
                 "numero_de_corridas_ofertadas",
@@ -363,7 +377,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     )
 
     if por_dia_base.empty:
-        st.info("Sem dados no mês atual.")
+        st.info("Sem dados no mês selecionado.")
         _render_resumo_ano()
         return
 
@@ -373,7 +387,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     por_dia_base["comp_pct"] = (por_dia_base["com"] / por_dia_base["ace"] * 100).where(por_dia_base["ace"] > 0, 0.0)
     por_dia_base["utr"] = (por_dia_base["ofe"] / por_dia_base["horas"]).where(por_dia_base["horas"] > 0, 0.0)
 
-    # Seleção de métrica de rótulo nas barras (igual antes, só sem a linha)
+    # Seleção de métrica de rótulo nas barras (sem linha)
     if tipo_grafico == "Corridas ofertadas":
         y_bar = por_dia_base["ofe"]
         label_bar = por_dia_base.apply(lambda r: f"{int(r['ofe'])} ({r['utr']:.2f} UTR)", axis=1)
@@ -401,7 +415,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         marker=dict(color="#00BFFF"),
     )
     fig2.update_layout(
-        title=f"📊 {y_title} por dia (mês atual)",
+        title=f"📊 {y_title} por dia ({mes_diario:02d}/{ano_diario})",
         template="plotly_dark",
         margin=dict(t=60, b=30, l=40, r=40),
         xaxis_title="Dia",
