@@ -1,30 +1,26 @@
-# views/adicional_por_turno.py
 import io
-
 import streamlit as st
 import pandas as pd
 
-from utils import calcular_tempo_online  # online %
-from shared import hms_from_hours       # HH:MM:SS a partir de horas float
+from utils import calcular_tempo_online          # online %
+from shared import hms_from_hours               # HH:MM:SS
 
 VALOR_ADICIONAL_HORA = 2.15
 LIMIAR_ACEITACAO = 70.0  # %
+
+# ------------------------------ #
+#   Funções auxiliares
+# ------------------------------ #
 
 def _pct(num: float, den: float) -> float:
     if den <= 0:
         return 0.0
     return float(num / den * 100.0)
 
+
 def _agg_entregador_turno(df_chunk: pd.DataFrame) -> pd.Series:
     """
     Agrega por (entregador, turno) dentro do período filtrado.
-    Retorna:
-      - horas_online (float)
-      - horas_hms (str)
-      - aceitacao_%
-      - completas_%
-      - recebe (bool)
-      - valor_total (float, R$)
     """
     if df_chunk is None or df_chunk.empty:
         return pd.Series({
@@ -36,36 +32,21 @@ def _agg_entregador_turno(df_chunk: pd.DataFrame) -> pd.Series:
             "valor_total": 0.0,
         })
 
-    ofertadas = pd.to_numeric(
-        df_chunk.get("numero_de_corridas_ofertadas", 0),
-        errors="coerce"
-    ).fillna(0).sum()
+    ofertadas = pd.to_numeric(df_chunk["numero_de_corridas_ofertadas"], errors="coerce").fillna(0).sum()
+    aceitas = pd.to_numeric(df_chunk["numero_de_corridas_aceitas"], errors="coerce").fillna(0).sum()
+    completas = pd.to_numeric(df_chunk["numero_de_corridas_completadas"], errors="coerce").fillna(0).sum()
 
-    aceitas = pd.to_numeric(
-        df_chunk.get("numero_de_corridas_aceitas", 0),
-        errors="coerce"
-    ).fillna(0).sum()
-
-    completas = pd.to_numeric(
-        df_chunk.get("numero_de_corridas_completadas", 0),
-        errors="coerce"
-    ).fillna(0).sum()
-
-    seg = pd.to_numeric(
-        df_chunk.get("segundos_abs", 0),
-        errors="coerce"
-    ).fillna(0).sum()
-
+    seg = pd.to_numeric(df_chunk["segundos_abs"], errors="coerce").fillna(0).sum()
     horas = float(seg) / 3600.0 if seg > 0 else 0.0
-    horas_hms = hms_from_hours(horas)  # HH:MM:SS
+    horas_hms = hms_from_hours(horas)
 
     acc_pct = _pct(aceitas, ofertadas)
     comp_pct = _pct(completas, aceitas)
 
-    online_pct = calcular_tempo_online(df_chunk)  # 0–100
+    online_pct = calcular_tempo_online(df_chunk)  # 0–100%
 
     recebe = (acc_pct >= LIMIAR_ACEITACAO) and (online_pct > 0)
-    valor_total = (horas * VALOR_ADICIONAL_HORA) if recebe else 0.0
+    valor_total = horas * VALOR_ADICIONAL_HORA if recebe else 0.0
 
     return pd.Series({
         "horas_online": horas,
@@ -76,26 +57,32 @@ def _agg_entregador_turno(df_chunk: pd.DataFrame) -> pd.Series:
         "valor_total": valor_total,
     })
 
+
 def _style_status(val):
     if val == "SIM":
-        # verde
         return "background-color:#163d24; color:#2ecc71; font-weight:bold;"
     else:
-        # vermelho
         return "background-color:#3d1616; color:#e74c3c; font-weight:bold;"
 
+
+# ------------------------------ #
+#   VIEW PRINCIPAL
+# ------------------------------ #
+
 def render(df: pd.DataFrame, _USUARIOS: dict):
-    st.header("💸 Adicional por turno — Lista por período")
+    st.header("💸 Adicional por Turno — Lista consolidada por período")
 
     base = df.copy()
 
-    # 1) Normaliza data (igual às outras telas)
+    # ---------------------- #
+    # Normalização de data
+    # ---------------------- #
     if "data" in base.columns:
         base["data"] = pd.to_datetime(base["data"], errors="coerce")
     elif "data_do_periodo" in base.columns:
         base["data"] = pd.to_datetime(base["data_do_periodo"], errors="coerce")
     else:
-        st.error("Coluna de data ausente (espere 'data' ou 'data_do_periodo').")
+        st.error("Coluna de data ausente ('data' ou 'data_do_periodo').")
         return
 
     base = base.dropna(subset=["data"])
@@ -103,9 +90,11 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.info("Sem dados válidos.")
         return
 
-    # 2) Primeiro: filtro de PERÍODO
-    data_min = pd.to_datetime(base["data"]).min().date()
-    data_max = pd.to_datetime(base["data"]).max().date()
+    # ---------------------- #
+    # 1) FILTRO DE PERÍODO
+    # ---------------------- #
+    data_min = base["data"].min().date()
+    data_max = base["data"].max().date()
 
     periodo = st.date_input(
         "Período de análise",
@@ -114,6 +103,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     )
 
     df_periodo = base.copy()
+
     if len(periodo) == 2:
         ini = pd.to_datetime(periodo[0])
         fim = pd.to_datetime(periodo[1]) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
@@ -126,31 +116,24 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.info("❌ Nenhum dado no período selecionado.")
         return
 
-    # 3) Depois: filtros adicionais + botão "Gerar"
+    # ---------------------- #
+    # 2) FILTROS ADICIONAIS
+    # ---------------------- #
     c1, c2, c3 = st.columns([2, 2, 1])
 
     with c1:
-        nomes = sorted(df_periodo["pessoa_entregadora"].dropna().unique().tolist())
-        filtro_nomes = st.multiselect(
-            "Filtrar entregadores (opcional)",
-            nomes,
-            help="Se vazio, mostra todos."
-        )
+        nomes = sorted(df_periodo["pessoa_entregadora"].dropna().unique())
+        filtro_nomes = st.multiselect("Filtrar entregadores (opcional)", nomes)
 
     with c2:
-        turnos = sorted(
-            [x for x in df_periodo.get("periodo", pd.Series(dtype=object)).dropna().unique()]
-        )
-        filtro_turnos = st.multiselect(
-            "Filtrar turnos (opcional)",
-            turnos
-        )
+        turnos = sorted(df_periodo["periodo"].dropna().unique() if "periodo" in df_periodo else [])
+        filtro_turnos = st.multiselect("Filtrar turnos (opcional)", turnos)
 
     with c3:
         gerar = st.button("Gerar lista", type="primary", use_container_width=True)
 
     if not gerar:
-        st.caption("Escolha o período e, se quiser, filtros extras. Depois clique em **Gerar lista**.")
+        st.caption("Selecione o período e clique em **Gerar lista**.")
         return
 
     df_filtrado = df_periodo.copy()
@@ -159,22 +142,19 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     if filtro_turnos:
         df_filtrado = df_filtrado[df_filtrado["periodo"].isin(filtro_turnos)]
 
-    if "pessoa_entregadora" not in df_filtrado.columns:
-        st.error("Coluna 'pessoa_entregadora' não encontrada na base.")
+    if df_filtrado.empty:
+        st.info("❌ Sem dados com os filtros aplicados.")
         return
 
     if "periodo" not in df_filtrado.columns:
         df_filtrado["periodo"] = "(sem turno)"
 
-    if df_filtrado.empty:
-        st.info("❌ Nenhum dado após aplicar os filtros.")
-        return
-
-    # 4) Agrupa por ENTREGADOR + TURNO (sem quebrar por dia)
-    group_cols = ["pessoa_entregadora", "periodo"]
+    # ---------------------- #
+    # 3) AGRUPA POR ENTREGADOR + TURNO
+    # ---------------------- #
     agrupado = (
         df_filtrado
-        .groupby(group_cols, dropna=False)
+        .groupby(["pessoa_entregadora", "periodo"], dropna=False)
         .apply(_agg_entregador_turno)
         .reset_index()
     )
@@ -185,14 +165,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     agrupado["Recebe adicional?"] = agrupado["recebe"].map(lambda x: "SIM" if x else "NÃO")
 
-    # Ordena: quem recebe primeiro, depois por nome
-    agrupado["__ord_recebe__"] = agrupado["recebe"].astype(int) * -1
-    agrupado = agrupado.sort_values(
-        by=["__ord_recebe__", "pessoa_entregadora", "periodo"]
-    ).reset_index(drop=True)
-    agrupado = agrupado.drop(columns="__ord_recebe__")
-
-    # 5) Monta tabela no formato pedido
+    # ---------------------- #
+    # Monta tabela final
+    # ---------------------- #
     tabela = agrupado[[
         "pessoa_entregadora",
         "periodo",
@@ -210,22 +185,26 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         "valor_total": "Valor R$",
     })
 
-    # Arredondamento dos numéricos (para visual e para export)
+    # arredondamentos
     tabela["Aceitação %"] = tabela["Aceitação %"].round(2)
     tabela["Completas %"] = tabela["Completas %"].round(2)
     tabela["Valor R$"] = tabela["Valor R$"].round(2)
 
-    # 6) Pequenos KPIs
+    # ---------------------- #
+    # KPIs
+    # ---------------------- #
     total_sim = int((tabela["Recebe adicional?"] == "SIM").sum())
     total_nao = int((tabela["Recebe adicional?"] == "NÃO").sum())
     ent_unicos = tabela["Entregador"].nunique()
 
     k1, k2, k3 = st.columns(3)
-    k1.metric("Entregadores recebendo adicional", f"{total_sim}")
+    k1.metric("Recebem adicional", f"{total_sim}")
     k2.metric("Sem adicional", f"{total_nao}")
     k3.metric("Entregadores no período", f"{ent_unicos}")
 
-    # 7) Estilo visual (verde/vermelho) na coluna "Recebe adicional?"
+    # ---------------------- #
+    # Tabela com estilo (cores)
+    # ---------------------- #
     styled = (
         tabela
         .style
@@ -239,12 +218,14 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     st.dataframe(styled, use_container_width=True)
 
-    # 8) Download em XLSX
+    # ---------------------- #
+    # Exportar XLSX (openpyxl)
+    # ---------------------- #
     buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        # No Excel mandamos sem formatação de texto de moeda, só número arredondado
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         tabela.to_excel(writer, index=False, sheet_name="Adicional_por_turno")
-        writer.close()
+
+    buffer.seek(0)
 
     st.download_button(
         "⬇️ Baixar XLSX",
