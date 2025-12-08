@@ -107,6 +107,7 @@ MENU = {
         "Saídas": "views.saidas",
         "Categorias metas": "views.sh_aceitacao",
         "Adicional por Hora (Turno)": "views.adicional_turno",
+        "Lista adicional": "views.lista_adicional",
     },
     "Dashboards": {
         "UTR": "views.utr",
