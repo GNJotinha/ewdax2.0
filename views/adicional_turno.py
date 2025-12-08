@@ -37,63 +37,55 @@ def _fmt_moeda(x: float) -> str:
 # ================================
 # IMAGEM ÚNICA COM TODOS OS CARDS
 # ================================
-def _gerar_imagem_cards(resumo: pd.DataFrame, nome: str, periodo_txt: str) -> BytesIO | None:
+def _gerar_imagem_cards(resumo: pd.DataFrame) -> BytesIO | None:
     """
-    Gera uma imagem única com a "união" dos cards:
-      - fundo dark
-      - para cada turno: card preto com info
-      - bloco verde/vermelho embaixo igual ao conceito da tela
+    Gera UMA imagem que é basicamente a união dos cards de turno:
+      - um card por linha (data + turno + métricas)
+      - bloco verde/vermelho embaixo, igual ao da interface
+      - tudo empilhado em uma única imagem vertical
     """
     if Image is None:
         return None
 
     resumo = resumo.sort_values(["data", "turno"]).copy()
 
-    # Layout básico
+    # Layout do card
     largura = 1080
     margin_x = 40
     margin_y = 40
     espacamento_cards = 30
-    card_altura = 270      # altura do card preto
-    green_block_altura = 80
-    header_altura = 120
+    card_altura = 270       # card preto (título + métricas)
+    block_altura = 90       # bloco verde/vermelho embaixo
 
     n_cards = resumo.shape[0]
     altura_total = (
         margin_y * 2
-        + header_altura
-        + n_cards * (card_altura + green_block_altura)
+        + n_cards * (card_altura + block_altura)
         + (n_cards - 1) * espacamento_cards
     )
 
-    # Imagem base
-    bg_color = (15, 23, 42)        # fundo geral
-    card_color = (24, 33, 58)      # card preto
+    bg_color = (15, 23, 42)   # fundo geral
+    card_color = (24, 33, 58) # card preto
+
     img = Image.new("RGB", (largura, altura_total), bg_color)
     draw = ImageDraw.Draw(img)
 
     # Fontes
     try:
-        fonte_titulo = ImageFont.truetype("arial.ttf", 42)
-        fonte_sub = ImageFont.truetype("arial.ttf", 32)
-        fonte_txt = ImageFont.truetype("arial.ttf", 28)
-        fonte_small = ImageFont.truetype("arial.ttf", 24)
+        fonte_titulo = ImageFont.truetype("arial.ttf", 40)
+        fonte_turno = ImageFont.truetype("arial.ttf", 34)
+        fonte_txt = ImageFont.truetype("arial.ttf", 26)
+        fonte_small = ImageFont.truetype("arial.ttf", 22)
     except Exception:
-        fonte_titulo = fonte_sub = fonte_txt = fonte_small = ImageFont.load_default()
-
-    # Header (nome + período)
-    y = margin_y
-    draw.text((margin_x, y), nome, font=fonte_titulo, fill=(240, 240, 240))
-    y += 55
-    draw.text((margin_x, y), f"Período: {periodo_txt}", font=fonte_sub, fill=(200, 200, 200))
-    y += header_altura - 55
+        fonte_titulo = fonte_turno = fonte_txt = fonte_small = ImageFont.load_default()
 
     def draw_rounded(x0, y0, x1, y1, radius, fill, outline, width=2):
         draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=fill, outline=outline, width=width)
 
-    for _, row in resumo.iterrows():
+    y = margin_y
 
-        # --- CARD PRETO (info do turno) ---
+    for _, row in resumo.iterrows():
+        # ---- CARD PRETO (título + métricas) ----
         card_top = y
         card_bottom = y + card_altura
         card_left = margin_x
@@ -110,25 +102,26 @@ def _gerar_imagem_cards(resumo: pd.DataFrame, nome: str, periodo_txt: str) -> By
             width=2,
         )
 
-        # Título: data + nome do turno (tipo que tá no Streamlit)
+        # Data e turno (estilo parecido com a UI)
         data_txt = pd.to_datetime(row["data"]).strftime("%d/%m/%Y")
-        titulo = f"Turno: {row['turno']}"
+        turno_txt = f"Turno: {row['turno']}"
+
         draw.text(
             (card_left + 30, card_top + 20),
-            f"{data_txt}",
-            font=fonte_sub,
-            fill=(209, 213, 219),
-        )
-        draw.text(
-            (card_left + 30, card_top + 60),
-            titulo,
+            data_txt,
             font=fonte_titulo,
             fill=(248, 250, 252),
         )
+        draw.text(
+            (card_left + 30, card_top + 70),
+            turno_txt,
+            font=fonte_turno,
+            fill=(248, 250, 252),
+        )
 
-        # Texto detalhado
+        # Métricas
         x_txt = card_left + 40
-        y_txt = card_top + 115
+        y_txt = card_top + 120
         linhas = [
             f"Aceitação: {_fmt_pct(row['acc_pct'])}",
             f"Completas: {_fmt_pct(row['comp_pct'])}",
@@ -142,9 +135,9 @@ def _gerar_imagem_cards(resumo: pd.DataFrame, nome: str, periodo_txt: str) -> By
             draw.text((x_txt, y_txt), lin, font=fonte_txt, fill=(229, 231, 235))
             y_txt += 30
 
-        # --- BLOCO VERDE / VERMELHO ABAIXO (como na UI) ---
+        # ---- BLOCO VERDE / VERMELHO ABAIXO (igual card de resultado) ----
         block_top = card_bottom + 8
-        block_bottom = block_top + green_block_altura
+        block_bottom = block_top + block_altura
         block_left = card_left
         block_right = card_right
 
@@ -190,20 +183,20 @@ def _gerar_imagem_cards(resumo: pd.DataFrame, nome: str, periodo_txt: str) -> By
             fill=txt_color,
         )
         draw.text(
-            (block_left + 30, block_top + 40),
+            (block_left + 30, block_top + 45),
             sub1,
             font=fonte_txt,
             fill=sub_color,
         )
         if sub2:
             draw.text(
-                (block_left + 30, block_top + 66),
+                (block_left + 30, block_top + 70),
                 sub2,
                 font=fonte_small,
                 fill=sub_color,
             )
 
-        # Atualiza Y para próximo “card+bloco”
+        # Próximo card (pula card + bloco + espaçamento)
         y = block_bottom + espacamento_cards
 
     buf = BytesIO()
@@ -448,7 +441,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.info("Para gerar a imagem, adicione `Pillow` no requirements (ex: Pillow>=10).")
         return
 
-    img_bytes = _gerar_imagem_cards(resumo, nome, periodo_txt)
+    img_bytes = _gerar_imagem_cards(resumo)
     if img_bytes:
         st.download_button(
             "⬇️ Baixar imagem (PNG)",
