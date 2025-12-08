@@ -106,7 +106,6 @@ MENU = {
         "Comparar ativos": "views.comparar",
         "Saídas": "views.saidas",
         "Categorias metas": "views.sh_aceitacao",
-        "Adicional por turno": "views.adicional_por_turno",
         "Adicional por Hora (Turno)": "views.adicional_turno",
     },
     "Dashboards": {
