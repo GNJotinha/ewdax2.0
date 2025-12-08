@@ -18,10 +18,11 @@ def _pct(num: float, den: float) -> float:
     return float(num / den * 100.0)
 
 
-def _agg_entregador_turno(df_chunk: pd.DataFrame) -> pd.Series:
+def _agg_row(df_chunk: pd.DataFrame) -> pd.Series:
     """
-    Agrega por (entregador, turno) dentro do período filtrado.
+    Agrega entregador + data + turno.
     """
+
     if df_chunk is None or df_chunk.empty:
         return pd.Series({
             "horas_online": 0.0,
@@ -43,7 +44,7 @@ def _agg_entregador_turno(df_chunk: pd.DataFrame) -> pd.Series:
     acc_pct = _pct(aceitas, ofertadas)
     comp_pct = _pct(completas, aceitas)
 
-    online_pct = calcular_tempo_online(df_chunk)  # 0–100%
+    online_pct = calcular_tempo_online(df_chunk)
 
     recebe = (acc_pct >= LIMIAR_ACEITACAO) and (online_pct > 0)
     valor_total = horas * VALOR_ADICIONAL_HORA if recebe else 0.0
@@ -70,19 +71,19 @@ def _style_status(val):
 # ------------------------------ #
 
 def render(df: pd.DataFrame, _USUARIOS: dict):
-    st.header("💸 Adicional por Turno — Lista consolidada por período")
+    st.header("💸 Adicional por Turno — Lista por período (com DATA)")
 
     base = df.copy()
 
     # ---------------------- #
-    # Normalização de data
+    # Normaliza data
     # ---------------------- #
     if "data" in base.columns:
         base["data"] = pd.to_datetime(base["data"], errors="coerce")
     elif "data_do_periodo" in base.columns:
         base["data"] = pd.to_datetime(base["data_do_periodo"], errors="coerce")
     else:
-        st.error("Coluna de data ausente ('data' ou 'data_do_periodo').")
+        st.error("Coluna de data ausente.")
         return
 
     base = base.dropna(subset=["data"])
@@ -97,13 +98,12 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     data_max = base["data"].max().date()
 
     periodo = st.date_input(
-        "Período de análise",
+        "Período",
         [data_min, data_max],
         format="DD/MM/YYYY"
     )
 
     df_periodo = base.copy()
-
     if len(periodo) == 2:
         ini = pd.to_datetime(periodo[0])
         fim = pd.to_datetime(periodo[1]) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
@@ -119,21 +119,21 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     # ---------------------- #
     # 2) FILTROS ADICIONAIS
     # ---------------------- #
-    c1, c2, c3 = st.columns([2, 2, 1])
+    c1, c2, c3 = st.columns([2,2,1])
 
     with c1:
         nomes = sorted(df_periodo["pessoa_entregadora"].dropna().unique())
-        filtro_nomes = st.multiselect("Filtrar entregadores (opcional)", nomes)
+        filtro_nomes = st.multiselect("Entregadores (opcional)", nomes)
 
     with c2:
         turnos = sorted(df_periodo["periodo"].dropna().unique() if "periodo" in df_periodo else [])
-        filtro_turnos = st.multiselect("Filtrar turnos (opcional)", turnos)
+        filtro_turnos = st.multiselect("Turnos (opcional)", turnos)
 
     with c3:
         gerar = st.button("Gerar lista", type="primary", use_container_width=True)
 
     if not gerar:
-        st.caption("Selecione o período e clique em **Gerar lista**.")
+        st.caption("Selecione o período e clique em Gerar lista.")
         return
 
     df_filtrado = df_periodo.copy()
@@ -143,32 +143,38 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         df_filtrado = df_filtrado[df_filtrado["periodo"].isin(filtro_turnos)]
 
     if df_filtrado.empty:
-        st.info("❌ Sem dados com os filtros aplicados.")
+        st.info("❌ Nenhum entregador encontrado com os filtros.")
         return
 
-    if "periodo" not in df_filtrado.columns:
-        df_filtrado["periodo"] = "(sem turno)"
+    df_filtrado["data_dia"] = df_filtrado["data"].dt.date
 
     # ---------------------- #
-    # 3) AGRUPA POR ENTREGADOR + TURNO
+    # 3) AGRUPAMENTO:
+    #    ENTREGADOR + DATA + TURNO
     # ---------------------- #
     agrupado = (
         df_filtrado
-        .groupby(["pessoa_entregadora", "periodo"], dropna=False)
-        .apply(_agg_entregador_turno)
+        .groupby(["pessoa_entregadora", "data_dia", "periodo"], dropna=False)
+        .apply(_agg_row)
         .reset_index()
     )
 
     if agrupado.empty:
-        st.info("❌ Nenhum dado após o agrupamento.")
+        st.info("❌ Nada após o agrupamento.")
         return
 
     agrupado["Recebe adicional?"] = agrupado["recebe"].map(lambda x: "SIM" if x else "NÃO")
 
+    # Ordenação: data, entregador, turno
+    agrupado = agrupado.sort_values(
+        by=["data_dia", "pessoa_entregadora", "periodo"]
+    ).reset_index(drop=True)
+
     # ---------------------- #
-    # Monta tabela final
+    # Tabela Final
     # ---------------------- #
     tabela = agrupado[[
+        "data_dia",
         "pessoa_entregadora",
         "periodo",
         "horas_hms",
@@ -177,6 +183,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         "Recebe adicional?",
         "valor_total",
     ]].rename(columns={
+        "data_dia": "Data",
         "pessoa_entregadora": "Entregador",
         "periodo": "Turno",
         "horas_hms": "Horas online (HH:MM:SS)",
@@ -185,7 +192,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         "valor_total": "Valor R$",
     })
 
-    # arredondamentos
     tabela["Aceitação %"] = tabela["Aceitação %"].round(2)
     tabela["Completas %"] = tabela["Completas %"].round(2)
     tabela["Valor R$"] = tabela["Valor R$"].round(2)
@@ -193,17 +199,17 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     # ---------------------- #
     # KPIs
     # ---------------------- #
-    total_sim = int((tabela["Recebe adicional?"] == "SIM").sum())
-    total_nao = int((tabela["Recebe adicional?"] == "NÃO").sum())
-    ent_unicos = tabela["Entregador"].nunique()
+    sim = (tabela["Recebe adicional?"] == "SIM").sum()
+    nao = (tabela["Recebe adicional?"] == "NÃO").sum()
+    ent = tabela["Entregador"].nunique()
 
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Recebem adicional", f"{total_sim}")
-    k2.metric("Sem adicional", f"{total_nao}")
-    k3.metric("Entregadores no período", f"{ent_unicos}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Linhas recebendo", sim)
+    c2.metric("Linhas sem adicional", nao)
+    c3.metric("Entregadores", ent)
 
     # ---------------------- #
-    # Tabela com estilo (cores)
+    # Exibição com cores
     # ---------------------- #
     styled = (
         tabela
@@ -219,7 +225,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     st.dataframe(styled, use_container_width=True)
 
     # ---------------------- #
-    # Exportar XLSX (openpyxl)
+    # EXPORTAR XLSX
     # ---------------------- #
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
