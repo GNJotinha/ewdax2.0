@@ -5,7 +5,7 @@ from io import BytesIO
 from shared import hms_from_hours
 from utils import calcular_tempo_online
 
-# Tentativa de importar Pillow (para gerar a imagem dos cards)
+# Tentativa de importar Pillow (pra gerar a imagem dos cards)
 try:
     from PIL import Image, ImageDraw, ImageFont
 except ImportError:
@@ -35,104 +35,131 @@ def _fmt_moeda(x: float) -> str:
 
 
 # ================================
-# TEXTO E IMAGEM DOS CARDS
+# IMAGEM ÚNICA COM TODOS OS CARDS
 # ================================
 def _gerar_imagem_cards(resumo: pd.DataFrame, nome: str, periodo_txt: str) -> BytesIO | None:
     """
-    Gera uma imagem única com "cards" empilhados (como se fosse a união
-    dos cards da tela) para envio via WhatsApp.
+    Gera uma imagem única com a "união" dos cards:
+      - fundo dark
+      - para cada turno: card preto com info
+      - bloco verde/vermelho embaixo igual ao conceito da tela
     """
     if Image is None:
         return None
 
-    # Ordena para garantir consistência
     resumo = resumo.sort_values(["data", "turno"]).copy()
 
-    # Layout básico da imagem
+    # Layout básico
     largura = 1080
     margin_x = 40
     margin_y = 40
     espacamento_cards = 30
-    card_altura = 230  # altura de cada card
-    header_altura = 110
+    card_altura = 270      # altura do card preto
+    green_block_altura = 80
+    header_altura = 120
 
     n_cards = resumo.shape[0]
-    altura_total = margin_y * 2 + header_altura + n_cards * card_altura + (n_cards - 1) * espacamento_cards
+    altura_total = (
+        margin_y * 2
+        + header_altura
+        + n_cards * (card_altura + green_block_altura)
+        + (n_cards - 1) * espacamento_cards
+    )
 
-    # Cria imagem base (fundo escuro, na pegada do painel)
-    img = Image.new("RGB", (largura, altura_total), (15, 23, 42))
+    # Imagem base
+    bg_color = (15, 23, 42)        # fundo geral
+    card_color = (24, 33, 58)      # card preto
+    img = Image.new("RGB", (largura, altura_total), bg_color)
     draw = ImageDraw.Draw(img)
 
-    # Fonte
+    # Fontes
     try:
-        fonte_titulo = ImageFont.truetype("arial.ttf", 40)
-        fonte_sub = ImageFont.truetype("arial.ttf", 30)
+        fonte_titulo = ImageFont.truetype("arial.ttf", 42)
+        fonte_sub = ImageFont.truetype("arial.ttf", 32)
         fonte_txt = ImageFont.truetype("arial.ttf", 28)
+        fonte_small = ImageFont.truetype("arial.ttf", 24)
     except Exception:
-        fonte_titulo = fonte_sub = fonte_txt = ImageFont.load_default()
+        fonte_titulo = fonte_sub = fonte_txt = fonte_small = ImageFont.load_default()
 
-    # Header com nome e período
+    # Header (nome + período)
     y = margin_y
-    draw.text((margin_x, y), f"{nome}", font=fonte_titulo, fill=(240, 240, 240))
+    draw.text((margin_x, y), nome, font=fonte_titulo, fill=(240, 240, 240))
     y += 55
     draw.text((margin_x, y), f"Período: {periodo_txt}", font=fonte_sub, fill=(200, 200, 200))
     y += header_altura - 55
 
-    # Helper para desenhar um "card" simples
-    def draw_card(x0, y0, x1, y1, fill, outline):
-        draw.rounded_rectangle([x0, y0, x1, y1], radius=25, fill=fill, outline=outline, width=2)
+    def draw_rounded(x0, y0, x1, y1, radius, fill, outline, width=2):
+        draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=fill, outline=outline, width=width)
 
-    # Desenha um card por turno
     for _, row in resumo.iterrows():
+
+        # --- CARD PRETO (info do turno) ---
         card_top = y
         card_bottom = y + card_altura
         card_left = margin_x
         card_right = largura - margin_x
 
-        # Card principal (fundo)
-        draw_card(card_left, card_top, card_right, card_bottom, fill=(24, 33, 58), outline=(37, 99, 235))
+        draw_rounded(
+            card_left,
+            card_top,
+            card_right,
+            card_bottom,
+            radius=30,
+            fill=card_color,
+            outline=(55, 65, 81),
+            width=2,
+        )
 
-        # Título
+        # Título: data + nome do turno (tipo que tá no Streamlit)
         data_txt = pd.to_datetime(row["data"]).strftime("%d/%m/%Y")
-        titulo = f"{data_txt} • {row['turno']}"
-        draw.text((card_left + 25, card_top + 18), titulo, font=fonte_sub, fill=(226, 232, 240))
+        titulo = f"Turno: {row['turno']}"
+        draw.text(
+            (card_left + 30, card_top + 20),
+            f"{data_txt}",
+            font=fonte_sub,
+            fill=(209, 213, 219),
+        )
+        draw.text(
+            (card_left + 30, card_top + 60),
+            titulo,
+            font=fonte_titulo,
+            fill=(248, 250, 252),
+        )
 
-        # Linhas de texto dentro do card
-        y_txt = card_top + 70
-        x_txt = card_left + 35
-
+        # Texto detalhado
+        x_txt = card_left + 40
+        y_txt = card_top + 115
         linhas = [
             f"Aceitação: {_fmt_pct(row['acc_pct'])}",
             f"Completas: {_fmt_pct(row['comp_pct'])}",
             f"Tempo online: {row['tempo_online_hms']}",
             f"Online (%): {_fmt_pct(row['online_pct'])}",
-            f"Ofertadas/Aceitas/Completas: {row['ofertadas']}/{row['aceitas']}/{row['completas']}",
+            f"Ofertadas: {row['ofertadas']}",
+            f"Aceitas: {row['aceitas']}",
+            f"Completas: {row['completas']}",
         ]
-
         for lin in linhas:
-            draw.text((x_txt, y_txt), lin, font=fonte_txt, fill=(209, 213, 219))
-            y_txt += 32
+            draw.text((x_txt, y_txt), lin, font=fonte_txt, fill=(229, 231, 235))
+            y_txt += 30
 
-        # Badge de elegível/inelegível no canto direito
-        badge_width = 330
-        badge_height = 70
-        bx0 = card_right - badge_width - 30
-        by0 = card_top + 30
-        bx1 = bx0 + badge_width
-        by1 = by0 + badge_height
+        # --- BLOCO VERDE / VERMELHO ABAIXO (como na UI) ---
+        block_top = card_bottom + 8
+        block_bottom = block_top + green_block_altura
+        block_left = card_left
+        block_right = card_right
 
         if row["elegivel"]:
-            badge_fill = (21, 83, 45)
-            badge_outline = (22, 163, 74)
-            badge_text1 = "Elegível ao adicional"
-            badge_text2 = f"Valor: {_fmt_moeda(row['valor_adicional'])}"
-            text_color1 = (187, 247, 208)
-            text_color2 = (220, 252, 231)
+            fill = (22, 101, 52)
+            outline = (34, 197, 94)
+            title = "✅ Elegível ao adicional!"
+            sub1 = f"Valor: {_fmt_moeda(row['valor_adicional'])}"
+            sub2 = f"({row['horas_online']:.2f} h × {_fmt_moeda(VALOR_ADICIONAL_HORA)}/h)"
+            txt_color = (240, 253, 244)
+            sub_color = (220, 252, 231)
         else:
-            badge_fill = (69, 10, 10)
-            badge_outline = (220, 38, 38)
-            badge_text1 = "Inelegível ao adicional"
-            # motivos simples
+            fill = (127, 29, 29)
+            outline = (248, 113, 113)
+            title = "❌ Inelegível ao adicional"
             motivos = []
             if row["acc_pct"] < ACEITACAO_MIN:
                 motivos.append(f"aceitação < {ACEITACAO_MIN:.0f}%")
@@ -140,16 +167,44 @@ def _gerar_imagem_cards(resumo: pd.DataFrame, nome: str, periodo_txt: str) -> By
                 motivos.append(f"completas < {COMPLETAS_MIN:.0f}%")
             if row["horas_online"] <= 0:
                 motivos.append("sem horas online")
-            badge_text2 = "; ".join(motivos) if motivos else "critérios não atendidos"
-            text_color1 = (254, 226, 226)
-            text_color2 = (254, 202, 202)
+            sub1 = "; ".join(motivos) if motivos else "critérios não atendidos"
+            sub2 = ""
+            txt_color = (254, 242, 242)
+            sub_color = (254, 226, 226)
 
-        draw_card(bx0, by0, bx1, by1, fill=badge_fill, outline=badge_outline)
-        draw.text((bx0 + 18, by0 + 10), badge_text1, font=fonte_txt, fill=text_color1)
-        draw.text((bx0 + 18, by0 + 38), badge_text2, font=fonte_txt, fill=text_color2)
+        draw_rounded(
+            block_left,
+            block_top,
+            block_right,
+            block_bottom,
+            radius=25,
+            fill=fill,
+            outline=outline,
+            width=2,
+        )
 
-        # Avança para o próximo card
-        y = card_bottom + espacamento_cards
+        draw.text(
+            (block_left + 30, block_top + 10),
+            title,
+            font=fonte_txt,
+            fill=txt_color,
+        )
+        draw.text(
+            (block_left + 30, block_top + 40),
+            sub1,
+            font=fonte_txt,
+            fill=sub_color,
+        )
+        if sub2:
+            draw.text(
+                (block_left + 30, block_top + 66),
+                sub2,
+                font=fonte_small,
+                fill=sub_color,
+            )
+
+        # Atualiza Y para próximo “card+bloco”
+        y = block_bottom + espacamento_cards
 
     buf = BytesIO()
     img.save(buf, format="PNG")
@@ -208,7 +263,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     # --------------------------
     # 2) SELETOR DE ENTREGADOR (APÓS PERÍODO)
-    #    (só quem atuou no período)
     # --------------------------
     nomes = sorted(base_periodo["pessoa_entregadora"].dropna().unique().tolist())
     nome = st.selectbox(
@@ -293,7 +347,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     st.divider()
 
     # ================================
-    # DETALHADO DIA → TURNO (CARDS)
+    # DETALHADO DIA → TURNO (CARDS NA TELA)
     # ================================
     for data, df_dia in resumo.groupby("data"):
 
@@ -328,7 +382,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                                 f"- **Completas:** {row['completas']}"
                             )
 
-                            # Caixinhas estilizadas (verde/vermelho), fonte padrão da página
                             if elegivel:
                                 st.markdown(
                                     f"""
@@ -387,12 +440,12 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     st.divider()
 
     # ================================
-    # IMAGEM ÚNICA DOS CARDS (WHATSAPP)
+    # IMAGEM ÚNICA PRA WHATSAPP
     # ================================
-    st.subheader("📲 Baixar imagem com todos os cards (WhatsApp)")
+    st.subheader("📲 Baixar imagem única com todos os cards")
 
     if Image is None:
-        st.info("Para gerar a imagem, adicione a dependência `Pillow` no ambiente (requirements.txt).")
+        st.info("Para gerar a imagem, adicione `Pillow` no requirements (ex: Pillow>=10).")
         return
 
     img_bytes = _gerar_imagem_cards(resumo, nome, periodo_txt)
@@ -400,7 +453,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.download_button(
             "⬇️ Baixar imagem (PNG)",
             data=img_bytes,
-            file_name=f"adicional_{nome.replace(' ','_')}.png",
+            file_name=f"adicional_{nome.replace(' ', '_')}.png",
             mime="image/png",
             use_container_width=True,
         )
