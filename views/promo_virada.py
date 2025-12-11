@@ -358,7 +358,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             "aceitacao_%": "Aceitação (%)",
             "conclusao_%": "Conclusão (%)",
             "valor_reais": "Valor (R$)",
-            "elegivel": "Elegível",
+            "elegivel": "Elegível"
         }
     )
 
