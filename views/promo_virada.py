@@ -168,12 +168,10 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.info("Nenhum entregador para mostrar com os filtros atuais.")
         return
 
-    # prepara colunas visíveis
+    # prepara colunas visíveis (sem ofertadas/aceitas)
     cols_show = [
         "posicao",
         "pessoa_entregadora",
-        "ofertadas",
-        "aceitas",
         "completas",
         "aceitacao_%",
         "conclusao_%",
@@ -191,8 +189,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         columns={
             "posicao": "Posição",
             "pessoa_entregadora": "Entregador",
-            "ofertadas": "Ofertadas",
-            "aceitas": "Aceitas",
             "completas": "Completas",
             "aceitacao_%": "Aceitação (%)",
             "conclusao_%": "Conclusão (%)",
@@ -221,12 +217,10 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     )
     st.dataframe(view_styled, use_container_width=True)
 
-    # 📥 Download CSV – ranking completo com flag de elegibilidade
+    # 📥 Download CSV – ranking completo (na mesma pegada visual)
     csv_cols = [
         "posicao",
         "pessoa_entregadora",
-        "ofertadas",
-        "aceitas",
         "completas",
         "aceitacao_%",
         "conclusao_%",
