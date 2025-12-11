@@ -4,6 +4,7 @@ import pandas as pd
 ACEITACAO_MIN = 75.0
 CONCLUSAO_MIN = 95.0
 
+
 def _pct(num, den):
     if den is None or den == 0:
         return 0.0
@@ -11,6 +12,22 @@ def _pct(num, den):
         return float(num) / float(den) * 100.0
     except Exception:
         return 0.0
+
+
+def _style_row(row):
+    """
+    Aplica estilo na linha do dataframe exibido:
+    - Deixa em vermelho e negrito quem:
+        * está no TOP 20 em valor (Posição <= 20)
+        * NÃO é elegível (Elegível == 'Não')
+    Obs: aqui já estamos com os nomes renomeados: 'Posição' e 'Elegível'.
+    """
+    in_top20 = row["Posição"] <= 20
+    not_eligible = row["Elegível"] == "Não"
+    if in_top20 and not_eligible:
+        return ["color: red; font-weight: bold;"] * len(row)
+    return [""] * len(row)
+
 
 def render(df: pd.DataFrame, _USUARIOS: dict):
     st.header("🎉 Promoção da Virada — Ranking")
@@ -20,7 +37,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.error("Coluna 'soma_das_taxas_das_corridas_aceitas' não encontrada na base.")
         st.stop()
 
-    # garante data
+    # garante coluna de data
     base = df.copy()
     if "data" in base.columns:
         base["data"] = pd.to_datetime(base["data"], errors="coerce")
@@ -37,7 +54,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     # 📆 Período fixo da promoção
     inicio_promo = pd.Timestamp(2025, 12, 8)
-    fim_promo    = pd.Timestamp(2026, 1, 20)
+    fim_promo = pd.Timestamp(2026, 1, 20)
 
     st.caption(
         f"Período da promoção: **{inicio_promo.strftime('%d/%m/%Y')} a {fim_promo.strftime('%d/%m/%Y')}**"
@@ -51,7 +68,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.info("❌ Nenhum dado no período da promoção.")
         st.stop()
 
-    # normaliza números
+    # normaliza números principais
     for c in [
         "numero_de_corridas_ofertadas",
         "numero_de_corridas_aceitas",
@@ -78,13 +95,12 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.stop()
 
     # métricas de % e valor R$
-    grp["aceitacao_%"]  = grp.apply(lambda r: _pct(r["aceitas"],   r["ofertadas"]), axis=1)
-    grp["conclusao_%"]  = grp.apply(lambda r: _pct(r["completas"], r["aceitas"]),   axis=1)
-    grp["valor_reais"]  = grp["valor_centavos"] / 100.0
+    grp["aceitacao_%"] = grp.apply(lambda r: _pct(r["aceitas"], r["ofertadas"]), axis=1)
+    grp["conclusao_%"] = grp.apply(lambda r: _pct(r["completas"], r["aceitas"]), axis=1)
+    grp["valor_reais"] = grp["valor_centavos"] / 100.0
 
-    # ranking geral (todos com algum movimento relevante)
+    # ranking geral: só quem teve atuação real
     ranking = grp.copy()
-    # se quiser ser mais restritivo, pode filtrar aqui (ex: ofertadas>0 ou valor>0)
     ranking = ranking[(ranking["ofertadas"] > 0) & (ranking["aceitas"] > 0)]
     if ranking.empty:
         st.info("Ninguém com ofertadas/aceitas > 0 no período.")
@@ -96,11 +112,10 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     # flag de elegibilidade
     ranking["elegivel"] = (
-        (ranking["aceitacao_%"] >= ACEITACAO_MIN) &
-        (ranking["conclusao_%"] >= CONCLUSAO_MIN)
+        (ranking["aceitacao_%"] >= ACEITACAO_MIN)
+        & (ranking["conclusao_%"] >= CONCLUSAO_MIN)
     )
 
-    # contadores gerais
     total_participantes = int(ranking.shape[0])
     total_elegiveis = int(ranking[ranking["elegivel"]].shape[0])
 
@@ -112,7 +127,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     # 🔘 filtro: só elegíveis
     only_eligible = st.checkbox("Mostrar apenas elegíveis", value=False)
 
-    # visão principal: até 75 colocados
+    # visão principal: até o 75º colocado
     view = ranking[ranking["posicao"] <= 75].copy()
     if only_eligible:
         view = view[view["elegivel"]]
@@ -139,17 +154,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     view["valor_reais"] = view["valor_reais"].round(2)
     view["elegivel"] = view["elegivel"].map({True: "Sim", False: "Não"})
 
-    # 🔴 estilo: top 20 não elegível em vermelho
-    def _style_row(row):
-        # linha vem com 'elegivel' já como "Sim"/"Não"
-        in_top20 = row["posicao"] <= 20
-        not_eligible = row["elegivel"] == "Não"
-        if in_top20 and not_eligible:
-            return ["color: red; font-weight: bold;"] * len(row)
-        return [""] * len(row)
-
-    view_styled = (
-        view.rename(columns={
+    # renomeia pra exibição
+    df_display = view.rename(
+        columns={
             "posicao": "Posição",
             "pessoa_entregadora": "Entregador",
             "ofertadas": "Ofertadas",
@@ -159,18 +166,25 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             "conclusao_%": "Conclusão (%)",
             "valor_reais": "Valor (R$)",
             "elegivel": "Elegível",
-        })
-        .style
+        }
+    )
+
+    view_styled = (
+        df_display.style
         .apply(_style_row, axis=1)
-        .format({
-            "Aceitação (%)": "{:.2f}",
-            "Conclusão (%)": "{:.2f}",
-            "Valor (R$)": "{:.2f}",
-        })
+        .format(
+            {
+                "Aceitação (%)": "{:.2f}",
+                "Conclusão (%)": "{:.2f}",
+                "Valor (R$)": "{:.2f}",
+            }
+        )
     )
 
     st.subheader("🏆 Ranking (até o 75º colocado)")
-    st.caption("Em VERMELHO: entregadores no TOP 20 em valor que NÃO bateram os critérios de %.")
+    st.caption(
+        "Em VERMELHO: entregadores no TOP 20 em valor que NÃO bateram os critérios de %."
+    )
     st.dataframe(view_styled, use_container_width=True)
 
     # 📥 Download CSV – ranking completo com flag de elegibilidade
