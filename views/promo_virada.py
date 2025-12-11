@@ -17,32 +17,44 @@ def _pct(num, den):
 def _style_row(row):
     """
     Estilo visual da linha no dataframe exibido.
+
     Regras:
-      - TOP 20 & NÃO elegível: vermelho forte (alerta).
-      - TOP 3 & elegível: verde mais forte + negrito (destaque).
-      - TOP 20 & elegível: leve verde de fundo.
+      - TODO elegível: fundo verde suave.
+      - TOP 20 & elegível: verde mais forte.
+      - TOP 3 & elegível: verde bem destacado + negrito.
+      - TOP 20 & NÃO elegível: vermelho forte (alerta, sobrescreve qualquer coisa).
       - Demais: padrão.
+
     Obs: aqui os nomes já estão RENOMEADOS: 'Posição' e 'Elegível'.
     """
     pos = row["Posição"]
     elegivel = (row["Elegível"] == "Sim")
 
+    # base: sem estilo
     styles = [""] * len(row)
 
-    if pos <= 20 and not elegivel:
-        # 🔴 Top 20 mas não bateu critério
+    # base para qualquer elegível (inclusive fora do top 20)
+    if elegivel:
         styles = [
-            "background-color: #4a1111; color: #ffb3b3; font-weight: bold;"
+            "background-color: #101f18; color: #d4f6df;"
         ] * len(row)
-    elif pos <= 3 and elegivel:
-        # 🥇🥈🥉 Top 3 elegíveis (mais destaque)
+
+    # top 20 elegível: reforça o verde
+    if pos <= 20 and elegivel:
+        styles = [
+            "background-color: #123322; color: #d4f6df;"
+        ] * len(row)
+
+    # top 3 elegível: ainda mais destaque
+    if pos <= 3 and elegivel:
         styles = [
             "background-color: #0f3b22; color: #d4f6df; font-weight: bold;"
         ] * len(row)
-    elif pos <= 20 and elegivel:
-        # ✅ Top 20 elegível
+
+    # top 20 NÃO elegível: vermelho (sempre sobrescreve)
+    if pos <= 20 and not elegivel:
         styles = [
-            "background-color: #123322; color: #d4f6df;"
+            "background-color: #4a1111; color: #ffb3b3; font-weight: bold;"
         ] * len(row)
 
     return styles
@@ -204,7 +216,8 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     st.subheader("🏆 Ranking (até o 75º colocado)")
     st.caption(
-        "🟢 Verde: elegíveis (top 3 com mais destaque) • 🔴 Vermelho: no TOP 20 em valor mas NÃO bateram os critérios."
+        "🟢 Todos os elegíveis aparecem em verde (Top 3 e Top 20 com mais destaque) • "
+        "🔴 Em vermelho: quem está no TOP 20 em valor mas NÃO bateu os critérios."
     )
     st.dataframe(view_styled, use_container_width=True)
 
