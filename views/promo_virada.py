@@ -16,17 +16,36 @@ def _pct(num, den):
 
 def _style_row(row):
     """
-    Aplica estilo na linha do dataframe exibido:
-    - Deixa em vermelho e negrito quem:
-        * está no TOP 20 em valor (Posição <= 20)
-        * NÃO é elegível (Elegível == 'Não')
-    Obs: aqui já estamos com os nomes renomeados: 'Posição' e 'Elegível'.
+    Estilo visual da linha no dataframe exibido.
+    Regras:
+      - TOP 20 & NÃO elegível: vermelho forte (alerta).
+      - TOP 3 & elegível: verde mais forte + negrito (destaque).
+      - TOP 20 & elegível: leve verde de fundo.
+      - Demais: padrão.
+    Obs: aqui os nomes já estão RENOMEADOS: 'Posição' e 'Elegível'.
     """
-    in_top20 = row["Posição"] <= 20
-    not_eligible = row["Elegível"] == "Não"
-    if in_top20 and not_eligible:
-        return ["color: red; font-weight: bold;"] * len(row)
-    return [""] * len(row)
+    pos = row["Posição"]
+    elegivel = (row["Elegível"] == "Sim")
+
+    styles = [""] * len(row)
+
+    if pos <= 20 and not elegivel:
+        # 🔴 Top 20 mas não bateu critério
+        styles = [
+            "background-color: #4a1111; color: #ffb3b3; font-weight: bold;"
+        ] * len(row)
+    elif pos <= 3 and elegivel:
+        # 🥇🥈🥉 Top 3 elegíveis (mais destaque)
+        styles = [
+            "background-color: #0f3b22; color: #d4f6df; font-weight: bold;"
+        ] * len(row)
+    elif pos <= 20 and elegivel:
+        # ✅ Top 20 elegível
+        styles = [
+            "background-color: #123322; color: #d4f6df;"
+        ] * len(row)
+
+    return styles
 
 
 def render(df: pd.DataFrame, _USUARIOS: dict):
@@ -119,8 +138,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     total_participantes = int(ranking.shape[0])
     total_elegiveis = int(ranking[ranking["elegivel"]].shape[0])
 
-    st.metric("Total no ranking (geral)", total_participantes)
-    st.metric("Elegíveis (bateram os critérios)", total_elegiveis)
+    c1, c2 = st.columns(2)
+    c1.metric("Total no ranking (geral)", total_participantes)
+    c2.metric("Elegíveis (bateram os critérios)", total_elegiveis)
 
     st.divider()
 
@@ -179,11 +199,12 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 "Valor (R$)": "{:.2f}",
             }
         )
+        .hide(axis="index")
     )
 
     st.subheader("🏆 Ranking (até o 75º colocado)")
     st.caption(
-        "Em VERMELHO: entregadores no TOP 20 em valor que NÃO bateram os critérios de %."
+        "🟢 Verde: elegíveis (top 3 com mais destaque) • 🔴 Vermelho: no TOP 20 em valor mas NÃO bateram os critérios."
     )
     st.dataframe(view_styled, use_container_width=True)
 
