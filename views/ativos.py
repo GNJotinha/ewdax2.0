@@ -48,11 +48,36 @@ def _fmt_int(x) -> str:
         return "0"
 
 
+def _fmt_float(x, nd=2) -> str:
+    try:
+        return f"{float(x):.{nd}f}".replace(".", ",")
+    except Exception:
+        return "0,00"
+
+
 def _fmt_pct(x, nd=1) -> str:
     try:
         return f"{float(x):.{nd}f}%".replace(".", ",")
     except Exception:
         return "0,0%"
+
+
+def _sec_to_dhms(sec_total: float | int) -> str:
+    """Segundos -> 'Xd HH:MM:SS' (quando passar de 24h)"""
+    try:
+        sec = int(round(float(sec_total)))
+    except Exception:
+        sec = 0
+    if sec < 0:
+        sec = 0
+    days = sec // 86400
+    rem = sec % 86400
+    h = rem // 3600
+    m = (rem % 3600) // 60
+    s = rem % 60
+    if days > 0:
+        return f"{days}d {h:02d}:{m:02d}:{s:02d}"
+    return f"{h:02d}:{m:02d}:{s:02d}"
 
 
 def _periodo_txt(periodo) -> str:
@@ -176,21 +201,26 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     data_max = pd.to_datetime(base["data"]).max().date()
 
     st.caption("Filtros (opcional) — sem filtro = visão geral")
-    c1, c2, c3 = st.columns([2, 2, 2])
 
+    # 3 colunas IGUAIS (ajuda muito a “igualar” visualmente)
+    f1, f2, f3 = st.columns(3)
+
+    # Subpraça
     if "sub_praca" in base.columns:
         sub_opts = sub_options_with_livre(base, praca_scope="SAO PAULO")
-        sub_sel = c1.multiselect("Subpraça", sub_opts)
+        sub_sel = f1.multiselect("Subpraça", sub_opts, key="ru_sub")
     else:
         sub_sel = []
 
+    # Turno
     if "periodo" in base.columns:
         turnos = sorted([x for x in base["periodo"].dropna().unique().tolist()])
-        turnos_sel = c2.multiselect("Turno", turnos)
+        turnos_sel = f2.multiselect("Turno", turnos, key="ru_turno")
     else:
         turnos_sel = []
 
-    periodo = c3.date_input("Período", [data_min, data_max], format="DD/MM/YYYY")
+    # Período
+    periodo = f3.date_input("Período", [data_min, data_max], format="DD/MM/YYYY", key="ru_periodo")
 
     # aplica filtros
     df_sel = base.copy()
@@ -227,35 +257,35 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         return
 
     # ------------------------------
-    # KPIs (2 por linha, vertical friendly)
+    # KPIs na ordem que você pediu:
+    # Ofertadas  | Completas(%)
+    # Aceitas(%) | Rejeitadas(%)
+    # Entregadores | Horas
+    # SH | UTR
     # ------------------------------
     k = _kpis(df_sel)
 
+    # monta textos com % do lado (pequeno, entre parênteses)
+    completas_label = f"{_fmt_int(k['com'])} ({_fmt_pct(k['comp'], 1)})"
+    aceitas_label = f"{_fmt_int(k['ace'])} ({_fmt_pct(k['acc'], 1)})"
+    rejeitadas_label = f"{_fmt_int(k['rej'])} ({_fmt_pct(k['rejp'], 1)})"
+
     r1c1, r1c2 = st.columns(2)
     r1c1.metric("📦 Ofertadas", _fmt_int(k["ofe"]))
-    r1c2.metric("👍 Aceitas", _fmt_int(k["ace"]))
+    r1c2.metric("🏁 Completas", completas_label)
 
     r2c1, r2c2 = st.columns(2)
-    r2c1.metric("👎 Rejeitadas", _fmt_int(k["rej"]))
-    r2c2.metric("🏁 Completas", _fmt_int(k["com"]))
+    r2c1.metric("👍 Aceitas", aceitas_label)
+    r2c2.metric("👎 Rejeitadas", rejeitadas_label)
 
     r3c1, r3c2 = st.columns(2)
-    r3c1.metric("👤 Entregadores (ativos)", _fmt_int(k["ativos"]))
+    r3c1.metric("👤 Entregadores", _fmt_int(k["ativos"]))
     r3c2.metric("🕒 Horas", f"{k['horas']:.1f}h")
 
+    # SH e UTR na última linha
     r4c1, r4c2 = st.columns(2)
-    r4c1.metric("🧭 UTR (Abs.)", f"{k['utr']:.2f}")
-    # deixa o outro slot livre, mas com info útil
-    r4c2.markdown(
-        f"""
-        <div style="padding-top: 0.25rem; line-height: 1.7;">
-          <b>Aceitação:</b> { _fmt_pct(k["acc"], 1) }<br>
-          <b>Rejeição:</b> { _fmt_pct(k["rejp"], 1) }<br>
-          <b>Conclusão:</b> { _fmt_pct(k["comp"], 1) }
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    r4c1.metric("⏱️ SH", _sec_to_dhms(k["seg"]))
+    r4c2.metric("🧭 UTR (Abs.)", f"{k['utr']:.2f}")
 
     st.divider()
 
