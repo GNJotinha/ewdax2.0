@@ -111,7 +111,7 @@ MENU = {
         "Categorias metas": "views.sh_aceitacao",
         "Adicional por Hora (Turno)": "views.adicional_turno",
         "Lista adicional": "views.lista_adicional",
-        "Ativosl": "views.ativos",
+        "Ativos": "views.ativos",
     },
     "Dashboards": {
         "UTR": "views.utr",
