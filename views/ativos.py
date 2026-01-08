@@ -48,13 +48,6 @@ def _fmt_int(x) -> str:
         return "0"
 
 
-def _fmt_float(x, nd=2) -> str:
-    try:
-        return f"{float(x):.{nd}f}".replace(".", ",")
-    except Exception:
-        return "0,00"
-
-
 def _fmt_pct(x, nd=1) -> str:
     try:
         return f"{float(x):.{nd}f}%".replace(".", ",")
@@ -62,48 +55,65 @@ def _fmt_pct(x, nd=1) -> str:
         return "0,0%"
 
 
-def _sec_to_dhms(sec_total: float | int) -> str:
-    """Segundos -> 'Xd HH:MM:SS' (quando passar de 24h)"""
+def _format_date_br(dt) -> str:
     try:
-        sec = int(round(float(sec_total)))
+        return pd.to_datetime(dt).strftime("%d/%m/%Y")
     except Exception:
-        sec = 0
-    if sec < 0:
-        sec = 0
-    days = sec // 86400
-    rem = sec % 86400
-    h = rem // 3600
-    m = (rem % 3600) // 60
-    s = rem % 60
-    if days > 0:
-        return f"{days}d {h:02d}:{m:02d}:{s:02d}"
-    return f"{h:02d}:{m:02d}:{s:02d}"
+        return str(dt)
+
+
+def _normalize_praca_sigla(df: pd.DataFrame) -> str | None:
+    """Tenta inferir uma sigla curta (ex: SAO PAULO -> SP)."""
+    if "praca" not in df.columns:
+        return None
+    vals = df["praca"].dropna().astype(str).unique().tolist()
+    if not vals:
+        return None
+    # se tiver mais de uma praça, não chuta
+    if len(vals) != 1:
+        return None
+    v = vals[0].strip().upper()
+    if v in ("SAO PAULO", "SÃO PAULO"):
+        return "SP"
+    return v
 
 
 def _periodo_txt(periodo) -> str:
     if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
-        d0 = pd.to_datetime(periodo[0]).strftime("%d/%m")
-        d1 = pd.to_datetime(periodo[1]).strftime("%d/%m")
+        d0 = _format_date_br(periodo[0])
+        d1 = _format_date_br(periodo[1])
         return f"{d0} a {d1}"
     if isinstance(periodo, (list, tuple)) and len(periodo) == 1:
-        d0 = pd.to_datetime(periodo[0]).strftime("%d/%m")
+        d0 = _format_date_br(periodo[0])
         return f"{d0}"
     return ""
 
 
-def _build_title(sub_sel: list[str], turnos_sel: list[str], periodo, has_filter: bool) -> str:
+def _build_title(
+    sub_sel: list[str],
+    turnos_sel: list[str],
+    periodo,
+    has_filter: bool,
+    praca_sigla: str | None,
+) -> str:
     if not has_filter:
         return "Visão geral (sem filtros)"
 
-    parts = []
+    left = ""
     if sub_sel:
-        parts.append(sub_sel[0] if len(sub_sel) == 1 else f"{len(sub_sel)} subpraças")
+        left = sub_sel[0] if len(sub_sel) == 1 else f"{len(sub_sel)} subpraças"
+    if praca_sigla:
+        left = f"{left} - {praca_sigla}" if left else praca_sigla
+
+    middle = ""
     if turnos_sel:
-        parts.append(turnos_sel[0] if len(turnos_sel) == 1 else f"{len(turnos_sel)} turnos")
+        middle = turnos_sel[0] if len(turnos_sel) == 1 else f"{len(turnos_sel)} turnos"
+
     ptxt = _periodo_txt(periodo)
-    if ptxt:
-        parts.append(f"Período {ptxt}")
-    return " — ".join([p for p in parts if p]).strip()
+    right = f"Período {ptxt}" if ptxt else ""
+
+    parts = [p for p in (left, middle, right) if p]
+    return " — ".join(parts).strip()
 
 
 def _kpis(df_slice: pd.DataFrame) -> dict:
@@ -114,17 +124,50 @@ def _kpis(df_slice: pd.DataFrame) -> dict:
     seg = pd.to_numeric(df_slice.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
 
     horas = float(seg) / 3600.0 if seg > 0 else 0.0
+
     acc = (ace / ofe * 100.0) if ofe > 0 else 0.0
     rejp = (rej / ofe * 100.0) if ofe > 0 else 0.0
     comp = (com / ace * 100.0) if ace > 0 else 0.0
-    utr = (ofe / horas) if horas > 0 else 0.0
+
+    # UTR absoluto (agregado)
+    utr_abs = (ofe / horas) if horas > 0 else 0.0
+
+    # UTR "Médias": média do (ofertadas/horas) por linha com horas>0
+    df_ok = df_slice.copy()
+    df_ok["segundos_abs"] = pd.to_numeric(df_ok.get("segundos_abs", 0), errors="coerce").fillna(0)
+    df_ok["numero_de_corridas_ofertadas"] = pd.to_numeric(
+        df_ok.get("numero_de_corridas_ofertadas", 0), errors="coerce"
+    ).fillna(0)
+
+    df_ok = df_ok[df_ok["segundos_abs"] > 0]
+    if not df_ok.empty:
+        df_ok["horas_linha"] = df_ok["segundos_abs"] / 3600.0
+        df_ok = df_ok[df_ok["horas_linha"] > 0]
+        if not df_ok.empty:
+            df_ok["utr_linha"] = df_ok["numero_de_corridas_ofertadas"] / df_ok["horas_linha"]
+            utr_med = float(df_ok["utr_linha"].mean())
+        else:
+            utr_med = 0.0
+    else:
+        utr_med = 0.0
 
     ativos = 0
     if "pessoa_entregadora" in df_slice.columns:
-        m = _activity_mask(df_slice)
-        ativos = int(df_slice.loc[m, "pessoa_entregadora"].dropna().nunique())
+        ativos = int(df_slice.loc[_activity_mask(df_slice), "pessoa_entregadora"].dropna().nunique())
 
-    return dict(ofe=ofe, ace=ace, rej=rej, com=com, seg=seg, horas=horas, acc=acc, rejp=rejp, comp=comp, utr=utr, ativos=ativos)
+    return dict(
+        ofe=ofe,
+        ace=ace,
+        rej=rej,
+        com=com,
+        horas=horas,
+        acc=acc,
+        rejp=rejp,
+        comp=comp,
+        utr_abs=utr_abs,
+        utr_med=utr_med,
+        ativos=ativos,
+    )
 
 
 def _agg_individual(df_sel: pd.DataFrame) -> pd.DataFrame:
@@ -200,26 +243,23 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     data_min = pd.to_datetime(base["data"]).min().date()
     data_max = pd.to_datetime(base["data"]).max().date()
 
-    st.caption("Filtros (opcional) — sem filtro = visão geral")
+    praca_sigla = _normalize_praca_sigla(base)
 
-    # 3 colunas IGUAIS (ajuda muito a “igualar” visualmente)
+    # filtros (sem legendas)
     f1, f2, f3 = st.columns(3)
 
-    # Subpraça
     if "sub_praca" in base.columns:
         sub_opts = sub_options_with_livre(base, praca_scope="SAO PAULO")
         sub_sel = f1.multiselect("Subpraça", sub_opts, key="ru_sub")
     else:
         sub_sel = []
 
-    # Turno
     if "periodo" in base.columns:
         turnos = sorted([x for x in base["periodo"].dropna().unique().tolist()])
         turnos_sel = f2.multiselect("Turno", turnos, key="ru_turno")
     else:
         turnos_sel = []
 
-    # Período
     periodo = f3.date_input("Período", [data_min, data_max], format="DD/MM/YYYY", key="ru_periodo")
 
     # aplica filtros
@@ -239,7 +279,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     if turnos_sel and "periodo" in df_sel.columns:
         df_sel = df_sel[df_sel["periodo"].isin(turnos_sel)]
 
-    # sem filtro "de verdade"
+    # sem filtro "de verdade" (período default + sem sub/turno)
     period_is_default = False
     if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
         try:
@@ -248,7 +288,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             period_is_default = False
 
     has_filter = bool(sub_sel or turnos_sel or (not period_is_default))
-    titulo = _build_title(sub_sel, turnos_sel, periodo, has_filter)
+    titulo = _build_title(sub_sel, turnos_sel, periodo, has_filter, praca_sigla)
 
     st.subheader(titulo)
 
@@ -257,15 +297,14 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         return
 
     # ------------------------------
-    # KPIs na ordem que você pediu:
+    # KPIs na ordem:
     # Ofertadas  | Completas(%)
     # Aceitas(%) | Rejeitadas(%)
     # Entregadores | Horas
-    # SH | UTR
+    # UTR (Abs.) | UTR (Médias)
     # ------------------------------
     k = _kpis(df_sel)
 
-    # monta textos com % do lado (pequeno, entre parênteses)
     completas_label = f"{_fmt_int(k['com'])} ({_fmt_pct(k['comp'], 1)})"
     aceitas_label = f"{_fmt_int(k['ace'])} ({_fmt_pct(k['acc'], 1)})"
     rejeitadas_label = f"{_fmt_int(k['rej'])} ({_fmt_pct(k['rejp'], 1)})"
@@ -282,10 +321,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     r3c1.metric("👤 Entregadores", _fmt_int(k["ativos"]))
     r3c2.metric("🕒 Horas", f"{k['horas']:.1f}h")
 
-    # SH e UTR na última linha
     r4c1, r4c2 = st.columns(2)
-    r4c1.metric("⏱️ SH", _sec_to_dhms(k["seg"]))
-    r4c2.metric("🧭 UTR (Abs.)", f"{k['utr']:.2f}")
+    r4c1.metric("🧭 UTR (Abs.)", f"{k['utr_abs']:.2f}")
+    r4c2.metric("📊 UTR (Médias)", f"{k['utr_med']:.2f}")
 
     st.divider()
 
@@ -305,7 +343,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     with st.expander("👤 Lista de entregadores presentes (Nome/UUID)", expanded=True):
         st.metric("Total de presentes", int(ativos_df.shape[0]))
         st.dataframe(ativos_df, use_container_width=True)
-
         st.download_button(
             "⬇️ Baixar CSV — presentes (Nome/UUID)",
             data=ativos_df.to_csv(index=False).encode("utf-8"),
@@ -322,14 +359,13 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     show_ind = st.checkbox("📈 Mostrar desempenhos individuais", value=False)
 
     if not show_ind:
-        st.caption("Marque o checkbox acima para ver a visão individual estilo “Relação de entregadores”.")
         return
 
     st.subheader("📋 Desempenhos individuais (por entregador)")
 
     df_ind_base = df_sel.loc[_activity_mask(df_sel)].copy()
     if df_ind_base.empty:
-        st.info("Sem atuação real no recorte (ativo=0).")
+        st.info("Sem atuação real no recorte.")
         return
 
     df_ind = _agg_individual(df_ind_base)
