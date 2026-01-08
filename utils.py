@@ -56,7 +56,9 @@ def calcular_tempo_online(df_filtrado: pd.DataFrame) -> float:
     """
     Tempo online = média de 'tempo_disponivel_escalado' em %.
     Regras:
-      - Ignora apenas linhas com -10:00 (segundos_abs_raw == -600).
+      - Ignora linhas "inválidas" de tempo absoluto:
+          * sentinela -10:00 (segundos_abs_raw == -600)
+          * absoluto < 00:09:59 (599s)  -> não entra no % online
       - Auto-escalona a origem:
           * mediana <= 1   -> assume 0–1      (multiplica por 100)
           * <= 100         -> assume 0–100    (usa como está)
@@ -68,9 +70,31 @@ def calcular_tempo_online(df_filtrado: pd.DataFrame) -> float:
 
     d = df_filtrado.copy()
 
-    # ignora -10:00 no cálculo do online
+    # -----------------------------
+    # 1) Filtro por tempo absoluto
+    #    - remove sentinela -10:00
+    #    - remove "turno fantasma" (< 00:09:59)
+    # -----------------------------
+    LIMIAR_ABS_SEG = 9 * 60 + 59  # 00:09:59 -> 599s
+
     if "segundos_abs_raw" in d.columns:
-        d = d[d["segundos_abs_raw"] != -600]
+        abs_raw = pd.to_numeric(d["segundos_abs_raw"], errors="coerce").fillna(0)
+    elif "segundos_abs" in d.columns:
+        # fallback: já clipado pelo loader
+        abs_raw = pd.to_numeric(d["segundos_abs"], errors="coerce").fillna(0)
+    elif "tempo_disponivel_absoluto" in d.columns:
+        abs_raw = d["tempo_disponivel_absoluto"].apply(tempo_para_segundos)
+        abs_raw = pd.to_numeric(abs_raw, errors="coerce").fillna(0)
+    else:
+        abs_raw = None
+
+    if abs_raw is not None:
+        # remove sentinela -10:00 e qualquer coisa abaixo do limiar
+        d = d[(abs_raw != -600) & (abs_raw >= LIMIAR_ABS_SEG)].copy()
+
+    # se tudo foi filtrado, não tem online %
+    if d.empty:
+        return 0.0
 
     esc = pd.to_numeric(d.get("tempo_disponivel_escalado"), errors="coerce").dropna()
     if esc.empty:
