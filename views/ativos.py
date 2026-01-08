@@ -4,7 +4,37 @@ import pandas as pd
 import numpy as np
 
 from shared import sub_options_with_livre, apply_sub_filter
-from utils import calcular_tempo_online
+from utils import calcular_tempo_online, tempo_para_segundos
+
+
+# ------------------------------
+# Regras de "turno válido" p/ contagem
+# ------------------------------
+LIMIAR_ABS_SEG = 9 * 60 + 59  # 00:09:59 -> 599s
+
+
+def _turno_valido_mask(df: pd.DataFrame) -> pd.Series:
+    """True quando a linha deve contar como 1 turno (>=00:09:59 no absoluto).
+
+    Obs:
+      - NÃO mexe em ofertadas/aceitas/completas; isso é só contagem.
+      - Reaproveita 'segundos_abs_raw' quando existir.
+      - Remove sentinela -10:00 (-600) e qualquer absoluto < 599s.
+    """
+    if df is None or df.empty:
+        return pd.Series([], dtype=bool)
+
+    if "segundos_abs_raw" in df.columns:
+        sec = pd.to_numeric(df["segundos_abs_raw"], errors="coerce").fillna(0)
+    elif "segundos_abs" in df.columns:
+        sec = pd.to_numeric(df["segundos_abs"], errors="coerce").fillna(0)
+    elif "tempo_disponivel_absoluto" in df.columns:
+        sec = df["tempo_disponivel_absoluto"].apply(tempo_para_segundos)
+        sec = pd.to_numeric(sec, errors="coerce").fillna(0)
+    else:
+        sec = pd.Series([0] * len(df), index=df.index, dtype=float)
+
+    return (sec != -600) & (sec >= LIMIAR_ABS_SEG)
 
 
 # ------------------------------
@@ -171,10 +201,15 @@ def _kpis(df_slice: pd.DataFrame) -> dict:
 
 
 def _agg_individual(df_sel: pd.DataFrame) -> pd.DataFrame:
+    # Contagem de "turnos" deve ignorar linhas com absoluto < 00:09:59.
+    # (sem mexer nas rotas: ofertadas/aceitas/completas seguem contando tudo.)
+    base = df_sel.copy()
+    base["_turno_ok"] = _turno_valido_mask(base).astype(int)
+
     agg = (
-        df_sel.groupby(["pessoa_entregadora"], dropna=True)
+        base.groupby(["pessoa_entregadora"], dropna=True)
         .agg(
-            turnos=("data", "count"),
+            turnos=("_turno_ok", "sum"),
             ofertadas=("numero_de_corridas_ofertadas", "sum"),
             aceitas=("numero_de_corridas_aceitas", "sum"),
             rejeitadas=("numero_de_corridas_rejeitadas", "sum"),
