@@ -55,24 +55,6 @@ def _fmt_pct(x, nd=1) -> str:
         return "0,0%"
 
 
-def _sec_to_dhms(sec_total: float | int) -> str:
-    """Formata segundos em 'Xd HH:MM:SS' quando passar de 24h, senão 'HH:MM:SS'."""
-    try:
-        sec = int(round(float(sec_total)))
-    except Exception:
-        sec = 0
-    if sec < 0:
-        sec = 0
-    days = sec // 86400
-    rem = sec % 86400
-    h = rem // 3600
-    m = (rem % 3600) // 60
-    s = rem % 60
-    if days > 0:
-        return f"{days}d {h:02d}:{m:02d}:{s:02d}"
-    return f"{h:02d}:{m:02d}:{s:02d}"
-
-
 def _periodo_txt(periodo) -> str:
     if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
         d0 = pd.to_datetime(periodo[0]).strftime("%d/%m")
@@ -144,14 +126,12 @@ def _agg_individual(df_sel: pd.DataFrame) -> pd.DataFrame:
     agg["horas"] = agg["segundos"] / 3600.0
     agg["UTR_abs"] = np.where(agg["horas"] > 0, agg["ofertadas"] / agg["horas"], 0.0)
 
-    # tempo online % (por entregador) — usa a função já existente
     online_vals = []
     for nome in agg["pessoa_entregadora"].tolist():
         chunk = df_sel[df_sel["pessoa_entregadora"] == nome].copy()
         online_vals.append(float(calcular_tempo_online(chunk)))
     agg["tempo_online_%"] = online_vals
 
-    # ordena por aceitação, depois ofertadas (pra ficar “bonito”)
     agg = agg.sort_values(by=["aceitacao_%", "ofertadas"], ascending=[False, False]).reset_index(drop=True)
     return agg
 
@@ -179,7 +159,7 @@ def _to_whatsapp_text(df_ind: pd.DataFrame, titulo: str) -> str:
 # View principal
 # ------------------------------
 def render(df: pd.DataFrame, _USUARIOS: dict):
-    st.header("📑 Relatórios — Unificado")
+    st.header("📑 Relatórios")
 
     if df is None or df.empty:
         st.info("Sem dados carregados.")
@@ -192,38 +172,29 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     base = _ensure_uuid(base)
 
-    # ------------------------------
-    # Filtros (topo)
-    # ------------------------------
     data_min = pd.to_datetime(base["data"]).min().date()
     data_max = pd.to_datetime(base["data"]).max().date()
 
     st.caption("Filtros (opcional) — sem filtro = visão geral")
     c1, c2, c3 = st.columns([2, 2, 2])
 
-    # Subpraça (com LIVRE)
     if "sub_praca" in base.columns:
         sub_opts = sub_options_with_livre(base, praca_scope="SAO PAULO")
         sub_sel = c1.multiselect("Subpraça", sub_opts)
     else:
         sub_sel = []
 
-    # Turno
     if "periodo" in base.columns:
         turnos = sorted([x for x in base["periodo"].dropna().unique().tolist()])
         turnos_sel = c2.multiselect("Turno", turnos)
     else:
         turnos_sel = []
 
-    # Período (default é o range inteiro)
     periodo = c3.date_input("Período", [data_min, data_max], format="DD/MM/YYYY")
 
-    # ------------------------------
-    # Aplica filtros
-    # ------------------------------
+    # aplica filtros
     df_sel = base.copy()
 
-    # período
     if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
         ini = pd.to_datetime(periodo[0])
         fim = pd.to_datetime(periodo[1]) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
@@ -232,18 +203,13 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         dia = pd.to_datetime(periodo[0]).date()
         df_sel = df_sel[df_sel["data"].dt.date == dia]
 
-    # subpraça
     if sub_sel:
         df_sel = apply_sub_filter(df_sel, sub_sel, praca_scope="SAO PAULO")
 
-    # turno
     if turnos_sel and "periodo" in df_sel.columns:
         df_sel = df_sel[df_sel["periodo"].isin(turnos_sel)]
 
-    # ------------------------------
-    # "Sem filtro" de verdade:
-    # se período == [min, max] e não escolheu sub/turno, então é visão geral.
-    # ------------------------------
+    # sem filtro "de verdade"
     period_is_default = False
     if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
         try:
@@ -261,31 +227,40 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         return
 
     # ------------------------------
-    # KPIs (estilo subpraça) — sempre aparece
+    # KPIs (2 por linha, vertical friendly)
     # ------------------------------
     k = _kpis(df_sel)
 
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("📦 Ofertadas", _fmt_int(k["ofe"]))
-    m2.metric("👍 Aceitas", _fmt_int(k["ace"]))
-    m3.metric("👎 Rejeitadas", _fmt_int(k["rej"]))
-    m4.metric("🏁 Completas", _fmt_int(k["com"]))
-    m5.metric("👤 Entregadores (ativos)", _fmt_int(k["ativos"]))
+    r1c1, r1c2 = st.columns(2)
+    r1c1.metric("📦 Ofertadas", _fmt_int(k["ofe"]))
+    r1c2.metric("👍 Aceitas", _fmt_int(k["ace"]))
 
-    p1, p2, p3, p4, p5 = st.columns(5)
-    p2.caption(f"Aceitação: **{_fmt_pct(k['acc'], 1)}**")
-    p3.caption(f"Rejeição: **{_fmt_pct(k['rejp'], 1)}**")
-    p4.caption(f"Conclusão: **{_fmt_pct(k['comp'], 1)}**")
+    r2c1, r2c2 = st.columns(2)
+    r2c1.metric("👎 Rejeitadas", _fmt_int(k["rej"]))
+    r2c2.metric("🏁 Completas", _fmt_int(k["com"]))
 
-    c6, c7, c8 = st.columns(3)
-    c6.metric("⏱️ Total SH", _sec_to_dhms(k["seg"]))
-    c7.metric("🧭 UTR (Abs.)", f"{k['utr']:.2f}")
-    c8.metric("🕒 Horas", f"{k['horas']:.1f}h")
+    r3c1, r3c2 = st.columns(2)
+    r3c1.metric("👤 Entregadores (ativos)", _fmt_int(k["ativos"]))
+    r3c2.metric("🕒 Horas", f"{k['horas']:.1f}h")
+
+    r4c1, r4c2 = st.columns(2)
+    r4c1.metric("🧭 UTR (Abs.)", f"{k['utr']:.2f}")
+    # deixa o outro slot livre, mas com info útil
+    r4c2.markdown(
+        f"""
+        <div style="padding-top: 0.25rem; line-height: 1.7;">
+          <b>Aceitação:</b> { _fmt_pct(k["acc"], 1) }<br>
+          <b>Rejeição:</b> { _fmt_pct(k["rejp"], 1) }<br>
+          <b>Conclusão:</b> { _fmt_pct(k["comp"], 1) }
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.divider()
 
     # ------------------------------
-    # Lista de presentes/ativos (default)
+    # Lista de presentes (Nome/UUID)
     # ------------------------------
     m = _activity_mask(df_sel)
     ativos_df = (
@@ -312,7 +287,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     st.divider()
 
     # ------------------------------
-    # Checkbox: Desempenhos individuais
+    # Individual (checkbox)
     # ------------------------------
     show_ind = st.checkbox("📈 Mostrar desempenhos individuais", value=False)
 
