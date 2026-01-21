@@ -131,14 +131,18 @@ def calcular_aderencia(
 ) -> dict:
 
     if df_base is None or df_base.empty:
-        return {
-            "pct": 0.0,
-            "unicos": 0,
-            "vagas": 0,
-            "por_grupo": pd.DataFrame(),
-        }
+        return {"pct": 0.0, "unicos": 0, "vagas": 0, "por_grupo": pd.DataFrame()}
 
     df = df_base.copy()
+
+    # -----------------------------
+    # IGNORA EXCESS (tag)
+    # -----------------------------
+    if "tag" in df.columns:
+        t = df["tag"].astype(str).str.upper().str.strip()
+        df = df[~t.str.contains("EXCESS", na=False)].copy()
+        if df.empty:
+            return {"pct": 0.0, "unicos": 0, "vagas": 0, "por_grupo": pd.DataFrame()}
 
     # -------- UUID --------
     if uuid_col not in df.columns:
@@ -146,7 +150,6 @@ def calcular_aderencia(
             df[uuid_col] = df["id_da_pessoa_entregadora"].astype(str)
         else:
             df[uuid_col] = ""
-
     df[uuid_col] = df[uuid_col].astype(str)
 
     # -------- DATA --------
@@ -168,31 +171,25 @@ def calcular_aderencia(
         regiao_col = "__regiao__"
 
     # -------- SEGUNDOS --------
-    df[segundos_col] = pd.to_numeric(
-        df.get(segundos_col, 0), errors="coerce"
-    ).fillna(0)
+    df[segundos_col] = pd.to_numeric(df.get(segundos_col, 0), errors="coerce").fillna(0)
 
     # -------- AGREGA ENTREGADOR POR GRUPO --------
     grp_ent = (
-        df.groupby(
-            [data_col, regiao_col, turno_col, uuid_col],
-            dropna=False,
-            as_index=False,
-        )
+        df.groupby([data_col, regiao_col, turno_col, uuid_col], dropna=False, as_index=False)
         .agg(segundos=(segundos_col, "sum"))
     )
 
     elegiveis = grp_ent[grp_ent["segundos"] >= limiar_seg].copy()
-    elegiveis["flag"] = 1
+    elegiveis["cnt"] = 1
 
-    # -------- CONTAGEM DE ÚNICOS --------
-    contagem = (
+    # -------- CONTAGEM DE ÚNICOS (>= 10 min) --------
+    unicos = (
         elegiveis.groupby([data_col, regiao_col, turno_col], dropna=False)
-        .agg(unicos=("flag", "sum"))
+        .agg(unicos=("cnt", "sum"))
         .reset_index()
     )
 
-    # -------- VAGAS --------
+    # -------- VAGAS (max no grupo pra não inflar) --------
     if vagas_col in df.columns:
         vagas = (
             df.groupby([data_col, regiao_col, turno_col], dropna=False)
@@ -200,29 +197,26 @@ def calcular_aderencia(
             .reset_index()
         )
     else:
-        vagas = contagem.copy()
+        vagas = unicos.copy()
         vagas["vagas"] = 0
 
-    base = contagem.merge(
-        vagas,
-        on=[data_col, regiao_col, turno_col],
-        how="left",
-    )
-
+    base = unicos.merge(vagas, on=[data_col, regiao_col, turno_col], how="left")
     base["vagas"] = pd.to_numeric(base["vagas"], errors="coerce").fillna(0)
+
     base["aderencia_pct"] = base.apply(
         lambda r: (r["unicos"] / r["vagas"] * 100.0) if r["vagas"] > 0 else 0.0,
         axis=1,
     )
 
-    total_unicos = int(base["unicos"].sum())
-    total_vagas = int(base["vagas"].sum())
-    pct = (total_unicos / total_vagas * 100.0) if total_vagas > 0 else 0.0
+    tot_unicos = int(base["unicos"].sum())
+    tot_vagas = int(base["vagas"].sum())
+    pct = (tot_unicos / tot_vagas * 100.0) if tot_vagas > 0 else 0.0
 
     return {
         "pct": round(pct, 2),
-        "unicos": total_unicos,
-        "vagas": total_vagas,
+        "unicos": tot_unicos,
+        "vagas": tot_vagas,
         "por_grupo": base.sort_values([data_col, regiao_col, turno_col]),
     }
+}
 
