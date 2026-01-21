@@ -149,6 +149,97 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         )
 
     # ---------------------------------------------------------
+    # ADERÊNCIA  ✅ (AGORA DENTRO DO render)
+    # ---------------------------------------------------------
+    if tipo_grafico == "Aderência":
+
+        # ---------- MENSAL ----------
+        mensal_rows = []
+        for ts in sorted(df["mes_ano"].dropna().unique()):
+            ts = pd.to_datetime(ts)
+            mes_i, ano_i = int(ts.month), int(ts.year)
+
+            df_mes = df[(df.get("mes") == mes_i) & (df.get("ano") == ano_i)].copy()
+            if df_mes.empty:
+                continue
+
+            ader_m = calcular_aderencia(df_mes)
+            mensal_rows.append({
+                "mes_ano": ts,
+                "aderencia": float(ader_m["pct"]),
+                "unicos": int(ader_m["unicos"]),
+                "vagas": int(ader_m["vagas"]),
+            })
+
+        mensal = pd.DataFrame(mensal_rows)
+        if mensal.empty:
+            st.info("Sem dados de aderência.")
+            _render_resumo_ano()
+            return
+
+        mensal["mes_rotulo"] = pd.to_datetime(mensal["mes_ano"]).dt.strftime("%b/%y")
+        mensal["label"] = mensal.apply(lambda r: f"{r['aderencia']:.1f}% ({r['unicos']}/{r['vagas']})", axis=1)
+
+        fig_m = px.bar(
+            mensal,
+            x="mes_rotulo",
+            y="aderencia",
+            text="label",
+            title="Aderência por mês",
+            labels={"mes_rotulo": "Mês/Ano", "aderencia": "Aderência (%)"},
+            template="plotly_dark",
+            color_discrete_sequence=PRIMARY_COLOR,
+        )
+        fig_m.update_traces(textposition="outside")
+        fig_m.update_layout(
+            yaxis=dict(range=[0, 100]),
+            margin=dict(t=60, b=30, l=40, r=40),
+        )
+        st.plotly_chart(fig_m, use_container_width=True)
+
+        # ---------- DIÁRIO ----------
+        if df_mes_ref.empty:
+            st.info("Sem dados no mês selecionado.")
+            _render_resumo_ano()
+            return
+
+        diario_rows = []
+        for dia, df_dia in df_mes_ref.groupby(pd.to_datetime(df_mes_ref["data"]).dt.date):
+            ader_d = calcular_aderencia(df_dia)
+            diario_rows.append({
+                "dia": int(pd.to_datetime(dia).day),
+                "aderencia": float(ader_d["pct"]),
+                "unicos": int(ader_d["unicos"]),
+                "vagas": int(ader_d["vagas"]),
+            })
+
+        diario = pd.DataFrame(diario_rows).sort_values("dia")
+        diario["label"] = diario.apply(lambda r: f"{r['aderencia']:.1f}% ({r['unicos']}/{r['vagas']})", axis=1)
+
+        fig_d = go.Figure()
+        fig_d.add_bar(
+            x=diario["dia"],
+            y=diario["aderencia"],
+            text=diario["label"],
+            textposition="outside",
+            marker=dict(color="#00BFFF"),
+            name="Aderência",
+        )
+        fig_d.update_layout(
+            title=f"📊 Aderência por dia ({mes_diario:02d}/{ano_diario})",
+            template="plotly_dark",
+            yaxis_title="Aderência (%)",
+            xaxis_title="Dia",
+            yaxis=dict(range=[0, 100]),
+            xaxis=dict(tickmode="linear", dtick=1),
+            margin=dict(t=60, b=30, l=40, r=40),
+        )
+        st.plotly_chart(fig_d, use_container_width=True)
+
+        _render_resumo_ano()
+        return
+
+    # ---------------------------------------------------------
     # Horas realizadas
     # ---------------------------------------------------------
     if tipo_grafico == "Horas realizadas":
@@ -428,93 +519,3 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     st.plotly_chart(fig2, use_container_width=True)
 
     _render_resumo_ano()
-
-
-# ---------------------------------------------------------
-# ADERÊNCIA
-# ---------------------------------------------------------
-if tipo_grafico == "Aderência":
-
-    # ---------- MENSAL ----------
-    mensal_rows = []
-
-    for ts in sorted(df["mes_ano"].dropna().unique()):
-        ts = pd.to_datetime(ts)
-        mes_i, ano_i = int(ts.month), int(ts.year)
-
-        df_mes = df[(df["mes"] == mes_i) & (df["ano"] == ano_i)].copy()
-        if df_mes.empty:
-            continue
-
-        ader_m = calcular_aderencia(df_mes)
-        mensal_rows.append({
-            "mes_ano": ts,
-            "aderencia": ader_m["pct"],
-            "label": f"{ader_m['pct']:.1f}%",
-        })
-
-    mensal = pd.DataFrame(mensal_rows)
-    if mensal.empty:
-        st.info("Sem dados de aderência.")
-        return
-
-    mensal["mes_rotulo"] = mensal["mes_ano"].dt.strftime("%b/%y")
-
-    fig_m = px.bar(
-        mensal,
-        x="mes_rotulo",
-        y="aderencia",
-        text="label",
-        title="Aderência por mês",
-        labels={"mes_rotulo": "Mês/Ano", "aderencia": "Aderência (%)"},
-        template="plotly_dark",
-        color_discrete_sequence=PRIMARY_COLOR,
-    )
-    fig_m.update_traces(textposition="outside")
-    fig_m.update_layout(
-        yaxis=dict(range=[0, 100]),
-        margin=dict(t=60, b=30, l=40, r=40),
-    )
-
-    st.plotly_chart(fig_m, use_container_width=True)
-
-    # ---------- DIÁRIO ----------
-    df_mes_ref = df[(df["mes"] == mes_diario) & (df["ano"] == ano_diario)].copy()
-    if df_mes_ref.empty:
-        st.info("Sem dados no mês selecionado.")
-        return
-
-    diario_rows = []
-    for dia, df_dia in df_mes_ref.groupby(df_mes_ref["data"].dt.date):
-        ader_d = calcular_aderencia(df_dia)
-        diario_rows.append({
-            "dia": dia.day,
-            "aderencia": ader_d["pct"],
-            "label": f"{ader_d['pct']:.1f}%",
-        })
-
-    diario = pd.DataFrame(diario_rows).sort_values("dia")
-
-    fig_d = go.Figure()
-    fig_d.add_bar(
-        x=diario["dia"],
-        y=diario["aderencia"],
-        text=diario["label"],
-        textposition="outside",
-        marker=dict(color="#00BFFF"),
-        name="Aderência",
-    )
-    fig_d.update_layout(
-        title=f"📊 Aderência por dia ({mes_diario:02d}/{ano_diario})",
-        template="plotly_dark",
-        yaxis_title="Aderência (%)",
-        xaxis_title="Dia",
-        yaxis=dict(range=[0, 100]),
-        xaxis=dict(tickmode="linear", dtick=1),
-        margin=dict(t=60, b=30, l=40, r=40),
-    )
-
-    st.plotly_chart(fig_d, use_container_width=True)
-
-    return
-
