@@ -113,3 +113,116 @@ def calcular_tempo_online(df_filtrado: pd.DataFrame) -> float:
     # saneamento final
     val = max(0.0, min(100.0, val))
     return round(val, 1)
+
+
+import pandas as pd
+
+
+def calcular_aderencia(
+    df_base: pd.DataFrame,
+    *,
+    vagas_col="numero_minimo_de_entregadores_regulares_na_escala",
+    uuid_col="uuid",
+    segundos_col="segundos_abs",
+    limiar_seg=600,
+    turno_cols=("periodo", "turno", "tipo_turno"),
+    regiao_cols=("sub_praca", "regiao", "região", "zona"),
+    data_col="data",
+) -> dict:
+
+    if df_base is None or df_base.empty:
+        return {
+            "pct": 0.0,
+            "unicos": 0,
+            "vagas": 0,
+            "por_grupo": pd.DataFrame(),
+        }
+
+    df = df_base.copy()
+
+    # -------- UUID --------
+    if uuid_col not in df.columns:
+        if "id_da_pessoa_entregadora" in df.columns:
+            df[uuid_col] = df["id_da_pessoa_entregadora"].astype(str)
+        else:
+            df[uuid_col] = ""
+
+    df[uuid_col] = df[uuid_col].astype(str)
+
+    # -------- DATA --------
+    if data_col in df.columns:
+        df[data_col] = pd.to_datetime(df[data_col], errors="coerce").dt.date
+    else:
+        df[data_col] = None
+
+    # -------- TURNO --------
+    turno_col = next((c for c in turno_cols if c in df.columns), None)
+    if turno_col is None:
+        df["__turno__"] = "(sem turno)"
+        turno_col = "__turno__"
+
+    # -------- REGIÃO --------
+    regiao_col = next((c for c in regiao_cols if c in df.columns), None)
+    if regiao_col is None:
+        df["__regiao__"] = "(geral)"
+        regiao_col = "__regiao__"
+
+    # -------- SEGUNDOS --------
+    df[segundos_col] = pd.to_numeric(
+        df.get(segundos_col, 0), errors="coerce"
+    ).fillna(0)
+
+    # -------- AGREGA ENTREGADOR POR GRUPO --------
+    grp_ent = (
+        df.groupby(
+            [data_col, regiao_col, turno_col, uuid_col],
+            dropna=False,
+            as_index=False,
+        )
+        .agg(segundos=(segundos_col, "sum"))
+    )
+
+    elegiveis = grp_ent[grp_ent["segundos"] >= limiar_seg].copy()
+    elegiveis["flag"] = 1
+
+    # -------- CONTAGEM DE ÚNICOS --------
+    contagem = (
+        elegiveis.groupby([data_col, regiao_col, turno_col], dropna=False)
+        .agg(unicos=("flag", "sum"))
+        .reset_index()
+    )
+
+    # -------- VAGAS --------
+    if vagas_col in df.columns:
+        vagas = (
+            df.groupby([data_col, regiao_col, turno_col], dropna=False)
+            .agg(vagas=(vagas_col, "max"))
+            .reset_index()
+        )
+    else:
+        vagas = contagem.copy()
+        vagas["vagas"] = 0
+
+    base = contagem.merge(
+        vagas,
+        on=[data_col, regiao_col, turno_col],
+        how="left",
+    )
+
+    base["vagas"] = pd.to_numeric(base["vagas"], errors="coerce").fillna(0)
+    base["aderencia_pct"] = base.apply(
+        lambda r: (r["unicos"] / r["vagas"] * 100.0) if r["vagas"] > 0 else 0.0,
+        axis=1,
+    )
+
+    total_unicos = int(base["unicos"].sum())
+    total_vagas = int(base["vagas"].sum())
+    pct = (total_unicos / total_vagas * 100.0) if total_vagas > 0 else 0.0
+
+    return {
+        "pct": round(pct, 2),
+        "unicos": total_unicos,
+        "vagas": total_vagas,
+        "por_grupo": base.sort_values([data_col, regiao_col, turno_col]),
+    }
+
