@@ -3,7 +3,7 @@ import pandas as pd
 import calendar
 
 from relatorios import utr_por_entregador_turno
-from shared import sub_options_with_livre, apply_sub_filter  # mesmo esquema do indicadores.py
+from shared import sub_options_with_livre, apply_sub_filter
 
 
 DOW_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]  # weekday(): seg=0
@@ -17,6 +17,8 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         return
 
     base = df.copy()
+
+    # --- normaliza coluna de data ---
     base["data"] = pd.to_datetime(base.get("data_do_periodo", base.get("data")), errors="coerce")
     base = base.dropna(subset=["data"])
     if base.empty:
@@ -27,12 +29,13 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     data_max = base["data"].max().date()
 
     # =========================================================
-    # FILTROS (igual vibe do sistema)
+    # FILTROS (mesma pegada do sistema)
     # =========================================================
     st.subheader("Filtros")
+
     f1, f2, f3, f4 = st.columns([1.3, 1, 1.7, 1.4])
 
-    # Subpraça + LIVRE (mesmo shared.py)
+    # Subpraça + LIVRE
     sub_opts = sub_options_with_livre(base, praca_scope="SAO PAULO")
     sub_sel = f1.multiselect("Subpraça", sub_opts)
     base = apply_sub_filter(base, sub_sel, praca_scope="SAO PAULO")
@@ -46,10 +49,11 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             base = base[base[turno_col] == turno_sel]
 
     # Entregador(es)
-    ent_opts = sorted(base.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().unique().tolist())
-    ent_sel = f3.multiselect("Entregador(es)", ent_opts)
-    if ent_sel:
-        base = base[base["pessoa_entregadora"].isin(ent_sel)]
+    if "pessoa_entregadora" in base.columns:
+        ent_opts = sorted(base["pessoa_entregadora"].dropna().unique().tolist())
+        ent_sel = f3.multiselect("Entregador(es)", ent_opts)
+        if ent_sel:
+            base = base[base["pessoa_entregadora"].isin(ent_sel)]
 
     # Filtro opcional de intervalo "universo"
     usar_intervalo = f4.checkbox("Limitar por intervalo", value=False)
@@ -89,6 +93,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         acc = float(ace / ofe * 100) if ofe > 0 else 0.0
         rejp = float(rej / ofe * 100) if ofe > 0 else 0.0
 
+        # ativos: quem teve qualquer atividade no slice
         if "pessoa_entregadora" in df_slice.columns:
             seg_s = pd.to_numeric(df_slice.get("segundos_abs", 0), errors="coerce").fillna(0)
             ofe_s = pd.to_numeric(df_slice.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0)
@@ -108,8 +113,11 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             b = b[b.get("supply_hours", 0) > 0].copy()
             utr_med = float((b["corridas_ofertadas"] / b["supply_hours"]).mean()) if not b.empty else 0.0
 
-        return dict(ofe=ofe, ace=ace, rej=rej, com=com, seg=seg, sh_h=sh_h, acc=acc, rejp=rejp,
-                    ativos=ativos, utr_abs=utr_abs, utr_med=utr_med)
+        return dict(
+            ofe=ofe, ace=ace, rej=rej, com=com,
+            seg=seg, sh_h=sh_h, acc=acc, rejp=rejp,
+            ativos=ativos, utr_abs=utr_abs, utr_med=utr_med
+        )
 
     def delta_pct(cur, prev):
         if prev is None or prev == 0:
@@ -139,7 +147,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         return "🟢⬆" if d > 0 else "🔴⬇"
 
     # =========================================================
-    # SELETOR DE MODO
+    # MODO
     # =========================================================
     st.subheader("Comparação")
     tipo = st.radio(
@@ -149,12 +157,11 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         index=0,
     )
 
-    # Normaliza pra facilitar filtros de dia
     base["dow"] = base["data"].dt.weekday  # seg=0
 
     if tipo.startswith("Semanal"):
         ref_date = st.date_input(
-            "Escolha um dia da semana (Seg–Dom)",
+            "Semana de referência (escolha um dia)",
             value=base["data"].max().date(),
             min_value=base["data"].min().date(),
             max_value=base["data"].max().date(),
@@ -162,7 +169,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         )
 
         ref_ts = pd.to_datetime(ref_date).normalize()
-        ini = ref_ts - pd.Timedelta(days=ref_ts.weekday())
+        ini = ref_ts - pd.Timedelta(days=ref_ts.weekday())  # segunda
         fim_excl = ini + pd.Timedelta(days=7)
 
         ini_prev = ini - pd.Timedelta(days=7)
@@ -190,7 +197,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         ini = pd.Timestamp(year=ano_sel, month=mes_sel, day=1)
         fim_excl = ini + pd.Timedelta(days=ndias)
 
-        # mês anterior
         if mes_sel == 1:
             ano_prev, mes_prev = ano_sel - 1, 12
         else:
@@ -207,33 +213,76 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     else:
         # =====================================================
-        # DIÁRIO: compara MESMOS DIAS DA SEMANA
-        # Ex: seg com seg, ou seg-ter-qua com seg-ter-qua
+        # DIÁRIO (UX simples): escolhe "Semana base" + preset de dias
         # =====================================================
-        ref_date = st.date_input(
-            "Escolha um dia (pra definir a semana base)",
-            value=base["data"].max().date(),
-            min_value=base["data"].min().date(),
-            max_value=base["data"].max().date(),
-            format="DD/MM/YYYY",
-        )
+        def _week_start(ts: pd.Timestamp) -> pd.Timestamp:
+            ts = pd.to_datetime(ts).normalize()
+            return ts - pd.Timedelta(days=ts.weekday())  # segunda
 
-        dias_sel = st.multiselect(
-            "Dias pra comparar (mesmo conjunto no período anterior)",
-            options=list(range(7)),
-            default=[0],  # seg
-            format_func=lambda i: DOW_LABELS[i],
-        )
-        if not dias_sel:
-            st.warning("Escolhe pelo menos 1 dia.")
-            return
+        def _week_label(ini_week: pd.Timestamp) -> str:
+            fim_week = ini_week + pd.Timedelta(days=6)
+            return f"{ini_week.strftime('%d/%m')}–{fim_week.strftime('%d/%m')}"
 
-        ref_ts = pd.to_datetime(ref_date).normalize()
-        ini = ref_ts - pd.Timedelta(days=ref_ts.weekday())  # segunda
+        min_ini = _week_start(base["data"].min())
+        last_ini = _week_start(base["data"].max())
+
+        weeks = [last_ini - pd.Timedelta(days=7 * i) for i in range(0, 20)]
+        weeks = [w for w in weeks if w >= min_ini]
+
+        week_labels = [_week_label(w) for w in weeks]
+        week_map = dict(zip(week_labels, weeks))
+
+        st.caption("Escolha a semana e quais dias comparar (sempre vs semana anterior, mesmos dias).")
+
+        week_label_sel = st.selectbox("Semana base", week_labels, index=0)
+        ini = week_map[week_label_sel]
         fim_excl = ini + pd.Timedelta(days=7)
 
         ini_prev = ini - pd.Timedelta(days=7)
         fim_prev_excl = fim_excl - pd.Timedelta(days=7)
+
+        PRESETS = {
+            "Só Seg": [0],
+            "Seg–Qua": [0, 1, 2],
+            "Dias úteis": [0, 1, 2, 3, 4],
+            "Fim de semana": [5, 6],
+            "Todos": [0, 1, 2, 3, 4, 5, 6],
+            "Personalizado": None,
+        }
+
+        if "resumo_diario_preset" not in st.session_state:
+            st.session_state["resumo_diario_preset"] = "Dias úteis"
+        if "resumo_diario_dias" not in st.session_state:
+            st.session_state["resumo_diario_dias"] = PRESETS["Dias úteis"]
+
+        c_preset, c_custom = st.columns([1.2, 2.0])
+
+        preset_sel = c_preset.radio(
+            "Atalho",
+            list(PRESETS.keys()),
+            index=list(PRESETS.keys()).index(st.session_state["resumo_diario_preset"]),
+        )
+        st.session_state["resumo_diario_preset"] = preset_sel
+
+        if PRESETS[preset_sel] is not None:
+            st.session_state["resumo_diario_dias"] = PRESETS[preset_sel]
+
+        dias_sel = st.session_state["resumo_diario_dias"]
+
+        if preset_sel == "Personalizado":
+            dias_sel = c_custom.multiselect(
+                "Dias",
+                options=list(range(7)),
+                default=dias_sel if dias_sel else [0],
+                format_func=lambda i: DOW_LABELS[i],
+            )
+            if not dias_sel:
+                st.warning("Escolhe pelo menos 1 dia.")
+                return
+            st.session_state["resumo_diario_dias"] = dias_sel
+        else:
+            dias_txt_ui = ", ".join(DOW_LABELS[i] for i in dias_sel)
+            c_custom.markdown(f"**Dias:** {dias_txt_ui}")
 
         dias_txt = "-".join([DOW_LABELS[i].lower() for i in dias_sel])
         header = (
@@ -242,8 +291,13 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             f"• vs semana anterior (mesmos dias)"
         )
 
-        df_cur = base[(base["data"] >= ini) & (base["data"] < fim_excl) & (base["dow"].isin(dias_sel))].copy()
-        df_prev = base[(base["data"] >= ini_prev) & (base["data"] < fim_prev_excl) & (base["dow"].isin(dias_sel))].copy()
+        df_cur = base[
+            (base["data"] >= ini) & (base["data"] < fim_excl) & (base["dow"].isin(dias_sel))
+        ].copy()
+
+        df_prev = base[
+            (base["data"] >= ini_prev) & (base["data"] < fim_prev_excl) & (base["dow"].isin(dias_sel))
+        ].copy()
 
     # =========================================================
     # KPIs + TEXTO
