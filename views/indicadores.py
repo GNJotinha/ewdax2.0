@@ -4,6 +4,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from relatorios import utr_por_entregador_turno
 from shared import sub_options_with_livre, apply_sub_filter  # 👈 filtro por subpraça
+from utils import calcular_aderencia
+
 
 PRIMARY_COLOR = ["#00BFFF"]  # paleta padrão
 
