@@ -3,12 +3,13 @@ import pandas as pd
 import streamlit as st
 import gdown
 from pathlib import Path
+from typing import Optional
 from utils import normalizar, tempo_para_segundos
 
 SHEET = "Base 2025"
 
 @st.cache_data(show_spinner=False)  # 👈 evita ficar mostrando "Running..." toda hora
-def carregar_dados(prefer_drive: bool = False, _ts: float | None = None):
+def carregar_dados(prefer_drive: bool = False, _ts: Optional[float] = None):
     """
     Carrega a base com 3 estratégias:
       1) Local
