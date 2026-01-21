@@ -114,10 +114,6 @@ def calcular_tempo_online(df_filtrado: pd.DataFrame) -> float:
     val = max(0.0, min(100.0, val))
     return round(val, 1)
 
-
-import pandas as pd
-
-
 def calcular_aderencia(
     df_base: pd.DataFrame,
     *,
