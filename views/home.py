@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from relatorios import utr_por_entregador_turno
 from shared import hms_from_hours
-from utils import calcular_aderencia
+from utils import calcular_aderencia_presenca
 
 def render(df: pd.DataFrame, USUARIOS: dict):
     st.title("📋 Painel de Entregadores")
