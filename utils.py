@@ -120,75 +120,41 @@ def _entregador_key(df: pd.DataFrame) -> pd.Series:
     return pd.Series([""] * len(df), index=df.index, dtype="string")
 
 
-def mask_turno_valido(df: pd.DataFrame, min_seg: int = TURNO_VALIDO_MIN_SEG) -> pd.Series:
+def _turno_valido_mask(df: pd.DataFrame, min_seg: int = TURNO_VALIDO_MIN_SEG) -> pd.Series:
     secs = pd.to_numeric(df.get("segundos_abs", 0), errors="coerce").fillna(0)
     return secs >= float(min_seg)
 
 
-def contar_ativos(
-    df: pd.DataFrame,
-    group_cols=("data", "turno"),
-    min_seg: int = TURNO_VALIDO_MIN_SEG,
-) -> pd.Series:
+def sh_e_ativos_do_recorte(df: pd.DataFrame, min_seg: int = TURNO_VALIDO_MIN_SEG) -> tuple[float, int]:
     """
-    Ativos = entregadores únicos que atuaram >= min_seg.
-    Considera qualquer tag (REGULAR/EXCESS), porque ativo é quem trabalhou.
+    Retorna (SH_total_horas, ativos_unicos) no recorte atual.
 
-    Retorna Series indexada por group_cols com o count de ativos.
+    REGRA:
+    - só conta linhas com segundos_abs >= 10min
+    - ativos é UNIQUE no recorte inteiro (não por dia/turno), pra não duplicar
     """
     if df is None or df.empty:
-        return pd.Series(dtype="float64")
+        return 0.0, 0
 
-    dfx = df.copy()
-    for c in group_cols:
-        if c not in dfx.columns:
-            raise KeyError(f"Coluna obrigatória não encontrada: {c}")
-    if "segundos_abs" not in dfx.columns:
+    if "segundos_abs" not in df.columns:
         raise KeyError("Coluna 'segundos_abs' não encontrada (esperada no df carregado).")
 
-    dfx["_key"] = _entregador_key(dfx)
-    dfx["_turno_valido"] = mask_turno_valido(dfx, min_seg=min_seg)
-
-    base = dfx[dfx["_turno_valido"]].copy()
-    return base.groupby(list(group_cols), dropna=False)["_key"].nunique()
-
-
-def calcular_presenca_simples(
-    df: pd.DataFrame,
-    group_cols=("data", "turno"),
-    min_seg: int = TURNO_VALIDO_MIN_SEG,
-) -> pd.DataFrame:
-    """
-    Presença simples (operacional):
-      presenca_h_por_entregador = SH / ativos
-
-    SH = soma de segundos_abs / 3600 (>=10min)
-    ativos = entregadores únicos (>=10min)
-    """
-    if df is None or df.empty:
-        return pd.DataFrame(columns=list(group_cols) + ["ativos", "horas_totais", "presenca_h_por_entregador"])
-
     dfx = df.copy()
-    for c in group_cols:
-        if c not in dfx.columns:
-            raise KeyError(f"Coluna obrigatória não encontrada: {c}")
-    if "segundos_abs" not in dfx.columns:
-        raise KeyError("Coluna 'segundos_abs' não encontrada (esperada no df carregado).")
-
     dfx["_key"] = _entregador_key(dfx)
-    dfx["_turno_valido"] = mask_turno_valido(dfx, min_seg=min_seg)
+    m = _turno_valido_mask(dfx, min_seg=min_seg)
 
-    base = dfx[dfx["_turno_valido"]].copy()
+    base = dfx[m].copy()
+    sh_h = float(pd.to_numeric(base["segundos_abs"], errors="coerce").fillna(0).sum()) / 3600.0
+    ativos = int(base["_key"].dropna().nunique())
+    return sh_h, ativos
 
-    ativos = base.groupby(list(group_cols), dropna=False)["_key"].nunique()
-    horas = base.groupby(list(group_cols), dropna=False)["segundos_abs"].sum() / 3600.0
 
-    out = pd.concat([ativos.rename("ativos"), horas.rename("horas_totais")], axis=1).fillna(0)
-    out["presenca_h_por_entregador"] = out.apply(
-        lambda r: (r["horas_totais"] / r["ativos"]) if r["ativos"] > 0 else 0.0,
-        axis=1,
-    )
-    return out.reset_index()
+def presenca_do_recorte(df: pd.DataFrame, min_seg: int = TURNO_VALIDO_MIN_SEG) -> float:
+    """
+    Presença = SH_total / ativos_unicos (do recorte inteiro).
+    """
+    sh_h, ativos = sh_e_ativos_do_recorte(df, min_seg=min_seg)
+    return (sh_h / ativos) if ativos > 0 else 0.0
 
 
 def _vagas_robusto(
@@ -201,7 +167,6 @@ def _vagas_robusto(
     Regra:
       - calcula max(vagas) por unidade (group + [praca/sub_praca se existirem e não estiverem no group])
       - soma essas vagas no nível do group solicitado
-    Retorna (vagas_series, vagas_inconsistente_series)
     """
     extra = []
     for c in ("praca", "sub_praca"):
@@ -223,7 +188,7 @@ def _vagas_robusto(
 
 def calcular_aderencia(
     df: pd.DataFrame,
-    group_cols=("data", "turno"),
+    group_cols=("data", "periodo"),
     vagas_col="numero_minimo_de_entregadores_regulares_na_escala",
     tag_col="tag",
     tag_regular="REGULAR",
@@ -248,7 +213,7 @@ def calcular_aderencia(
         raise KeyError("Coluna 'segundos_abs' não encontrada (esperada no df carregado).")
 
     dfx["_key"] = _entregador_key(dfx)
-    dfx["_turno_valido"] = mask_turno_valido(dfx, min_seg=min_seg)
+    dfx["_turno_valido"] = _turno_valido_mask(dfx, min_seg=min_seg)
     dfx["_tag"] = dfx[tag_col].astype(str).fillna("").str.strip().str.upper()
 
     gcols = list(group_cols)
@@ -273,37 +238,3 @@ def calcular_aderencia(
     )
 
     return out.reset_index()
-
-
-def calcular_aderencia_presenca(
-    df: pd.DataFrame,
-    group_cols=("data", "turno"),
-    vagas_col="numero_minimo_de_entregadores_regulares_na_escala",
-    tag_col="tag",
-    tag_regular="REGULAR",
-    min_seg: int = TURNO_VALIDO_MIN_SEG,
-) -> pd.DataFrame:
-    """
-    Wrapper que devolve tudo:
-      - aderência (REGULAR / vagas)
-      - presença simples (SH / ativos)
-    """
-    ad = calcular_aderencia(
-        df,
-        group_cols=group_cols,
-        vagas_col=vagas_col,
-        tag_col=tag_col,
-        tag_regular=tag_regular,
-        min_seg=min_seg,
-    )
-
-    pr = calcular_presenca_simples(
-        df,
-        group_cols=group_cols,
-        min_seg=min_seg,
-    )
-
-    # merge no nível do group
-    key = list(group_cols)
-    out = pd.merge(ad, pr, on=key, how="outer").fillna(0)
-    return out
