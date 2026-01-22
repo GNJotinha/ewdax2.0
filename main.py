@@ -100,9 +100,9 @@ MENU = {
     },
     "Relatórios": {
         "Relatório de faltas": "views.faltas",
+        "Relatório de faltas 2": "views.comparar",
         "Ativos": "views.ativos",
-        "Resumos": "views.resumos",
-        "Comparar ativos": "views.comparar",
+        "Comparação de datas": "views.resumos",
         "Saídas": "views.saidas",
         "Adicional por Hora (Turno)": "views.adicional_turno",
         "Lista adicional": "views.lista_adicional",
