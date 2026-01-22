@@ -91,7 +91,7 @@ def calcular_tempo_online(df_filtrado: pd.DataFrame) -> float:
     return round(val, 1)
 
 # ---------------------------------------------------------
-# Aderência (REGULAR vs vagas) e Presença (h/entregador)
+# Aderência (REGULAR vs vagas)
 # ---------------------------------------------------------
 
 
@@ -128,7 +128,7 @@ def mask_turno_valido(df: pd.DataFrame, min_seg: int = TURNO_VALIDO_MIN_SEG) -> 
     return secs >= float(min_seg)
 
 
-def calcular_aderencia_presenca(
+def calcular_aderencia(
     df: pd.DataFrame,
     group_cols=("data", "turno"),
     vagas_col="numero_minimo_de_entregadores_regulares_na_escala",
@@ -136,39 +136,24 @@ def calcular_aderencia_presenca(
     tag_regular="REGULAR",
     min_seg: int = TURNO_VALIDO_MIN_SEG,
 ) -> pd.DataFrame:
-    """
-    DEFINIÇÕES CERTAS:
+    """Calcula **Aderência (REGULAR vs vagas)**.
 
-    - Aderência (%):
-        regulares_atuaram / vagas * 100
-      onde regulares_atuaram = entregadores únicos com tag == REGULAR e turno válido (>=10min)
+    Definição:
+      aderencia_pct = regulares_atuaram / vagas * 100
 
-      ⚠️ IMPORTANTE:
-      Se `group_cols` NÃO incluir praca/sub_praca, as vagas são SOMADAS por praca/sub_praca automaticamente
-      (max por unidade e depois sum no nível solicitado), pra não gerar 133% e afins.
+    Onde:
+      - regulares_atuaram: entregadores únicos (anti-duplicidade) com tag == REGULAR e turno válido (>= min_seg)
+      - vagas: soma robusta de vagas. Se `group_cols` NÃO incluir praca/sub_praca e essas colunas existirem,
+              faz max por (grupo + praca/sub_praca) e soma no nível do grupo, evitando 133% e afins.
 
-    - Presença (h/entregador):
-        horas_totais / entregadores_presentes
-      onde horas_totais e entregadores_presentes consideram REGULAR + EXCESS (qualquer tag),
-      desde que turno válido (>=10min).
-
-    Anti-duplicidade:
-      - entregador conta no máximo 1x por grupo no denominador (nunique key).
-      - horas somam todas as linhas válidas (se saiu/voltou, soma as horas, mas não duplica o entregador).
+    Retorno:
+      group_cols + ["vagas","vagas_inconsistente","regulares_atuaram","aderencia_pct"]
     """
 
     if df is None or df.empty:
         return pd.DataFrame(
             columns=list(group_cols)
-            + [
-                "vagas",
-                "vagas_inconsistente",
-                "regulares_atuaram",
-                "entregadores_presentes",
-                "horas_totais",
-                "aderencia_pct",
-                "presenca_h_por_entregador",
-            ]
+            + ["vagas", "vagas_inconsistente", "regulares_atuaram", "aderencia_pct"]
         )
 
     dfx = df.copy()
@@ -190,35 +175,19 @@ def calcular_aderencia_presenca(
     gcols = list(group_cols)
 
     # -------------------------------------------------
-    # PRESENÇA (REGULAR + EXCESS) => qualquer tag
-    # -------------------------------------------------
-    base_pres = dfx[dfx["_turno_valido"]].copy()
-
-    entregadores_presentes = (
-        base_pres.groupby(gcols, dropna=False)["_key"].nunique()
-    )
-
-    horas_totais = (
-        base_pres.groupby(gcols, dropna=False)["segundos_abs"].sum() / 3600.0
-    )
-
-    # -------------------------------------------------
-    # ADERÊNCIA (SÓ REGULAR)
+    # REGULARES (turno válido)
     # -------------------------------------------------
     base_reg = dfx[(dfx["_turno_valido"]) & (dfx["_tag"] == str(tag_regular).upper())].copy()
+    regulares_atuaram = base_reg.groupby(gcols, dropna=False)["_key"].nunique()
 
-    regulares_atuaram = (
-        base_reg.groupby(gcols, dropna=False)["_key"].nunique()
-    )
-
-    # 🔥 VAGAS ROBUSTO:
-    # Se não agrupar por praca/sub_praca, somamos vagas por elas automaticamente.
+    # -------------------------------------------------
+    # VAGAS (robusto)
+    # -------------------------------------------------
     extra_vaga_cols = []
     for c in ("praca", "sub_praca"):
         if (c in dfx.columns) and (c not in gcols):
             extra_vaga_cols.append(c)
 
-    # max por unidade (ex.: por praca/sub_praca) e depois soma no nível solicitado
     vagas_por_unidade = (
         dfx.groupby(gcols + extra_vaga_cols, dropna=False)[vagas_col].max()
         if extra_vaga_cols
@@ -238,16 +207,11 @@ def calcular_aderencia_presenca(
     else:
         vagas_incons = dfx.groupby(gcols, dropna=False)[vagas_col].nunique() > 1
 
-    # -------------------------------------------------
-    # OUTPUT
-    # -------------------------------------------------
     out = pd.concat(
         [
             vagas.rename("vagas"),
             vagas_incons.rename("vagas_inconsistente"),
             regulares_atuaram.rename("regulares_atuaram"),
-            entregadores_presentes.rename("entregadores_presentes"),
-            horas_totais.rename("horas_totais"),
         ],
         axis=1,
     ).fillna(0)
@@ -257,18 +221,17 @@ def calcular_aderencia_presenca(
         axis=1,
     )
 
-    out["presenca_h_por_entregador"] = out.apply(
-        lambda r: (r["horas_totais"] / r["entregadores_presentes"]) if r["entregadores_presentes"] > 0 else 0.0,
-        axis=1,
-    )
-
-    cols_keep = gcols + [
-        "vagas",
-        "vagas_inconsistente",
-        "regulares_atuaram",
-        "entregadores_presentes",
-        "horas_totais",
-        "aderencia_pct",
-        "presenca_h_por_entregador",
-    ]
+    cols_keep = gcols + ["vagas", "vagas_inconsistente", "regulares_atuaram", "aderencia_pct"]
     return out.reset_index()[cols_keep]
+
+
+# ---------------------------------------------------------------------
+# Compat: nome antigo (sem "presença" — removido em jan/2026)
+# ---------------------------------------------------------------------
+def calcular_aderencia_presenca(*args, **kwargs) -> pd.DataFrame:
+    """Alias compatível.
+
+    Antes: calculava aderência + presença.
+    Agora: retorna **apenas aderência** (mesmas colunas do `calcular_aderencia`).
+    """
+    return calcular_aderencia(*args, **kwargs)
