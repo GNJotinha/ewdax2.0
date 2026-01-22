@@ -238,3 +238,63 @@ def calcular_aderencia(
     )
 
     return out.reset_index()
+
+def calcular_aderencia_presenca(
+    df: pd.DataFrame,
+    group_cols=("data", "turno"),
+    vagas_col="numero_minimo_de_entregadores_regulares_na_escala",
+    tag_col="tag",
+    tag_regular="REGULAR",
+    min_seg: int = TURNO_VALIDO_MIN_SEG,
+) -> pd.DataFrame:
+    """
+    Mantém compatibilidade com o app:
+      - Aderência por grupo (group_cols)
+      - Presença simples por grupo (SH/ativos do grupo)
+
+    Obs:
+      A presença do RECORTE (mês inteiro) correta continua sendo:
+        presenca_do_recorte(df)
+      (porque evita duplicar entregador em múltiplos grupos).
+    """
+    if df is None or df.empty:
+        return pd.DataFrame(
+            columns=list(group_cols)
+            + ["vagas", "vagas_inconsistente", "regulares_atuaram", "aderencia_pct", "ativos", "horas_totais", "presenca_h_por_entregador"]
+        )
+
+    # Aderência por grupo
+    ad = calcular_aderencia(
+        df,
+        group_cols=group_cols,
+        vagas_col=vagas_col,
+        tag_col=tag_col,
+        tag_regular=tag_regular,
+        min_seg=min_seg,
+    )
+
+    # Presença por grupo (SH/ativos do grupo)
+    dfx = df.copy()
+    for c in group_cols:
+        if c not in dfx.columns:
+            raise KeyError(f"Coluna obrigatória não encontrada: {c}")
+    if "segundos_abs" not in dfx.columns:
+        raise KeyError("Coluna 'segundos_abs' não encontrada (esperada no df carregado).")
+
+    dfx["_key"] = _entregador_key(dfx)
+    dfx["_turno_valido"] = _turno_valido_mask(dfx, min_seg=min_seg)
+    base = dfx[dfx["_turno_valido"]].copy()
+
+    ativos_g = base.groupby(list(group_cols), dropna=False)["_key"].nunique().rename("ativos")
+    horas_g = (base.groupby(list(group_cols), dropna=False)["segundos_abs"].sum() / 3600.0).rename("horas_totais")
+
+    pr = pd.concat([ativos_g, horas_g], axis=1).fillna(0).reset_index()
+    pr["presenca_h_por_entregador"] = pr.apply(
+        lambda r: (r["horas_totais"] / r["ativos"]) if r["ativos"] > 0 else 0.0,
+        axis=1,
+    )
+
+    # merge final
+    out = pd.merge(ad, pr, on=list(group_cols), how="outer").fillna(0)
+    return out
+
