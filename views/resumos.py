@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import calendar
 
-from utils import calcular_aderencia_presenca
+from utils import calcular_aderencia
 
 from relatorios import utr_por_entregador_turno
 from shared import sub_options_with_livre, apply_sub_filter  # mesmo esquema do indicadores.py
@@ -254,7 +254,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     prev = kpis(df_prev)
 
     # ---------------------------------------------------------
-    # Aderência & Presença (se colunas existirem)
+    # Aderência (se colunas existirem)
     # ---------------------------------------------------------
     def _ap(df_slice: pd.DataFrame):
         if df_slice is None or df_slice.empty:
@@ -263,14 +263,11 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             return None
         grp = ("data", turno_col) if (turno_col is not None and turno_col in df_slice.columns) else ("data",)
         try:
-            base_ap = calcular_aderencia_presenca(df_slice, group_cols=grp)
+            base_ap = calcular_aderencia(df_slice, group_cols=grp)
             reg = float(base_ap["regulares_atuaram"].sum())
             vagas = float(base_ap["vagas"].sum())
             ader = (reg / vagas * 100.0) if vagas > 0 else 0.0
-            horas = float(base_ap["horas_totais"].sum())
-            pres = float(base_ap["entregadores_presentes"].sum())
-            pres_h = (horas / pres) if pres > 0 else 0.0
-            return {"ader": ader, "reg": reg, "vagas": vagas, "pres_h": pres_h}
+            return {"ader": ader, "reg": reg, "vagas": vagas}
         except Exception:
             return None
 
@@ -290,10 +287,8 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     # deltas específicos
     ader_pp = None
-    pres_delta = None
     if ap_cur and ap_prev:
         ader_pp = float(ap_cur["ader"] - ap_prev["ader"])
-        pres_delta = float(ap_cur["pres_h"] - ap_prev["pres_h"])
 
     linhas = [
         f"Completas: {fmt_int(cur['com'])} ({fmt_pct(d['com'])}) {arrow(d['com'])}",
@@ -315,10 +310,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             ader_arrow = "🟢⬆" if ader_pp > 0 else ("🔴⬇" if ader_pp < 0 else "⚪")
         linhas.append(
             f"Aderência (REGULAR): {fmt_dec(ap_cur['ader'])}% ({ader_delta_txt}) {ader_arrow}"
-        )
-        linhas.append(
-            f"Presença: {fmt_dec(ap_cur['pres_h'])} h/entregador"
-            + (f" ({pres_delta:+.2f}h)".replace(".", ",") if pres_delta is not None else "")
         )
 
     st.text_area("📝 Texto pronto", value=header + "\n\n" + "\n\n".join(linhas), height=320)

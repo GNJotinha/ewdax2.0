@@ -4,7 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from relatorios import utr_por_entregador_turno
 from shared import sub_options_with_livre, apply_sub_filter  # 👈 filtro por subpraça
-from utils import calcular_aderencia_presenca
+from utils import calcular_aderencia
 
 PRIMARY_COLOR = ["#00BFFF"]  # paleta padrão
 
@@ -46,7 +46,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             "Horas realizadas",
             "Entregadores ativos",
             "Aderência (%)",
-            "Presença (h/entregador)",
         ],
         index=0,
         horizontal=True,
@@ -150,9 +149,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         )
 
     # ---------------------------------------------------------
-    # Aderência (%) e Presença (h/entregador)
+    # Aderência (%)
     # ---------------------------------------------------------
-    if tipo_grafico in ("Aderência (%)", "Presença (h/entregador)"):
+    if tipo_grafico == "Aderência (%)":
         # valida colunas
         if ("numero_minimo_de_entregadores_regulares_na_escala" not in df.columns) or ("tag" not in df.columns):
             st.info("Esses indicadores precisam das colunas 'numero_minimo_de_entregadores_regulares_na_escala' e 'tag'.")
@@ -162,7 +161,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         turno_col_ap = turno_col  # já definido acima
         grp = ("data", turno_col_ap) if turno_col_ap is not None else ("data",)
 
-        base_ap = calcular_aderencia_presenca(df.dropna(subset=["data"]).copy(), group_cols=grp)
+        base_ap = calcular_aderencia(df.dropna(subset=["data"]).copy(), group_cols=grp)
         base_ap["mes_ano"] = pd.to_datetime(base_ap["data"]).dt.to_period("M").dt.to_timestamp()
         base_ap["mes_rotulo"] = pd.to_datetime(base_ap["mes_ano"]).dt.strftime("%b/%y")
 
@@ -171,103 +170,64 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             .agg(
                 vagas=("vagas", "sum"),
                 regulares=("regulares_atuaram", "sum"),
-                horas=("horas_totais", "sum"),
-                presentes=("entregadores_presentes", "sum"),
             )
             .sort_values("mes_ano")
         )
 
         mensal["aderencia_pct"] = mensal.apply(lambda r: (r["regulares"] / r["vagas"] * 100.0) if r["vagas"] else 0.0, axis=1)
-        mensal["presenca_h_por_ent"] = mensal.apply(lambda r: (r["horas"] / r["presentes"]) if r["presentes"] else 0.0, axis=1)
 
-        if tipo_grafico == "Aderência (%)":
-            fig_m = px.bar(
-                mensal,
-                x="mes_rotulo",
-                y="aderencia_pct",
-                text=mensal["aderencia_pct"].map(lambda v: f"{v:.1f}%"),
-                title="Aderência (REGULAR / vagas) por mês",
-                labels={"mes_rotulo": "Mês/Ano", "aderencia_pct": "Aderência (%)"},
-                template="plotly_dark",
-                color_discrete_sequence=PRIMARY_COLOR,
-            )
-            fig_m.update_traces(textposition="outside")
-            fig_m.update_layout(margin=dict(t=60, b=30, l=40, r=40))
-            st.plotly_chart(fig_m, use_container_width=True)
-        else:
-            fig_m = px.bar(
-                mensal,
-                x="mes_rotulo",
-                y="presenca_h_por_ent",
-                text=mensal["presenca_h_por_ent"].map(lambda v: f"{v:.2f}"),
-                title="Presença (horas / entregador) por mês",
-                labels={"mes_rotulo": "Mês/Ano", "presenca_h_por_ent": "h/entregador"},
-                template="plotly_dark",
-                color_discrete_sequence=PRIMARY_COLOR,
-            )
-            fig_m.update_traces(textposition="outside")
-            fig_m.update_layout(margin=dict(t=60, b=30, l=40, r=40))
-            st.plotly_chart(fig_m, use_container_width=True)
+        fig_m = px.bar(
+            mensal,
+            x="mes_rotulo",
+            y="aderencia_pct",
+            text=mensal["aderencia_pct"].map(lambda v: f"{v:.1f}%"),
+            title="Aderência (REGULAR / vagas) por mês",
+            labels={"mes_rotulo": "Mês/Ano", "aderencia_pct": "Aderência (%)"},
+            template="plotly_dark",
+            color_discrete_sequence=PRIMARY_COLOR,
+        )
+        fig_m.update_traces(textposition="outside")
+        fig_m.update_layout(margin=dict(t=60, b=30, l=40, r=40))
+        st.plotly_chart(fig_m, use_container_width=True)
 
         # ------------------------------
         # Diário (mês selecionado)
         # ------------------------------
         if not df_mes_ref.empty:
-            base_ap_mes = calcular_aderencia_presenca(df_mes_ref.dropna(subset=["data"]).copy(), group_cols=grp)
+            base_ap_mes = calcular_aderencia(df_mes_ref.dropna(subset=["data"]).copy(), group_cols=grp)
             base_ap_mes["dia"] = pd.to_datetime(base_ap_mes["data"]).dt.day
             por_dia = (
                 base_ap_mes.groupby("dia", as_index=False)
                 .agg(
                     vagas=("vagas", "sum"),
                     regulares=("regulares_atuaram", "sum"),
-                    horas=("horas_totais", "sum"),
-                    presentes=("entregadores_presentes", "sum"),
                 )
                 .sort_values("dia")
             )
             por_dia["aderencia_pct"] = por_dia.apply(lambda r: (r["regulares"] / r["vagas"] * 100.0) if r["vagas"] else 0.0, axis=1)
-            por_dia["presenca_h_por_ent"] = por_dia.apply(lambda r: (r["horas"] / r["presentes"]) if r["presentes"] else 0.0, axis=1)
 
-            if tipo_grafico == "Aderência (%)":
-                fig_d = go.Figure()
-                fig_d.add_bar(
-                    x=por_dia["dia"],
-                    y=por_dia["aderencia_pct"],
-                    text=por_dia["aderencia_pct"].map(lambda v: f"{v:.1f}%"),
-                    textposition="outside",
-                    marker=dict(color=PRIMARY_COLOR[0]),
-                    name="Aderência"
-                )
-                fig_d.update_layout(
-                    title=f"📊 Aderência por dia ({mes_diario:02d}/{ano_diario})",
-                    template="plotly_dark",
-                    margin=dict(t=60, b=30, l=40, r=40),
-                    xaxis_title="Dia",
-                    yaxis_title="Aderência (%)",
-                    xaxis=dict(tickmode="linear", dtick=1)
-                )
-                st.metric("📌 Aderência no mês selecionado", f"{por_dia['regulares'].sum() / por_dia['vagas'].sum() * 100.0:.1f}%" if por_dia['vagas'].sum() > 0 else "0,0%")
-                st.plotly_chart(fig_d, use_container_width=True)
-            else:
-                fig_d = go.Figure()
-                fig_d.add_bar(
-                    x=por_dia["dia"],
-                    y=por_dia["presenca_h_por_ent"],
-                    text=por_dia["presenca_h_por_ent"].map(lambda v: f"{v:.2f}"),
-                    textposition="outside",
-                    marker=dict(color=PRIMARY_COLOR[0]),
-                    name="Presença"
-                )
-                fig_d.update_layout(
-                    title=f"📊 Presença por dia ({mes_diario:02d}/{ano_diario})",
-                    template="plotly_dark",
-                    margin=dict(t=60, b=30, l=40, r=40),
-                    xaxis_title="Dia",
-                    yaxis_title="h/entregador",
-                    xaxis=dict(tickmode="linear", dtick=1)
-                )
-                st.metric("🧍 Presença no mês selecionado", f"{por_dia['horas'].sum() / por_dia['presentes'].sum():.2f} h/entregador" if por_dia['presentes'].sum() > 0 else "0,00")
-                st.plotly_chart(fig_d, use_container_width=True)
+            fig_d = go.Figure()
+            fig_d.add_bar(
+                x=por_dia["dia"],
+                y=por_dia["aderencia_pct"],
+                text=por_dia["aderencia_pct"].map(lambda v: f"{v:.1f}%"),
+                textposition="outside",
+                marker=dict(color=PRIMARY_COLOR[0]),
+                name="Aderência"
+            )
+            fig_d.update_layout(
+                title=f"📊 Aderência por dia ({mes_diario:02d}/{ano_diario})",
+                template="plotly_dark",
+                margin=dict(t=60, b=30, l=40, r=40),
+                xaxis_title="Dia",
+                yaxis_title="Aderência (%)",
+                xaxis=dict(tickmode="linear", dtick=1)
+            )
+            st.metric(
+                "📌 Aderência no mês selecionado",
+                f"{por_dia['regulares'].sum() / por_dia['vagas'].sum() * 100.0:.1f}%" if por_dia['vagas'].sum() > 0 else "0,0%",
+            )
+            st.plotly_chart(fig_d, use_container_width=True)
         else:
             st.info("Sem dados no mês selecionado.")
 

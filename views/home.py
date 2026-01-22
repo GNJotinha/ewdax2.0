@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from relatorios import utr_por_entregador_turno
 from shared import hms_from_hours
-from utils import calcular_aderencia_presenca
+from utils import calcular_aderencia
 
 def render(df: pd.DataFrame, USUARIOS: dict):
     st.title("📋 Painel de Entregadores")
@@ -52,10 +52,9 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
 
     # ------------------------------
-    # Aderência & Presença (mês atual)
+    # Aderência (mês atual)
     # ------------------------------
     ader_pct = 0.0
-    pres_h = 0.0
     ader_reg = 0
     ader_vagas = 0
     vagas_incons = False
@@ -64,14 +63,11 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         turno_col = next((c for c in ("turno", "tipo_turno", "periodo") if c in df_mes.columns), None)
         group_cols = ("data", turno_col) if turno_col else ("data",)
         try:
-            base_ap = calcular_aderencia_presenca(df_mes, group_cols=group_cols)
+            base_ap = calcular_aderencia(df_mes, group_cols=group_cols)
             ader_reg = int(base_ap.get("regulares_atuaram", 0).sum())
             ader_vagas = float(base_ap.get("vagas", 0).sum())
             if ader_vagas > 0:
                 ader_pct = round((ader_reg / ader_vagas) * 100.0, 1)
-            htot = float(base_ap.get("horas_totais", 0).sum())
-            pres = float(base_ap.get("entregadores_presentes", 0).sum())
-            pres_h = round((htot / pres), 2) if pres > 0 else 0.0
             vagas_incons = bool(base_ap.get("vagas_inconsistente", False).any())
         except Exception:
             pass
@@ -106,13 +102,12 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     m3.metric("Rejeitadas", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%")
     m4.metric("Entregadores ativos", f"{entreg_uniq}")
 
-    # Aderência e Presença
-    a1, a2 = st.columns(2)
+    # Aderência
+    a1, = st.columns(1)
     a1.metric("📌 Aderência (REGULAR)", f"{ader_pct:.1f}%")
     a1.caption(f"Regulares: **{ader_reg}** / Vagas: **{int(ader_vagas)}**")
     if vagas_incons:
         a1.warning("⚠️ Vagas inconsistentes em alguns dias/turnos (coluna variando dentro do mesmo grupo).")
-    a2.metric("🧍 Presença", f"{pres_h:.2f} h/entregador")
 
     st.divider()
     ano = int(hoje.year)

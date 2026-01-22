@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 from shared import sub_options_with_livre, apply_sub_filter
-from utils import calcular_tempo_online, tempo_para_segundos, calcular_aderencia_presenca
+from utils import calcular_tempo_online, tempo_para_segundos, calcular_aderencia
 
 
 # ------------------------------
@@ -361,26 +361,22 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     r4c2.metric("📊 UTR (Médias)", f"{k['utr_med']:.2f}")
 
     # ------------------------------
-    # Aderência & Presença (no recorte)
+    # Aderência (no recorte)
     # ------------------------------
     if ("numero_minimo_de_entregadores_regulares_na_escala" in df_sel.columns) and ("tag" in df_sel.columns):
         turno_col_ap = next((c for c in ("turno", "tipo_turno", "periodo") if c in df_sel.columns), None)
         group_cols_ap = ("data", turno_col_ap) if turno_col_ap else ("data",)
         try:
-            base_ap = calcular_aderencia_presenca(df_sel, group_cols=group_cols_ap)
+            base_ap = calcular_aderencia(df_sel, group_cols=group_cols_ap)
             reg = int(base_ap["regulares_atuaram"].sum())
             vagas = float(base_ap["vagas"].sum())
             ader = (reg / vagas * 100.0) if vagas > 0 else 0.0
-            htot = float(base_ap["horas_totais"].sum())
-            pres = float(base_ap["entregadores_presentes"].sum())
-            pres_h = (htot / pres) if pres > 0 else 0.0
 
-            r5c1, r5c2 = st.columns(2)
+            r5c1, = st.columns(1)
             r5c1.metric("📌 Aderência (REGULAR)", f"{ader:.1f}%")
             r5c1.caption(f"Regulares: **{reg}** / Vagas: **{int(vagas)}**")
             if bool(base_ap["vagas_inconsistente"].any()):
                 r5c1.warning("⚠️ Vagas inconsistentes em alguns dias/turnos (coluna variando dentro do mesmo grupo).")
-            r5c2.metric("🧍 Presença", f"{pres_h:.2f} h/entregador")
         except Exception:
             pass
 
