@@ -29,10 +29,6 @@ st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 # -------------------------------------------------------------------
 # Estilo
 # -------------------------------------------------------------------
-# main.py  (COLE/ SUBSTITUA seu bloco de CSS inteiro por este)
-
-import streamlit as st
-
 st.markdown(
     """
     <style>
@@ -127,15 +123,19 @@ st.markdown(
     /* =========================================
        TOPBAR
     ========================================== */
+    /*
+      Topbar: NÃO pode parecer um "card" dentro do neo-shell,
+      senão vira aquela borda dupla/cápsula.
+    */
     .neo-topbar{
       display:flex;
       align-items:center;
       justify-content:space-between;
       gap:14px;
-      padding: 16px 18px;
-      border-radius: 16px;
-      background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03));
-      border: 1px solid rgba(255,255,255,.08);
+      padding: 6px 2px;
+      border-radius: 0;
+      background: transparent;
+      border: none;
       margin-bottom: 14px;
     }
     .neo-title{
@@ -318,33 +318,6 @@ st.markdown(
       font-weight: 700;
     }
 
-    /* =========================================
-       TOP 3 rows
-    ========================================== */
-    .toprow{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-      margin: 10px 0;
-      padding: 8px 10px;
-      border-radius: 12px;
-      background: rgba(255,255,255,.03);
-      border: 1px solid rgba(255,255,255,.06);
-    }
-    .toprow .name{
-      font-weight: 800;
-      color: rgba(232,237,246,.92);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .toprow .hours{
-      font-weight: 900;
-      color: rgba(232,237,246,.70);
-      flex-shrink: 0;
-    }
-
     @media (max-width: 1100px){
       .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .neo-grid-2{ grid-template-columns: 1fr; }
@@ -354,8 +327,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-
-
 # ---------------------------------------------------------
 # Estado inicial
 # ---------------------------------------------------------
@@ -364,7 +335,6 @@ if "logado" not in st.session_state:
     st.session_state.usuario = ""
 
 if "module" not in st.session_state:
-    # default = Home
     st.session_state.module = "views.home"
 
 if "open_cat" not in st.session_state:
@@ -389,7 +359,7 @@ if not st.session_state.logado:
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
 # ---------------------------------------------------------
-# Menu (sem item duplicado de Início)
+# Menu
 # ---------------------------------------------------------
 MENU = {
     "Promoção da virada": {
@@ -437,13 +407,11 @@ def _sig_ok_now() -> bool:
 # ---------------------------------------------------------
 with st.sidebar:
     st.markdown("### Navegação")
-    # Botão Home dedicado
     if st.button("Início", use_container_width=True):
         st.session_state.module = "views.home"
         st.session_state.open_cat = None
         st.rerun()
 
-    # --- Área Sigilosa no menu esquerdo (apenas admin/dev) ---
     admins_list = set(st.secrets.get("ADMINS", []))
     user_entry = USUARIOS.get(st.session_state.usuario, {}) or {}
     nivel = user_entry.get("nivel", "")
@@ -451,10 +419,9 @@ with st.sidebar:
 
     if is_sigiloso:
         with st.expander("Acesso restrito", expanded=False):
-            # Lista por entregador
             if st.button("Comparativo entregador", use_container_width=True):
                 st.session_state.sig_target = "by_entregador"
-                if st.session_state.get("_sig_ok"):  # já validou nesta sessão
+                if st.session_state.get("_sig_ok"):
                     st.session_state.sig_modo = "by_entregador"
                     st.session_state.module = "views.auditoria_sigilosa"
                 else:
@@ -462,10 +429,9 @@ with st.sidebar:
                 st.session_state.open_cat = None
                 st.rerun()
 
-            # Lista geral
             if st.button("Comparativo geral", use_container_width=True):
                 st.session_state.sig_target = "geral"
-                if st.session_state.get("_sig_ok"):  # já validou nesta sessão
+                if st.session_state.get("_sig_ok"):
                     st.session_state.sig_modo = "geral"
                     st.session_state.module = "views.auditoria_sigilosa"
                 else:
@@ -473,31 +439,23 @@ with st.sidebar:
                 st.session_state.open_cat = None
                 st.rerun()
 
-
-    # Submenus
     for cat, opts in MENU.items():
-        if isinstance(opts, str):
-            if st.button(cat, use_container_width=True):
-                st.session_state.module = opts
-                st.session_state.open_cat = None
-                st.rerun()
-        else:
-            expanded = (st.session_state.open_cat == cat)
-            with st.expander(cat, expanded=expanded):
-                for label, module in opts.items():
-                    if st.button(label, key=f"btn_{cat}_{label}", use_container_width=True):
-                        st.session_state.module = module
-                        st.session_state.open_cat = cat
-                        st.rerun()
+        expanded = (st.session_state.open_cat == cat)
+        with st.expander(cat, expanded=expanded):
+            for label, module in opts.items():
+                if st.button(label, key=f"btn_{cat}_{label}", use_container_width=True):
+                    st.session_state.module = module
+                    st.session_state.open_cat = cat
+                    st.rerun()
 
 # ---------------------------------------------------------
 # Dados (evita carregar a base inteira na área sigilosa)
 # ---------------------------------------------------------
 mod = st.session_state.module
 if mod in ("views.auditoria_sigilosa", "views.auditoria_gate"):
-    df = pd.DataFrame()  # não precisa aqui
+    df = pd.DataFrame()
 else:
-    df = carregar_dados(prefer_drive=st.session_state.pop("force_refresh", False))
+    df = get_df_once()
     if st.session_state.pop("just_refreshed", False):
         st.success("✅ Base atualizada a partir do Google Drive.")
 
