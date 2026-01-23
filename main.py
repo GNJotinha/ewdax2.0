@@ -120,14 +120,17 @@ st.markdown(
     }
     .neo-shell:before{
       content:"";
-      position:absolute; inset:-2px;
+      position:absolute;
+      inset:-80px;                 /* joga o glow pra fora */
       background:
-        radial-gradient(600px 240px at 20% 10%, rgba(88,166,255,.22), transparent 60%),
-        radial-gradient(520px 220px at 80% 0%, rgba(167,139,250,.18), transparent 60%);
-      filter: blur(18px);
-      opacity: .75;
+        radial-gradient(520px 220px at 18% 12%, rgba(88,166,255,.20), transparent 62%),
+        radial-gradient(460px 200px at 82% 10%, rgba(167,139,250,.16), transparent 62%),
+        radial-gradient(520px 220px at 70% 95%, rgba(0,212,255,.10), transparent 62%);
+      filter: blur(28px);
+      opacity: .55;
       pointer-events:none;
     }
+
     .neo-shell > *{ position: relative; z-index: 2; }
 
     /* =====================================================
