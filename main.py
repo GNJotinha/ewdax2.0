@@ -29,6 +29,10 @@ st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 # -------------------------------------------------------------------
 # Estilo
 # -------------------------------------------------------------------
+# main.py  (COLE/ SUBSTITUA seu bloco de CSS inteiro por este)
+
+import streamlit as st
+
 st.markdown(
     """
     <style>
@@ -48,17 +52,18 @@ st.markdown(
       --green: #37d67a;
     }
 
-    /* =====================================================
-       LIMPAR BARRAS/COISAS DO STREAMLIT (máximo possível)
-    ===================================================== */
+    /* =========================================
+       LIMPAR BARRAS DO STREAMLIT (máx possível)
+    ========================================== */
     header[data-testid="stHeader"]{ display:none !important; }
     footer{ display:none !important; }
     #MainMenu{ visibility:hidden !important; }
     [data-testid="stAppViewContainer"]{ padding-top: 0rem !important; }
+    div[data-testid="stDecoration"]{ display:none !important; } /* topo colorido */
 
-    /* =====================================================
-       FUNDO (NEON HAZE)
-    ===================================================== */
+    /* =========================================
+       FUNDO
+    ========================================== */
     body{
       background:
         radial-gradient(900px 500px at 15% 10%, rgba(88,166,255,.15), transparent 60%),
@@ -68,9 +73,6 @@ st.markdown(
       color: var(--text);
     }
 
-    /* =====================================================
-       LARGURA / ESPAÇAMENTO
-    ===================================================== */
     .block-container{
       max-width: 1180px !important;
       padding-top: 1.2rem !important;
@@ -78,17 +80,14 @@ st.markdown(
     }
     [data-testid="stVerticalBlock"]{ gap: 0.65rem; }
 
-    /* =====================================================
-       SIDEBAR
-    ===================================================== */
     section[data-testid="stSidebar"]{
       background: rgba(18,22,30,.92);
       border-right: 1px solid rgba(255,255,255,.07);
     }
 
-    /* =====================================================
+    /* =========================================
        BOTÕES
-    ===================================================== */
+    ========================================== */
     .stButton>button{
       background: linear-gradient(135deg, rgba(88,166,255,.92), rgba(59,130,246,.92));
       color: white;
@@ -103,37 +102,31 @@ st.markdown(
       border-color: rgba(255,255,255,.18);
     }
 
-    /* =====================================================
-       SHELL (PAINEL CENTRAL)  -> SEM “BOLA” (glow contido)
-    ===================================================== */
+    /* =========================================
+       SHELL (PAINEL CENTRAL)
+       (TIRO DE 12 PRA MATAR A “BOLHA”)
+    ========================================== */
     .neo-shell{
       position: relative;
       border-radius: 22px;
       padding: 18px 18px 22px 18px;
-      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      background: rgba(255,255,255,.03) !important;
       border: 1px solid rgba(255,255,255,.08);
       box-shadow:
-        0 30px 70px rgba(0,0,0,.60),
-        inset 0 1px 0 rgba(255,255,255,.06);
+        0 28px 70px rgba(0,0,0,.60) !important,
+        inset 0 1px 0 rgba(255,255,255,.05);
       overflow: hidden;
     }
-    .neo-shell:before{
-      content:"";
-      position:absolute;
-      inset:0; /* <- importante: NÃO deixa vazar e formar a cápsula */
-      background:
-        radial-gradient(520px 220px at 18% 18%, rgba(88,166,255,.10), transparent 62%),
-        radial-gradient(460px 200px at 82% 16%, rgba(167,139,250,.08), transparent 62%),
-        radial-gradient(520px 220px at 70% 90%, rgba(0,212,255,.05), transparent 62%);
-      filter: blur(28px);
-      opacity: .0;
-      pointer-events:none;
+    /* mata qualquer pseudo-elemento que esteja gerando cápsula */
+    .neo-shell::before,
+    .neo-shell::after{
+      display:none !important;
+      content:none !important;
     }
-    .neo-shell > *{ position: relative; z-index: 2; }
 
-    /* =====================================================
+    /* =========================================
        TOPBAR
-    ===================================================== */
+    ========================================== */
     .neo-topbar{
       display:flex;
       align-items:center;
@@ -166,9 +159,6 @@ st.markdown(
       margin: 14px 0;
     }
 
-    /* =====================================================
-       TÍTULOS DE SEÇÃO
-    ===================================================== */
     .neo-section{
       font-size: 1.2rem;
       font-weight: 900;
@@ -176,9 +166,9 @@ st.markdown(
       color: rgba(232,237,246,.92);
     }
 
-    /* =====================================================
-       GRID
-    ===================================================== */
+    /* =========================================
+       GRIDS
+    ========================================== */
     .neo-grid-4{
       display:grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -191,9 +181,9 @@ st.markdown(
       align-items: stretch;
     }
 
-    /* =====================================================
-       CARDS (GLASS + BORDA NEON)
-    ===================================================== */
+    /* =========================================
+       CARDS
+    ========================================== */
     .neo-card{
       position: relative;
       border-radius: 16px;
@@ -255,9 +245,7 @@ st.markdown(
       font-weight: 650;
     }
 
-    /* =====================================================
-       ACEITAS (VERDE)
-    ===================================================== */
+    /* ACEITAS */
     .neo-success{
       border-color: rgba(55,214,122,.22);
     }
@@ -277,9 +265,7 @@ st.markdown(
       pointer-events:none;
     }
 
-    /* =====================================================
-       REJEITADAS (VERMELHO)
-    ===================================================== */
+    /* REJEITADAS */
     .neo-danger{
       border-color: rgba(255,77,77,.22);
     }
@@ -299,9 +285,9 @@ st.markdown(
       pointer-events:none;
     }
 
-    /* =====================================================
+    /* =========================================
        PROGRESS (ADERÊNCIA)
-    ===================================================== */
+    ========================================== */
     .neo-progress-wrap{ margin-top: 14px; }
     .neo-progress{
       width:100%;
@@ -332,9 +318,9 @@ st.markdown(
       font-weight: 700;
     }
 
-    /* =====================================================
-       TOP 3 list rows
-    ===================================================== */
+    /* =========================================
+       TOP 3 rows
+    ========================================== */
     .toprow{
       display:flex;
       align-items:center;
@@ -349,10 +335,14 @@ st.markdown(
     .toprow .name{
       font-weight: 800;
       color: rgba(232,237,246,.92);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .toprow .hours{
       font-weight: 900;
       color: rgba(232,237,246,.70);
+      flex-shrink: 0;
     }
 
     @media (max-width: 1100px){
@@ -363,6 +353,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
 
 # ---------------------------------------------------------
