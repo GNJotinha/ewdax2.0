@@ -121,16 +121,15 @@ st.markdown(
     .neo-shell:before{
       content:"";
       position:absolute;
-      inset:-80px;                 /* joga o glow pra fora */
+      inset:-140px;                 /* joga o glow pra fora do painel */
       background:
-        radial-gradient(520px 220px at 18% 12%, rgba(88,166,255,.20), transparent 62%),
-        radial-gradient(460px 200px at 82% 10%, rgba(167,139,250,.16), transparent 62%),
-        radial-gradient(520px 220px at 70% 95%, rgba(0,212,255,.10), transparent 62%);
-      filter: blur(28px);
-      opacity: .55;
+        radial-gradient(520px 220px at 18% 18%, rgba(88,166,255,.18), transparent 62%),
+        radial-gradient(460px 200px at 82% 16%, rgba(167,139,250,.14), transparent 62%),
+        radial-gradient(520px 220px at 70% 90%, rgba(0,212,255,.08), transparent 62%);
+      filter: blur(34px);
+      opacity: .45;
       pointer-events:none;
     }
-
     .neo-shell > *{ position: relative; z-index: 2; }
 
     /* =====================================================
