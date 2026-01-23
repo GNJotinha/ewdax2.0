@@ -100,7 +100,6 @@ st.markdown(
 
     /* =========================================
        SHELL (PAINEL CENTRAL)
-       (TIRO DE 12 PRA MATAR A “BOLHA”)
     ========================================== */
     .neo-shell{
       position: relative;
@@ -113,7 +112,6 @@ st.markdown(
         inset 0 1px 0 rgba(255,255,255,.05);
       overflow: hidden;
     }
-    /* mata qualquer pseudo-elemento que esteja gerando cápsula */
     .neo-shell::before,
     .neo-shell::after{
       display:none !important;
@@ -121,23 +119,24 @@ st.markdown(
     }
 
     /* =========================================
-       TOPBAR
+       TOPBAR (MATA A CÁPSULA DUPLA)
     ========================================== */
-    /*
-      Topbar: NÃO pode parecer um "card" dentro do neo-shell,
-      senão vira aquela borda dupla/cápsula.
-    */
     .neo-topbar{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:14px;
-      padding: 6px 2px;
-      border-radius: 0;
-      background: transparent;
-      border: none;
-      margin-bottom: 14px;
+      display:flex !important;
+      align-items:center !important;
+      justify-content:space-between !important;
+      gap:14px !important;
+
+      padding: 0 !important;
+      margin: 0 0 14px 0 !important;
+
+      background: transparent !important;
+      border: none !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      outline: none !important;
     }
+
     .neo-title{
       display:flex;
       align-items:center;
@@ -318,6 +317,33 @@ st.markdown(
       font-weight: 700;
     }
 
+    /* =========================================
+       TOP 3 rows (HTML DENTRO DO CARD)
+    ========================================== */
+    .toprow{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin: 10px 0;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    .toprow .name{
+      font-weight: 800;
+      color: rgba(232,237,246,.92);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .toprow .hours{
+      font-weight: 900;
+      color: rgba(232,237,246,.70);
+      flex-shrink: 0;
+    }
+
     @media (max-width: 1100px){
       .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .neo-grid-2{ grid-template-columns: 1fr; }
@@ -407,6 +433,7 @@ def _sig_ok_now() -> bool:
 # ---------------------------------------------------------
 with st.sidebar:
     st.markdown("### Navegação")
+
     if st.button("Início", use_container_width=True):
         st.session_state.module = "views.home"
         st.session_state.open_cat = None
@@ -448,23 +475,4 @@ with st.sidebar:
                     st.session_state.open_cat = cat
                     st.rerun()
 
-# ---------------------------------------------------------
-# Dados (evita carregar a base inteira na área sigilosa)
-# ---------------------------------------------------------
-mod = st.session_state.module
-if mod in ("views.auditoria_sigilosa", "views.auditoria_gate"):
-    df = pd.DataFrame()
-else:
-    df = get_df_once()
-    if st.session_state.pop("just_refreshed", False):
-        st.success("✅ Base atualizada a partir do Google Drive.")
-
-# ---------------------------------------------------------
-# Roteador
-# ---------------------------------------------------------
-try:
-    page = importlib.import_module(st.session_state.module)
-except Exception as e:
-    st.error(f"Erro ao carregar módulo **{st.session_state.module}**: {e}")
-else:
-    page.render(df, USUARIOS)
+# -------
