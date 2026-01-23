@@ -475,4 +475,23 @@ with st.sidebar:
                     st.session_state.open_cat = cat
                     st.rerun()
 
-# -------
+# ---------------------------------------------------------
+# Dados (evita carregar a base inteira na área sigilosa)
+# ---------------------------------------------------------
+mod = st.session_state.module
+if mod in ("views.auditoria_sigilosa", "views.auditoria_gate"):
+    df = pd.DataFrame()
+else:
+    df = get_df_once()
+    if st.session_state.pop("just_refreshed", False):
+        st.success("✅ Base atualizada a partir do Google Drive.")
+
+# ---------------------------------------------------------
+# Roteador
+# ---------------------------------------------------------
+try:
+    page = importlib.import_module(st.session_state.module)
+except Exception as e:
+    st.error(f"Erro ao carregar módulo **{st.session_state.module}**: {e}")
+else:
+    page.render(df, USUARIOS)
