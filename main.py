@@ -126,7 +126,7 @@ st.markdown(
         radial-gradient(460px 200px at 82% 16%, rgba(167,139,250,.08), transparent 62%),
         radial-gradient(520px 220px at 70% 90%, rgba(0,212,255,.05), transparent 62%);
       filter: blur(28px);
-      opacity: .35;
+      opacity: .0;
       pointer-events:none;
     }
     .neo-shell > *{ position: relative; z-index: 2; }
