@@ -20,4 +20,4 @@
   font-weight: 900;
   color: rgba(232,237,246,.70);
   flex-shrink: 0;
-
+}
