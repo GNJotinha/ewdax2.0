@@ -1,4 +1,5 @@
-# views/home.py
+# views/home.py  (SUBSTITUA o arquivo inteiro por este)
+
 import streamlit as st
 import pandas as pd
 from relatorios import utr_por_entregador_turno
@@ -40,7 +41,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     if ("mes" in df.columns) and ("ano" in df.columns):
         df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
     else:
-        # fallback
         if "mes_ano" in df.columns:
             ultimo_mes = df["mes_ano"].max()
             df_mes = df[df["mes_ano"] == ultimo_mes].copy()
@@ -80,7 +80,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     horas_total = float(seg_total / 3600.0) if seg_total > 0 else 0.0
     utr_abs = (ofertadas / horas_total) if horas_total > 0 else 0.0
 
-    # UTR média (mesma assinatura que você já usa)
+    # UTR média
     utr_medias = 0.0
     try:
         base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
@@ -124,7 +124,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     pct_bar = max(0.0, min(float(ader_pct), 100.0))
 
     # =========================
-    # SUPPLY HOURS + TOP 3 POR HORAS
+    # SUPPLY HOURS + TOP 3 (SEM INDENTAÇÃO PRA NÃO VIRAR "CODE BLOCK")
     # =========================
     sh_total = horas_total
 
@@ -150,13 +150,12 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         rows = []
         for i, (nome, horas) in enumerate(top3):
             m = medals[i] if i < 3 else "•"
+            # IMPORTANTÍSSIMO: sem quebras/indentação -> não vira "code block" do markdown
             rows.append(
-                f"""
-                <div class="toprow">
-                  <div class="name">{m}&nbsp;{nome}</div>
-                  <div class="hours">{horas:.1f}h</div>
-                </div>
-                """
+                f'<div class="toprow">'
+                f'<div class="name">{m}&nbsp;{nome}</div>'
+                f'<div class="hours">{horas:.1f}h</div>'
+                f'</div>'
             )
         top_html = "".join(rows)
     else:
@@ -189,7 +188,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             st.rerun()
 
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
-
     st.markdown(f'<div class="neo-section">Resumo do mês ({mes_txt})</div>', unsafe_allow_html=True)
 
     aceitas_html = f"{_fmt_int(aceitas)}<span class='pct'>({_fmt_pct(acc_pct, 1)})</span>"
@@ -264,7 +262,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     # =========================
-    # SEÇÃO INFERIOR (títulos fora, igual aderência)
+    # SEÇÃO INFERIOR
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
