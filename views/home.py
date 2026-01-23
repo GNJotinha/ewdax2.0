@@ -1,7 +1,3 @@
-# views/home.py
-# Topbar sem cápsula + Top3 alinhado DENTRO do card (HTML correto)
-
-import html
 import streamlit as st
 import pandas as pd
 from relatorios import utr_por_entregador_turno
@@ -71,9 +67,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     aceitas = int(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
     rejeitadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
 
-    entreg_uniq = 0
-    if "pessoa_entregadora" in df_mes.columns:
-        entreg_uniq = int(df_mes["pessoa_entregadora"].dropna().nunique())
+    entreg_uniq = int(df_mes["pessoa_entregadora"].dropna().nunique()) if "pessoa_entregadora" in df_mes.columns else 0
 
     acc_pct = (aceitas / ofertadas * 100.0) if ofertadas > 0 else 0.0
     rej_pct = (rejeitadas / ofertadas * 100.0) if ofertadas > 0 else 0.0
@@ -126,10 +120,8 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     pct_bar = max(0.0, min(float(ader_pct), 100.0))
 
     # =========================
-    # SUPPLY HOURS + TOP 3 POR HORAS
+    # TOP 3 POR HORAS (STREAMLIT PURO)
     # =========================
-    sh_total = horas_total
-
     top3 = []
     if ("pessoa_entregadora" in df_mes.columns) and ("segundos_abs" in df_mes.columns):
         tmp_h = df_mes[["pessoa_entregadora", "segundos_abs"]].copy()
@@ -143,37 +135,27 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         )
 
         for _, r in top.iterrows():
-            nome = str(r["pessoa_entregadora"])
-            horas = float(r["segundos_abs"]) / 3600.0
-            top3.append((nome, horas))
+            top3.append((str(r["pessoa_entregadora"]), float(r["segundos_abs"]) / 3600.0))
 
     # =========================
-    # UI
+    # HEADER (SEM HTML) — aqui some o “bagulho”
     # =========================
-    st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
-
-    topL, topR = st.columns([4, 1])
-    with topL:
-        st.markdown(
-            f"""
-            <div class="neo-topbar">
-              <div>
-                <div class="neo-title">📁&nbsp;Painel de Entregadores</div>
-                <div class="neo-sub">Dados atualizados • {data_str}</div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with topR:
+    hL, hR = st.columns([4, 1])
+    with hL:
+        st.title("📁 Painel de Entregadores")
+        st.caption(f"Dados atualizados • {data_str}")
+    with hR:
         if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_home"):
             st.session_state.force_refresh = True
             st.session_state.just_refreshed = True
             st.cache_data.clear()
             st.rerun()
 
-    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
+    # =========================
+    # CONTEÚDO (mantém seu layout com shell)
+    # =========================
+    st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
+
     st.markdown(f'<div class="neo-section">Resumo do mês ({mes_txt})</div>', unsafe_allow_html=True)
 
     aceitas_html = f"{_fmt_int(aceitas)}<span class='pct'>({_fmt_pct(acc_pct, 1)})</span>"
@@ -211,15 +193,9 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="neo-section">Aderência <span style="font-weight:700;color:rgba(232,237,246,.70)">(REGULAR)</span></div>',
-        unsafe_allow_html=True
-    )
+    st.markdown('<div class="neo-section">Aderência (REGULAR)</div>', unsafe_allow_html=True)
 
-    incons_html = (
-        "<div class='neo-subline' style='color:rgba(255,176,32,.95)'>⚠️ Vagas inconsistentes.</div>"
-        if vagas_incons else ""
-    )
+    incons_txt = "⚠️ Vagas inconsistentes." if vagas_incons else ""
 
     st.markdown(
         f"""
@@ -227,7 +203,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
           <div class="neo-card">
             <div class="neo-value">{ader_pct:.1f}%</div>
             <div class="neo-subline">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
-            {incons_html}
+            <div class="neo-subline" style="color:rgba(255,176,32,.95)">{incons_txt}</div>
           </div>
 
           <div class="neo-card">
@@ -246,51 +222,45 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         unsafe_allow_html=True
     )
 
-    # =========================
-    # Supply & Ranking
-    # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
 
     c1, c2 = st.columns([1, 2])
 
+    # SH (card como tá)
     with c1:
         st.markdown(
             f"""
             <div class="neo-card">
               <div class="neo-label">Supply Hours (SH)</div>
-              <div class="neo-value">{sh_total:.1f}h</div>
+              <div class="neo-value">{horas_total:.1f}h</div>
               <div class="neo-subline">Total no mês ({mes_txt})</div>
             </div>
             """,
             unsafe_allow_html=True
         )
 
+    # TOP3 (sem HTML)
     with c2:
-        medals = ["🥇", "🥈", "🥉"]
-
-        if not top3:
-            rows = "<div class='neo-subline'>Sem dados suficientes.</div>"
-        else:
-            rows = ""
-            for i, (nome, horas) in enumerate(top3[:3]):
-                m = medals[i]
-                nome_safe = html.escape(str(nome))
-                rows += f"""
-                  <div class="toprow">
-                    <div class="name">{m}&nbsp;{nome_safe}</div>
-                    <div class="hours">{horas:.1f}h</div>
-                  </div>
-                """
-
+        # Card vazio só pra caixa
         st.markdown(
-            f"""
+            """
             <div class="neo-card">
               <div class="neo-label">Top 3 entregadores (horas)</div>
-              {rows}
             </div>
             """,
             unsafe_allow_html=True
         )
+        # Conteúdo streamlit (não vai imprimir HTML nunca)
+        medals = ["🥇", "🥈", "🥉"]
+        if not top3:
+            st.caption("Sem dados suficientes.")
+        else:
+            for i, (nome, horas) in enumerate(top3[:3]):
+                l, r = st.columns([4, 1])
+                with l:
+                    st.markdown(f"**{medals[i]} {nome}**")
+                with r:
+                    st.markdown(f"**{horas:.1f}h**")
 
     st.markdown("</div>", unsafe_allow_html=True)
