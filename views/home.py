@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-from utils import calcular_aderencia
 from relatorios import utr_por_entregador_turno
+from utils import calcular_aderencia
 
 
 def _fmt_int(x):
@@ -18,22 +18,28 @@ def _fmt_pct(x, nd=1):
         return "0,0%"
 
 
-def render(df: pd.DataFrame, USUARIOS: dict):
+def _pick_col(cols, candidates):
+    for c in candidates:
+        if c in cols:
+            return c
+    return None
 
+
+def render(df: pd.DataFrame, USUARIOS: dict):
     if df is None or df.empty:
         st.info("Sem dados carregados.")
         return
 
-    # =========================
-    # RECORTE: mês/ano ATUAL (igual teu home antigo)
-    # =========================
+    # ============================================
+    # MÊS ATUAL (IGUAL TEU ORIGINAL)
+    # ============================================
     hoje = pd.Timestamp.today()
     mes_atual, ano_atual = int(hoje.month), int(hoje.year)
 
     if ("mes" in df.columns) and ("ano" in df.columns):
         df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
     else:
-        # fallback: se não existir mes/ano, usa mes_ano
+        # fallback se alguém não tiver mes/ano
         if "mes_ano" in df.columns:
             ultimo_mes = df["mes_ano"].max()
             df_mes = df[df["mes_ano"] == ultimo_mes].copy()
@@ -47,80 +53,89 @@ def render(df: pd.DataFrame, USUARIOS: dict):
 
     mes_txt = f"{mes_atual:02d}/{ano_atual}"
 
-    # data mais recente (igual teu antigo: df["data"])
+    # data mais recente (topo)
+    data_col = _pick_col(df_mes.columns, ["data", "data_do_periodo", "data_do_periodo_de_referencia"])
     data_str = "—"
-    if "data" in df_mes.columns:
-        try:
-            ultimo_dia = pd.to_datetime(df_mes["data"], errors="coerce").max()
-            if pd.notna(ultimo_dia):
-                data_str = pd.to_datetime(ultimo_dia).strftime("%d/%m/%Y")
-        except Exception:
-            pass
+    if data_col:
+        dtmax = pd.to_datetime(df_mes[data_col], errors="coerce").max()
+        if pd.notna(dtmax):
+            data_str = pd.to_datetime(dtmax).strftime("%d/%m/%Y")
 
-    # =========================
-    # KPIs (mês atual)
-    # =========================
-    ofertadas = float(pd.to_numeric(df_mes.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
-    aceitas = float(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
-    rejeitadas = float(pd.to_numeric(df_mes.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
-
-    acc_pct = (aceitas / ofertadas * 100.0) if ofertadas > 0 else 0.0
-    rej_pct = (rejeitadas / ofertadas * 100.0) if ofertadas > 0 else 0.0
+    # ============================================
+    # KPIs
+    # ============================================
+    ofertadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
+    aceitas = int(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
+    rejeitadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
 
     entreg_uniq = 0
     if "pessoa_entregadora" in df_mes.columns:
         entreg_uniq = int(df_mes["pessoa_entregadora"].dropna().nunique())
 
-    # UTR abs (igual tua lógica antiga)
-    if not df_mes.empty:
-        seg = pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
-        horas = seg / 3600.0 if seg > 0 else 0.0
-        utr_abs = (ofertadas / horas) if horas > 0 else 0.0
-    else:
-        utr_abs = 0.0
+    acc_pct = (aceitas / ofertadas * 100.0) if ofertadas > 0 else 0.0
+    rej_pct = (rejeitadas / ofertadas * 100.0) if ofertadas > 0 else 0.0
 
-    # UTR média (igual teu antigo: utr_por_entregador_turno(df, mes, ano))
+    seg = pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
+    horas = seg / 3600.0 if seg > 0 else 0.0
+    utr_abs = (ofertadas / horas) if horas > 0 else 0.0
+
     utr_medias = 0.0
     try:
         base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
         if not base_home.empty and "supply_hours" in base_home.columns and "corridas_ofertadas" in base_home.columns:
             base_pos = base_home[base_home["supply_hours"] > 0].copy()
-            utr_medias = float((base_pos["corridas_ofertadas"] / base_pos["supply_hours"]).mean()) if not base_pos.empty else 0.0
+            if not base_pos.empty:
+                utr_medias = float((base_pos["corridas_ofertadas"] / base_pos["supply_hours"]).mean())
     except Exception:
         pass
 
-    # =========================
-    # ADERÊNCIA (igual teu antigo, mas mantendo UI nova)
-    # =========================
-    ader_pct = None
+    # ============================================
+    # ADERÊNCIA (MANTENDO SUA LÓGICA + DEBUG UTIL)
+    # ============================================
+    ader_pct = 0.0
     ader_reg = 0
     ader_vagas = 0.0
     vagas_incons = False
+    ader_warn = ""  # aviso se der erro
 
-    if (
-        not df_mes.empty
-        and ("numero_minimo_de_entregadores_regulares_na_escala" in df_mes.columns)
-        and ("tag" in df_mes.columns)
-        and ("data" in df_mes.columns)
-    ):
-        turno_col = next((c for c in ("turno", "tipo_turno", "periodo") if c in df_mes.columns), None)
-        group_cols = ("data", turno_col) if turno_col else ("data",)
+    vagas_col = _pick_col(df_mes.columns, ["numero_minimo_de_entregadores_regulares_na_escala", "vagas"])
+    tag_col = _pick_col(df_mes.columns, ["tag"])
+    turno_col = _pick_col(df_mes.columns, ["turno", "tipo_turno", "periodo"])
+
+    if (not df_mes.empty) and vagas_col and tag_col and data_col and ("segundos_abs" in df_mes.columns):
+        group_cols = (data_col, turno_col) if turno_col else (data_col,)
         try:
-            base_ap = calcular_aderencia(df_mes, group_cols=group_cols)
+            base_ap = calcular_aderencia(
+                df_mes,
+                group_cols=group_cols,
+                vagas_col=vagas_col,
+                tag_col=tag_col,
+                tag_regular="REGULAR",
+            )
             ader_reg = int(pd.to_numeric(base_ap.get("regulares_atuaram", 0), errors="coerce").fillna(0).sum())
             ader_vagas = float(pd.to_numeric(base_ap.get("vagas", 0), errors="coerce").fillna(0).sum())
             if ader_vagas > 0:
                 ader_pct = round((ader_reg / ader_vagas) * 100.0, 1)
-            if "vagas_inconsistente" in base_ap.columns:
-                vagas_incons = bool(base_ap["vagas_inconsistente"].fillna(False).any())
-        except Exception:
-            ader_pct = None
+            vagas_incons = bool(base_ap.get("vagas_inconsistente", False).fillna(False).any())
+        except Exception as e:
+            # NÃO some com os dados: mostra 0% e avisa o motivo
+            ader_warn = f"⚠️ Aderência não calculada: {type(e).__name__}: {e}"
+    else:
+        # avisa qual peça tá faltando (isso mata o mistério na hora)
+        faltando = []
+        if df_mes.empty: faltando.append("df_mes vazio")
+        if not vagas_col: faltando.append("coluna vagas")
+        if not tag_col: faltando.append("coluna tag")
+        if not data_col: faltando.append("coluna data")
+        if "segundos_abs" not in df_mes.columns: faltando.append("segundos_abs")
+        if faltando:
+            ader_warn = "⚠️ Aderência não calculada (faltando: " + ", ".join(faltando) + ")"
 
-    pct_bar = max(0.0, min(float(ader_pct) if ader_pct is not None else 0.0, 100.0))
+    pct_bar = max(0.0, min(float(ader_pct), 100.0))
 
-    # =========================
-    # UI (igual teu layout novo)
-    # =========================
+    # ============================================
+    # UI (SEU DESIGN NOVO)
+    # ============================================
     st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
 
     topL, topR = st.columns([4, 1])
@@ -136,9 +151,8 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             """,
             unsafe_allow_html=True
         )
-
     with topR:
-        if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_drive"):
+        if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_home"):
             st.session_state.force_refresh = True
             st.session_state.just_refreshed = True
             st.cache_data.clear()
@@ -188,53 +202,34 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         unsafe_allow_html=True
     )
 
-    if ader_pct is None:
-        st.markdown(
-            """
-            <div class="neo-grid-2">
-              <div class="neo-card">
-                <div class="neo-value">—</div>
-                <div class="neo-subline">Sem dados de aderência neste período.</div>
+    # bloco aderência sempre renderiza (igual tua lógica antiga: não some)
+    warn_html = f"<div class='neo-subline' style='color:rgba(255,176,32,.95)'>{ader_warn}</div>" if ader_warn else ""
+    incons_html = "<div class='neo-subline' style='color:rgba(255,176,32,.95)'>⚠️ Vagas inconsistentes.</div>" if vagas_incons else ""
+
+    st.markdown(
+        f"""
+        <div class="neo-grid-2">
+          <div class="neo-card">
+            <div class="neo-value">{ader_pct:.1f}%</div>
+            <div class="neo-subline">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
+            {incons_html}
+            {warn_html}
+          </div>
+
+          <div class="neo-card">
+            <div class="neo-label">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
+            <div class="neo-progress-wrap">
+              <div class="neo-progress">
+                <div style="width:{pct_bar:.1f}%;"></div>
               </div>
-              <div class="neo-card">
-                <div class="neo-label">Regulares: — / Vagas: —</div>
-                <div class="neo-progress-wrap">
-                  <div class="neo-progress"><div style="width:0%"></div></div>
-                  <div class="neo-scale"><span>0%</span><span>50%</span><span>100%</span></div>
-                </div>
+              <div class="neo-scale">
+                <span>0%</span><span>50%</span><span>100%</span>
               </div>
             </div>
-            """,
-            unsafe_allow_html=True
-        )
-    else:
-        warn_html = ""
-        if vagas_incons:
-            warn_html = "<div class='neo-subline' style='margin-top:10px;color:rgba(255,176,32,.95)'>⚠️ Vagas inconsistentes em alguns dias/turnos.</div>"
-
-        st.markdown(
-            f"""
-            <div class="neo-grid-2">
-              <div class="neo-card">
-                <div class="neo-value">{ader_pct:.1f}%</div>
-                <div class="neo-subline">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
-                {warn_html}
-              </div>
-
-              <div class="neo-card">
-                <div class="neo-label">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
-                <div class="neo-progress-wrap">
-                  <div class="neo-progress">
-                    <div style="width:{pct_bar:.1f}%;"></div>
-                  </div>
-                  <div class="neo-scale">
-                    <span>0%</span><span>50%</span><span>100%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     st.markdown("</div>", unsafe_allow_html=True)
