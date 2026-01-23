@@ -69,7 +69,6 @@ st.markdown(
       padding-bottom: 2.0rem !important;
     }
 
-    /* remove excess blank */
     [data-testid="stVerticalBlock"]{ gap: 0.6rem; }
 
     /* ===== Sidebar ===== */
@@ -85,7 +84,7 @@ st.markdown(
       border: 1px solid rgba(255,255,255,.12);
       border-radius: 14px;
       padding: .70rem 1.20rem;
-      font-weight: 700;
+      font-weight: 800;
       box-shadow: 0 12px 26px rgba(0,0,0,.45);
     }
     .stButton>button:hover{
@@ -134,14 +133,14 @@ st.markdown(
       align-items:center;
       gap:12px;
       font-size: 1.65rem;
-      font-weight: 800;
+      font-weight: 900;
       letter-spacing: .2px;
     }
     .neo-sub{
       margin-top: 4px;
       font-size: .95rem;
       color: var(--muted);
-      font-weight: 500;
+      font-weight: 600;
     }
 
     .neo-divider{
@@ -153,7 +152,7 @@ st.markdown(
     /* ===== section title ===== */
     .neo-section{
       font-size: 1.2rem;
-      font-weight: 800;
+      font-weight: 900;
       margin: 6px 2px 12px 2px;
       color: rgba(232,237,246,.92);
     }
@@ -183,7 +182,7 @@ st.markdown(
         0 16px 34px rgba(0,0,0,.40),
         inset 0 1px 0 rgba(255,255,255,.05);
       overflow:hidden;
-      min-height: 110px;
+      min-height: 118px;
     }
 
     .neo-card:after{
@@ -204,7 +203,7 @@ st.markdown(
 
     .neo-label{
       font-size: .92rem;
-      font-weight: 700;
+      font-weight: 800;
       letter-spacing: .02em;
       color: rgba(232,237,246,.85);
       margin-bottom: 10px;
@@ -212,7 +211,7 @@ st.markdown(
 
     .neo-value{
       font-size: 2.3rem;
-      font-weight: 900;
+      font-weight: 950;
       letter-spacing: .4px;
       line-height: 1.05;
       color: rgba(255,255,255,.96);
@@ -222,9 +221,30 @@ st.markdown(
       margin-top: 10px;
       font-size: .90rem;
       color: rgba(232,237,246,.70);
+      font-weight: 650;
     }
 
-    /* ===== red card w/ wave ===== */
+    /* ===== green card (ACEITAS) ===== */
+    .neo-success{
+      border-color: rgba(55,214,122,.22);
+    }
+    .neo-success .neo-value{ color: rgba(160,255,205,.98); }
+    .neo-success:before{
+      content:"";
+      position:absolute;
+      left:-20%;
+      bottom:-35%;
+      width: 160%;
+      height: 90%;
+      background:
+        radial-gradient(60% 70% at 35% 55%, rgba(55,214,122,.28), transparent 62%),
+        radial-gradient(55% 65% at 70% 55%, rgba(55,214,122,.18), transparent 65%);
+      transform: rotate(-6deg);
+      opacity: .95;
+      pointer-events:none;
+    }
+
+    /* ===== red card w/ wave (REJEITADAS) ===== */
     .neo-danger{
       border-color: rgba(255,77,77,.22);
     }
@@ -275,10 +295,9 @@ st.markdown(
       margin-top: 8px;
       font-size: .88rem;
       color: rgba(232,237,246,.60);
-      font-weight: 600;
+      font-weight: 700;
     }
 
-    /* responsive */
     @media (max-width: 1100px){
       .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .neo-grid-2{ grid-template-columns: 1fr; }
