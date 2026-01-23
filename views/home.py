@@ -1,4 +1,5 @@
 # views/home.py  (SUBSTITUA o arquivo inteiro por este)
+# Patch: Top 3 SEM HTML (pra não vazar nunca) + Supply Hours card
 
 import streamlit as st
 import pandas as pd
@@ -124,7 +125,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     pct_bar = max(0.0, min(float(ader_pct), 100.0))
 
     # =========================
-    # SUPPLY HOURS + TOP 3 (SEM INDENTAÇÃO PRA NÃO VIRAR "CODE BLOCK")
+    # SUPPLY HOURS + TOP 3 POR HORAS (SEM HTML)
     # =========================
     sh_total = horas_total
 
@@ -145,24 +146,8 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             horas = float(r["segundos_abs"]) / 3600.0
             top3.append((nome, horas))
 
-    medals = ["🥇", "🥈", "🥉"]
-    if top3:
-        rows = []
-        for i, (nome, horas) in enumerate(top3):
-            m = medals[i] if i < 3 else "•"
-            # IMPORTANTÍSSIMO: sem quebras/indentação -> não vira "code block" do markdown
-            rows.append(
-                f'<div class="toprow">'
-                f'<div class="name">{m}&nbsp;{nome}</div>'
-                f'<div class="hours">{horas:.1f}h</div>'
-                f'</div>'
-            )
-        top_html = "".join(rows)
-    else:
-        top_html = "<div class='neo-subline'>Sem dados suficientes.</div>"
-
     # =========================
-    # UI
+    # UI (parte principal em HTML)
     # =========================
     st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
 
@@ -232,8 +217,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
 
     incons_html = (
         "<div class='neo-subline' style='color:rgba(255,176,32,.95)'>⚠️ Vagas inconsistentes.</div>"
-        if vagas_incons
-        else ""
+        if vagas_incons else ""
     )
 
     st.markdown(
@@ -262,26 +246,45 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     # =========================
-    # SEÇÃO INFERIOR
+    # SEÇÃO INFERIOR (sem HTML pro Top3)
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
 
-    st.markdown(
-        f"""
-        <div class="neo-grid-2">
-          <div class="neo-card">
-            <div class="neo-label">Supply Hours (SH)</div>
-            <div class="neo-value">{sh_total:.1f}h</div>
-            <div class="neo-subline">Total no mês ({mes_txt})</div>
-          </div>
+    c1, c2 = st.columns([1, 2])
 
-          <div class="neo-card">
-            {top_html}
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    with c1:
+        st.markdown(
+            f"""
+            <div class="neo-card">
+              <div class="neo-label">Supply Hours (SH)</div>
+              <div class="neo-value">{sh_total:.1f}h</div>
+              <div class="neo-subline">Total no mês ({mes_txt})</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with c2:
+        st.markdown(
+            """
+            <div class="neo-card">
+              <div class="neo-label">Top 3 entregadores (horas)</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        medals = ["🥇", "🥈", "🥉"]
+        if not top3:
+            st.caption("Sem dados suficientes.")
+        else:
+            for i, (nome, horas) in enumerate(top3):
+                m = medals[i] if i < 3 else "•"
+                l, r = st.columns([4, 1])
+                with l:
+                    st.markdown(f"**{m} {nome}**")
+                with r:
+                    st.markdown(f"**{horas:.1f}h**")
 
     st.markdown("</div>", unsafe_allow_html=True)
