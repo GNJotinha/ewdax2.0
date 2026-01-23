@@ -1,279 +1,521 @@
-import streamlit as st
+import importlib
 import pandas as pd
-from relatorios import utr_por_entregador_turno
-from utils import calcular_aderencia
+import streamlit as st
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from auth import autenticar, USUARIOS
+from data_loader import carregar_dados
+
+TZ = ZoneInfo("America/Sao_Paulo")
+
+# =========================================================
+# 🔄 Carga ÚNICA do DF por render + suporte a hard refresh
+# =========================================================
+def get_df_once():
+    """
+    Carrega o df uma única vez por render.
+    Se o usuário clicou em 'Atualizar dados', força baixar do Drive.
+    """
+    prefer = st.session_state.pop("force_refresh", False)
+    ts = pd.Timestamp.now().timestamp() if prefer else None
+    return carregar_dados(prefer_drive=prefer, _ts=ts)
+
+# -------------------------------------------------------------------
+# Config da página
+# -------------------------------------------------------------------
+st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
+
+# -------------------------------------------------------------------
+# Estilo
+# -------------------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    :root{
+      --bg: #0b0f14;
+
+      --text: #e8edf6;
+      --muted: rgba(232,237,246,.70);
+
+      --blue: #58a6ff;
+      --blue2: #3b82f6;
+      --cyan: #00d4ff;
+      --purple: #a78bfa;
+
+      --red: #ff4d4d;
+      --orange: #ffb020;
+      --green: #37d67a;
+    }
+
+    /* =====================================================
+       LIMPAR BARRAS/COISAS DO STREAMLIT (máximo possível)
+    ===================================================== */
+    header[data-testid="stHeader"]{ display:none !important; }
+    footer{ display:none !important; }
+    #MainMenu{ visibility:hidden !important; }
+    [data-testid="stAppViewContainer"]{ padding-top: 0rem !important; }
+
+    /* =====================================================
+       FUNDO (NEON HAZE)
+    ===================================================== */
+    body{
+      background:
+        radial-gradient(900px 500px at 15% 10%, rgba(88,166,255,.15), transparent 60%),
+        radial-gradient(700px 420px at 85% 0%, rgba(167,139,250,.14), transparent 55%),
+        radial-gradient(700px 420px at 70% 95%, rgba(0,212,255,.08), transparent 55%),
+        linear-gradient(180deg, #070a0f 0%, #0b0f14 45%, #0b0f14 100%);
+      color: var(--text);
+    }
+
+    /* =====================================================
+       LARGURA / ESPAÇAMENTO
+    ===================================================== */
+    .block-container{
+      max-width: 1180px !important;
+      padding-top: 1.2rem !important;
+      padding-bottom: 2.0rem !important;
+    }
+    [data-testid="stVerticalBlock"]{ gap: 0.65rem; }
+
+    /* =====================================================
+       SIDEBAR
+    ===================================================== */
+    section[data-testid="stSidebar"]{
+      background: rgba(18,22,30,.92);
+      border-right: 1px solid rgba(255,255,255,.07);
+    }
+
+    /* =====================================================
+       BOTÕES
+    ===================================================== */
+    .stButton>button{
+      background: linear-gradient(135deg, rgba(88,166,255,.92), rgba(59,130,246,.92));
+      color: white;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 14px;
+      padding: .70rem 1.20rem;
+      font-weight: 800;
+      box-shadow: 0 12px 26px rgba(0,0,0,.45);
+    }
+    .stButton>button:hover{
+      filter: brightness(1.08);
+      border-color: rgba(255,255,255,.18);
+    }
+
+    /* =====================================================
+       SHELL (PAINEL CENTRAL)  -> SEM “BOLA” (glow contido)
+    ===================================================== */
+    .neo-shell{
+      position: relative;
+      border-radius: 22px;
+      padding: 18px 18px 22px 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow:
+        0 30px 70px rgba(0,0,0,.60),
+        inset 0 1px 0 rgba(255,255,255,.06);
+      overflow: hidden;
+    }
+    .neo-shell:before{
+      content:"";
+      position:absolute;
+      inset:0; /* <- importante: NÃO deixa vazar e formar a cápsula */
+      background:
+        radial-gradient(520px 220px at 18% 18%, rgba(88,166,255,.10), transparent 62%),
+        radial-gradient(460px 200px at 82% 16%, rgba(167,139,250,.08), transparent 62%),
+        radial-gradient(520px 220px at 70% 90%, rgba(0,212,255,.05), transparent 62%);
+      filter: blur(28px);
+      opacity: .35;
+      pointer-events:none;
+    }
+    .neo-shell > *{ position: relative; z-index: 2; }
+
+    /* =====================================================
+       TOPBAR
+    ===================================================== */
+    .neo-topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:14px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03));
+      border: 1px solid rgba(255,255,255,.08);
+      margin-bottom: 14px;
+    }
+    .neo-title{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      font-size: 1.65rem;
+      font-weight: 900;
+      letter-spacing: .2px;
+    }
+    .neo-sub{
+      margin-top: 4px;
+      font-size: .95rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .neo-divider{
+      height: 1px;
+      background: rgba(255,255,255,.08);
+      margin: 14px 0;
+    }
+
+    /* =====================================================
+       TÍTULOS DE SEÇÃO
+    ===================================================== */
+    .neo-section{
+      font-size: 1.2rem;
+      font-weight: 900;
+      margin: 6px 2px 12px 2px;
+      color: rgba(232,237,246,.92);
+    }
+
+    /* =====================================================
+       GRID
+    ===================================================== */
+    .neo-grid-4{
+      display:grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .neo-grid-2{
+      display:grid;
+      grid-template-columns: 340px 1fr;
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    /* =====================================================
+       CARDS (GLASS + BORDA NEON)
+    ===================================================== */
+    .neo-card{
+      position: relative;
+      border-radius: 16px;
+      padding: 16px 16px 14px 16px;
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+      border: 1px solid rgba(255,255,255,.09);
+      box-shadow:
+        0 16px 34px rgba(0,0,0,.40),
+        inset 0 1px 0 rgba(255,255,255,.05);
+      overflow:hidden;
+      min-height: 120px;
+    }
+    .neo-card:after{
+      content:"";
+      position:absolute;
+      inset:-1px;
+      border-radius: 16px;
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(88,166,255,.22), rgba(167,139,250,.12), rgba(0,212,255,.12));
+      -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events:none;
+      opacity:.65;
+    }
+
+    .neo-label{
+      font-size: .92rem;
+      font-weight: 800;
+      letter-spacing: .02em;
+      color: rgba(232,237,246,.85);
+      margin-bottom: 10px;
+    }
+
+    .neo-value{
+      font-size: 2.3rem;
+      font-weight: 950;
+      letter-spacing: .4px;
+      line-height: 1.05;
+      color: rgba(255,255,255,.96);
+    }
+
+    .neo-value .pct{
+      display:block;
+      margin-top: 6px;
+      font-size: 1.65rem;
+      font-weight: 900;
+      letter-spacing: .2px;
+      color: rgba(232,237,246,.92);
+      opacity: .95;
+    }
+
+    .neo-subline{
+      margin-top: 10px;
+      font-size: .90rem;
+      color: rgba(232,237,246,.70);
+      font-weight: 650;
+    }
+
+    /* =====================================================
+       ACEITAS (VERDE)
+    ===================================================== */
+    .neo-success{
+      border-color: rgba(55,214,122,.22);
+    }
+    .neo-success .neo-value{ color: rgba(160,255,205,.98); }
+    .neo-success:before{
+      content:"";
+      position:absolute;
+      left:-20%;
+      bottom:-35%;
+      width: 160%;
+      height: 90%;
+      background:
+        radial-gradient(60% 70% at 35% 55%, rgba(55,214,122,.30), transparent 62%),
+        radial-gradient(55% 65% at 70% 55%, rgba(55,214,122,.18), transparent 65%);
+      transform: rotate(-6deg);
+      opacity: .95;
+      pointer-events:none;
+    }
+
+    /* =====================================================
+       REJEITADAS (VERMELHO)
+    ===================================================== */
+    .neo-danger{
+      border-color: rgba(255,77,77,.22);
+    }
+    .neo-danger .neo-value{ color: rgba(255,110,110,.98); }
+    .neo-danger:before{
+      content:"";
+      position:absolute;
+      left:-20%;
+      bottom:-35%;
+      width: 160%;
+      height: 90%;
+      background:
+        radial-gradient(60% 70% at 35% 55%, rgba(255,77,77,.38), transparent 62%),
+        radial-gradient(55% 65% at 70% 55%, rgba(255,77,77,.26), transparent 65%);
+      transform: rotate(-6deg);
+      opacity: .95;
+      pointer-events:none;
+    }
+
+    /* =====================================================
+       PROGRESS (ADERÊNCIA)
+    ===================================================== */
+    .neo-progress-wrap{ margin-top: 14px; }
+    .neo-progress{
+      width:100%;
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.10);
+      overflow:hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+    }
+    .neo-progress > div{
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg,
+        rgba(255,77,77,.95),
+        rgba(255,176,32,.95),
+        rgba(55,214,122,.95),
+        rgba(0,212,255,.80)
+      );
+      filter: drop-shadow(0 6px 14px rgba(0,0,0,.35));
+    }
+    .neo-scale{
+      display:flex;
+      justify-content:space-between;
+      margin-top: 8px;
+      font-size: .88rem;
+      color: rgba(232,237,246,.60);
+      font-weight: 700;
+    }
+
+    /* =====================================================
+       TOP 3 list rows
+    ===================================================== */
+    .toprow{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin: 10px 0;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    .toprow .name{
+      font-weight: 800;
+      color: rgba(232,237,246,.92);
+    }
+    .toprow .hours{
+      font-weight: 900;
+      color: rgba(232,237,246,.70);
+    }
+
+    @media (max-width: 1100px){
+      .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .neo-grid-2{ grid-template-columns: 1fr; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 
-def _fmt_int(x):
-    try:
-        return f"{int(round(float(x))):,}".replace(",", ".")
-    except Exception:
-        return "0"
+# ---------------------------------------------------------
+# Estado inicial
+# ---------------------------------------------------------
+if "logado" not in st.session_state:
+    st.session_state.logado = False
+    st.session_state.usuario = ""
 
+if "module" not in st.session_state:
+    # default = Home
+    st.session_state.module = "views.home"
 
-def _fmt_pct(x, nd=1):
-    try:
-        return f"{float(x):.{nd}f}%".replace(".", ",")
-    except Exception:
-        return "0,0%"
+if "open_cat" not in st.session_state:
+    st.session_state.open_cat = None
 
-
-def _pick_col(cols, candidates):
-    for c in candidates:
-        if c in cols:
-            return c
-    return None
-
-
-def render(df: pd.DataFrame, USUARIOS: dict):
-    if df is None or df.empty:
-        st.info("Sem dados carregados.")
-        return
-
-    # =========================
-    # MÊS ATUAL (igual teu original)
-    # =========================
-    hoje = pd.Timestamp.today()
-    mes_atual, ano_atual = int(hoje.month), int(hoje.year)
-
-    if ("mes" in df.columns) and ("ano" in df.columns):
-        df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
-    else:
-        if "mes_ano" in df.columns:
-            ultimo_mes = df["mes_ano"].max()
-            df_mes = df[df["mes_ano"] == ultimo_mes].copy()
-            try:
-                mes_atual = int(pd.to_datetime(ultimo_mes).month)
-                ano_atual = int(pd.to_datetime(ultimo_mes).year)
-            except Exception:
-                pass
-        else:
-            df_mes = df.copy()
-
-    mes_txt = f"{mes_atual:02d}/{ano_atual}"
-
-    # data mais recente (topo)
-    data_col = _pick_col(df_mes.columns, ["data", "data_do_periodo", "data_do_periodo_de_referencia"])
-    data_str = "—"
-    if data_col:
-        dtmax = pd.to_datetime(df_mes[data_col], errors="coerce").max()
-        if pd.notna(dtmax):
-            data_str = pd.to_datetime(dtmax).strftime("%d/%m/%Y")
-
-    # =========================
-    # KPIs
-    # =========================
-    ofertadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
-    aceitas = int(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
-    rejeitadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
-
-    entreg_uniq = 0
-    if "pessoa_entregadora" in df_mes.columns:
-        entreg_uniq = int(df_mes["pessoa_entregadora"].dropna().nunique())
-
-    acc_pct = (aceitas / ofertadas * 100.0) if ofertadas > 0 else 0.0
-    rej_pct = (rejeitadas / ofertadas * 100.0) if ofertadas > 0 else 0.0
-
-    seg_total = pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
-    horas_total = float(seg_total / 3600.0) if seg_total > 0 else 0.0
-    utr_abs = (ofertadas / horas_total) if horas_total > 0 else 0.0
-
-    utr_medias = 0.0
-    try:
-        base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
-        if not base_home.empty and "supply_hours" in base_home.columns and "corridas_ofertadas" in base_home.columns:
-            base_pos = base_home[base_home["supply_hours"] > 0].copy()
-            if not base_pos.empty:
-                utr_medias = float((base_pos["corridas_ofertadas"] / base_pos["supply_hours"]).mean())
-    except Exception:
-        pass
-
-    # =========================
-    # ADERÊNCIA (igual tua lógica)
-    # =========================
-    ader_pct = 0.0
-    ader_reg = 0
-    ader_vagas = 0.0
-    vagas_incons = False
-
-    vagas_col = _pick_col(df_mes.columns, ["numero_minimo_de_entregadores_regulares_na_escala", "vagas"])
-    tag_col = _pick_col(df_mes.columns, ["tag"])
-    turno_col = _pick_col(df_mes.columns, ["turno", "tipo_turno", "periodo"])
-
-    if (not df_mes.empty) and vagas_col and tag_col and data_col and ("segundos_abs" in df_mes.columns):
-        group_cols = (data_col, turno_col) if turno_col else (data_col,)
-        try:
-            base_ap = calcular_aderencia(
-                df_mes,
-                group_cols=group_cols,
-                vagas_col=vagas_col,
-                tag_col=tag_col,
-                tag_regular="REGULAR",
-            )
-            ader_reg = int(pd.to_numeric(base_ap.get("regulares_atuaram", 0), errors="coerce").fillna(0).sum())
-            ader_vagas = float(pd.to_numeric(base_ap.get("vagas", 0), errors="coerce").fillna(0).sum())
-            if ader_vagas > 0:
-                ader_pct = round((ader_reg / ader_vagas) * 100.0, 1)
-            vagas_incons = bool(base_ap.get("vagas_inconsistente", False).fillna(False).any())
-        except Exception:
-            pass
-
-    pct_bar = max(0.0, min(float(ader_pct), 100.0))
-
-    # =========================
-    # SH + TOP 3 ENTREGADORES (HORAS)
-    # =========================
-    sh_total = horas_total
-
-    top3 = []
-    if ("pessoa_entregadora" in df_mes.columns) and ("segundos_abs" in df_mes.columns):
-        tmp_h = df_mes[["pessoa_entregadora", "segundos_abs"]].copy()
-        tmp_h["segundos_abs"] = pd.to_numeric(tmp_h["segundos_abs"], errors="coerce").fillna(0)
-        top = (
-            tmp_h.groupby("pessoa_entregadora", as_index=False)["segundos_abs"]
-            .sum()
-            .sort_values("segundos_abs", ascending=False)
-            .head(3)
-        )
-        for _, r in top.iterrows():
-            nome = str(r["pessoa_entregadora"])
-            horas = float(r["segundos_abs"]) / 3600.0
-            top3.append((nome, horas))
-
-    medals = ["🥇", "🥈", "🥉"]
-    if top3:
-        rows = []
-        for i, (nome, horas) in enumerate(top3):
-            m = medals[i] if i < 3 else "•"
-            rows.append(
-                f"""
-                <div class="toprow">
-                  <div class="name">{m}&nbsp;{nome}</div>
-                  <div class="hours">{horas:.1f}h</div>
-                </div>
-                """
-            )
-        top_html = "".join(rows)
-    else:
-        top_html = "<div class='neo-subline'>Sem dados suficientes.</div>"
-
-    # =========================
-    # UI
-    # =========================
-    st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
-
-    topL, topR = st.columns([4, 1])
-    with topL:
-        st.markdown(
-            f"""
-            <div class="neo-topbar">
-              <div>
-                <div class="neo-title">📁&nbsp;Painel de Entregadores</div>
-                <div class="neo-sub">Dados atualizados • {data_str}</div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    with topR:
-        if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_home"):
-            st.session_state.force_refresh = True
-            st.session_state.just_refreshed = True
-            st.cache_data.clear()
+# ---------------------------------------------------------
+# Login
+# ---------------------------------------------------------
+if not st.session_state.logado:
+    st.title("🔐 Login do Painel")
+    usuario = st.text_input("Usuário")
+    senha = st.text_input("Senha", type="password")
+    if st.button("Entrar", use_container_width=True):
+        if autenticar(usuario, senha):
+            st.session_state.logado = True
+            st.session_state.usuario = usuario
             st.rerun()
+        else:
+            st.error("Usuário ou senha incorretos")
+    st.stop()
 
-    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
+st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
-    st.markdown(f'<div class="neo-section">Resumo do mês ({mes_txt})</div>', unsafe_allow_html=True)
+# ---------------------------------------------------------
+# Menu (sem item duplicado de Início)
+# ---------------------------------------------------------
+MENU = {
+    "Promoção da virada": {
+        "Ranking": "views.promo_virada",
+    },
+    "Desempenho do Entregador": {
+        "Ver geral": "views.ver_geral",
+        "Simplificada (WhatsApp)": "views.simplificada",
+        "Relatório Customizado": "views.relatorio_custom",
+        "Perfil do Entregador": "views.perfil_entregador",
+    },
+    "Relatórios": {
+        "Relatório de faltas": "views.faltas",
+        "Relatório de faltas 2": "views.comparar",
+        "Ativos": "views.ativos",
+        "Comparação de datas": "views.resumos",
+        "Saídas": "views.saidas",
+        "Adicional por Hora (Turno)": "views.adicional_turno",
+        "Lista adicional": "views.lista_adicional",
+    },
+    "Dashboards": {
+        "UTR": "views.utr",
+        "Indicadores Gerais": "views.indicadores",
+    },
+}
 
-    aceitas_html = f"{_fmt_int(aceitas)}<span class='pct'>({_fmt_pct(acc_pct, 1)})</span>"
-    rejeitadas_html = f"{_fmt_int(rejeitadas)}<span class='pct'>({_fmt_pct(rej_pct, 1)})</span>"
+# ---------------------------------------------------------
+# Helper: validade do acesso sigiloso
+# ---------------------------------------------------------
+def _sig_ok_now() -> bool:
+    ok = bool(st.session_state.get("_sig_ok"))
+    if not ok:
+        return False
+    until = st.session_state.get("_sig_until")  # ISO str ou None (sessão-only)
+    if until is None:
+        return True
+    try:
+        dt_until = datetime.fromisoformat(until)
+    except Exception:
+        return False
+    return datetime.now(TZ) <= dt_until
 
-    st.markdown(
-        f"""
-        <div class="neo-grid-4">
-          <div class="neo-card">
-            <div class="neo-label">Ofertadas – UTR</div>
-            <div class="neo-value">{_fmt_int(ofertadas)}</div>
-            <div class="neo-subline">Absoluto {utr_abs:.2f} • Média {utr_medias:.2f}</div>
-          </div>
+# ---------------------------------------------------------
+# Sidebar
+# ---------------------------------------------------------
+with st.sidebar:
+    st.markdown("### Navegação")
+    # Botão Home dedicado
+    if st.button("Início", use_container_width=True):
+        st.session_state.module = "views.home"
+        st.session_state.open_cat = None
+        st.rerun()
 
-          <div class="neo-card neo-success">
-            <div class="neo-label">Aceitas</div>
-            <div class="neo-value">{aceitas_html}</div>
-            <div class="neo-subline">&nbsp;</div>
-          </div>
+    # --- Área Sigilosa no menu esquerdo (apenas admin/dev) ---
+    admins_list = set(st.secrets.get("ADMINS", []))
+    user_entry = USUARIOS.get(st.session_state.usuario, {}) or {}
+    nivel = user_entry.get("nivel", "")
+    is_sigiloso = (nivel in ("admin", "dev")) or (st.session_state.usuario in admins_list)
 
-          <div class="neo-card neo-danger">
-            <div class="neo-label">Rejeitadas</div>
-            <div class="neo-value">{rejeitadas_html}</div>
-            <div class="neo-subline">&nbsp;</div>
-          </div>
+    if is_sigiloso:
+        with st.expander("Acesso restrito", expanded=False):
+            # Lista por entregador
+            if st.button("Comparativo entregador", use_container_width=True):
+                st.session_state.sig_target = "by_entregador"
+                if st.session_state.get("_sig_ok"):  # já validou nesta sessão
+                    st.session_state.sig_modo = "by_entregador"
+                    st.session_state.module = "views.auditoria_sigilosa"
+                else:
+                    st.session_state.module = "views.auditoria_gate"
+                st.session_state.open_cat = None
+                st.rerun()
 
-          <div class="neo-card">
-            <div class="neo-label">Entregadores ativos</div>
-            <div class="neo-value">{_fmt_int(entreg_uniq)}</div>
-            <div class="neo-subline">&nbsp;</div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+            # Lista geral
+            if st.button("Comparativo geral", use_container_width=True):
+                st.session_state.sig_target = "geral"
+                if st.session_state.get("_sig_ok"):  # já validou nesta sessão
+                    st.session_state.sig_modo = "geral"
+                    st.session_state.module = "views.auditoria_sigilosa"
+                else:
+                    st.session_state.module = "views.auditoria_gate"
+                st.session_state.open_cat = None
+                st.rerun()
 
-    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="neo-section">Aderência <span style="font-weight:700;color:rgba(232,237,246,.70)">(REGULAR)</span></div>',
-        unsafe_allow_html=True
-    )
 
-    incons_html = "<div class='neo-subline' style='color:rgba(255,176,32,.95)'>⚠️ Vagas inconsistentes.</div>" if vagas_incons else ""
+    # Submenus
+    for cat, opts in MENU.items():
+        if isinstance(opts, str):
+            if st.button(cat, use_container_width=True):
+                st.session_state.module = opts
+                st.session_state.open_cat = None
+                st.rerun()
+        else:
+            expanded = (st.session_state.open_cat == cat)
+            with st.expander(cat, expanded=expanded):
+                for label, module in opts.items():
+                    if st.button(label, key=f"btn_{cat}_{label}", use_container_width=True):
+                        st.session_state.module = module
+                        st.session_state.open_cat = cat
+                        st.rerun()
 
-    st.markdown(
-        f"""
-        <div class="neo-grid-2">
-          <div class="neo-card">
-            <div class="neo-value">{ader_pct:.1f}%</div>
-            <div class="neo-subline">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
-            {incons_html}
-          </div>
+# ---------------------------------------------------------
+# Dados (evita carregar a base inteira na área sigilosa)
+# ---------------------------------------------------------
+mod = st.session_state.module
+if mod in ("views.auditoria_sigilosa", "views.auditoria_gate"):
+    df = pd.DataFrame()  # não precisa aqui
+else:
+    df = carregar_dados(prefer_drive=st.session_state.pop("force_refresh", False))
+    if st.session_state.pop("just_refreshed", False):
+        st.success("✅ Base atualizada a partir do Google Drive.")
 
-          <div class="neo-card">
-            <div class="neo-label">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
-            <div class="neo-progress-wrap">
-              <div class="neo-progress">
-                <div style="width:{pct_bar:.1f}%;"></div>
-              </div>
-              <div class="neo-scale">
-                <span>0%</span><span>50%</span><span>100%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    # =========================
-    # NOVA SEÇÃO (ESPAÇO DE BAIXO): SH + TOP 3
-    # =========================
-    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
-
-    st.markdown(
-        f"""
-        <div class="neo-grid-2">
-          <div class="neo-card">
-            <div class="neo-label">Supply Hours (SH)</div>
-            <div class="neo-value">{sh_total:.1f}h</div>
-            <div class="neo-subline">Total no mês ({mes_txt})</div>
-          </div>
-
-          <div class="neo-card">
-            <div class="neo-label">Top 3 entregadores (horas)</div>
-            {top_html}
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown("</div>", unsafe_allow_html=True)
+# ---------------------------------------------------------
+# Roteador
+# ---------------------------------------------------------
+try:
+    page = importlib.import_module(st.session_state.module)
+except Exception as e:
+    st.error(f"Erro ao carregar módulo **{st.session_state.module}**: {e}")
+else:
+    page.render(df, USUARIOS)
