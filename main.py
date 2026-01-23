@@ -32,30 +32,36 @@ st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 st.markdown(
     """
     <style>
-    /* ---------- BASE ---------- */
+    /* =====================================================
+       BASE
+    ===================================================== */
     body {
         background-color: #121417;
         color: #e5e7eb;
     }
 
     h1, h2, h3 {
-        color: #f3f4f6;
+        color: #f9fafb;
         font-weight: 600;
     }
 
-    /* ---------- SIDEBAR ---------- */
+    /* =====================================================
+       SIDEBAR
+    ===================================================== */
     section[data-testid="stSidebar"] {
         background-color: #16181d;
         border-right: 1px solid #262a33;
     }
 
-    /* ---------- BOTÕES ---------- */
+    /* =====================================================
+       BOTÕES
+    ===================================================== */
     .stButton > button {
         background: linear-gradient(135deg, #2563eb, #1d4ed8);
         color: white;
         border: none;
-        border-radius: 10px;
-        padding: 0.55rem 1rem;
+        border-radius: 14px;
+        padding: 0.65rem 1.3rem;
         font-weight: 600;
     }
 
@@ -63,33 +69,82 @@ st.markdown(
         background: linear-gradient(135deg, #3b82f6, #2563eb);
     }
 
-    /* ---------- CARDS ---------- */
+    /* =====================================================
+       CARDS
+    ===================================================== */
     .card {
-        background-color: #1b1e24;
-        border: 1px solid #262a33;
-        border-radius: 16px;
-        padding: 1.2rem 1.4rem;
+        background: linear-gradient(
+            160deg,
+            rgba(50,54,65,0.9),
+            rgba(24,26,32,0.95)
+        );
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 18px;
+        padding: 1.4rem 1.5rem;
+        box-shadow:
+            0 12px 30px rgba(0,0,0,0.45),
+            inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+
+    .card-danger {
+        background: linear-gradient(
+            160deg,
+            rgba(120,40,40,0.9),
+            rgba(45,18,18,0.95)
+        );
+        border: 1px solid rgba(255,80,80,0.35);
     }
 
     .card-title {
-        font-size: 0.85rem;
-        color: #9ca3af;
-        margin-bottom: 0.4rem;
+        font-size: 0.78rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #c7cad1;
+        margin-bottom: 0.6rem;
     }
 
     .card-value {
-        font-size: 2rem;
-        font-weight: 700;
-        color: #f9fafb;
+        font-size: 2.3rem;
+        font-weight: 800;
+        color: #ffffff;
+        line-height: 1.1;
     }
 
     .card-sub {
-        font-size: 0.8rem;
-        color: #9ca3af;
-        margin-top: 0.25rem;
+        font-size: 0.75rem;
+        color: #b3b7c0;
+        margin-top: 0.5rem;
     }
 
-    /* ---------- DIVIDER ---------- */
+    /* =====================================================
+       PROGRESS BAR (ADERÊNCIA)
+    ===================================================== */
+    .progress-wrap {
+        margin-top: 0.8rem;
+    }
+
+    .progress {
+        width: 100%;
+        height: 8px;
+        border-radius: 999px;
+        background: #2a2e36;
+        overflow: hidden;
+    }
+
+    .progress-bar {
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(
+            90deg,
+            #ef4444,
+            #f59e0b,
+            #22c55e
+        );
+    }
+
+    /* =====================================================
+       DIVIDER
+    ===================================================== */
     hr {
         border: none;
         border-top: 1px solid #262a33;
