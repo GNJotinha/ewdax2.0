@@ -34,10 +34,6 @@ st.markdown(
     <style>
     :root{
       --bg: #0b0f14;
-      --panel: rgba(20, 24, 33, .55);
-      --panel2: rgba(18, 22, 30, .70);
-      --stroke: rgba(255,255,255,.08);
-      --stroke2: rgba(255,255,255,.12);
 
       --text: #e8edf6;
       --muted: rgba(232,237,246,.70);
@@ -52,7 +48,18 @@ st.markdown(
       --green: #37d67a;
     }
 
-    /* ===== Page background (neon haze) ===== */
+    /* =====================================================
+       LIMPAR BARRAS/COISAS DO STREAMLIT (o máximo possível)
+       (No Streamlit Cloud pode sobrar algo do host, mas isso limpa MUITO)
+    ===================================================== */
+    header[data-testid="stHeader"]{ display:none !important; }
+    footer{ display:none !important; }
+    #MainMenu{ visibility:hidden !important; }
+    [data-testid="stAppViewContainer"]{ padding-top: 0rem !important; }
+
+    /* =====================================================
+       FUNDO (NEON HAZE)
+    ===================================================== */
     body{
       background:
         radial-gradient(900px 500px at 15% 10%, rgba(88,166,255,.15), transparent 60%),
@@ -62,22 +69,27 @@ st.markdown(
       color: var(--text);
     }
 
-    /* ===== Streamlit container width ===== */
+    /* =====================================================
+       LARGURA / ESPAÇAMENTO
+    ===================================================== */
     .block-container{
       max-width: 1180px !important;
-      padding-top: 1.3rem !important;
+      padding-top: 1.2rem !important;
       padding-bottom: 2.0rem !important;
     }
+    [data-testid="stVerticalBlock"]{ gap: 0.65rem; }
 
-    [data-testid="stVerticalBlock"]{ gap: 0.6rem; }
-
-    /* ===== Sidebar ===== */
+    /* =====================================================
+       SIDEBAR
+    ===================================================== */
     section[data-testid="stSidebar"]{
       background: rgba(18,22,30,.92);
       border-right: 1px solid rgba(255,255,255,.07);
     }
 
-    /* ===== Buttons ===== */
+    /* =====================================================
+       BOTÕES
+    ===================================================== */
     .stButton>button{
       background: linear-gradient(135deg, rgba(88,166,255,.92), rgba(59,130,246,.92));
       color: white;
@@ -92,7 +104,9 @@ st.markdown(
       border-color: rgba(255,255,255,.18);
     }
 
-    /* ===== “App panel” shell ===== */
+    /* =====================================================
+       SHELL (PAINEL CENTRAL)
+    ===================================================== */
     .neo-shell{
       position: relative;
       border-radius: 22px;
@@ -116,7 +130,9 @@ st.markdown(
     }
     .neo-shell > *{ position: relative; z-index: 2; }
 
-    /* ===== topbar (glass) ===== */
+    /* =====================================================
+       TOPBAR
+    ===================================================== */
     .neo-topbar{
       display:flex;
       align-items:center;
@@ -149,7 +165,9 @@ st.markdown(
       margin: 14px 0;
     }
 
-    /* ===== section title ===== */
+    /* =====================================================
+       TÍTULOS DE SEÇÃO
+    ===================================================== */
     .neo-section{
       font-size: 1.2rem;
       font-weight: 900;
@@ -157,7 +175,9 @@ st.markdown(
       color: rgba(232,237,246,.92);
     }
 
-    /* ===== grid layout (cards) ===== */
+    /* =====================================================
+       GRID
+    ===================================================== */
     .neo-grid-4{
       display:grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -171,7 +191,9 @@ st.markdown(
       align-items: stretch;
     }
 
-    /* ===== cards (glass + neon edge) ===== */
+    /* =====================================================
+       CARDS (GLASS + BORDA NEON)
+    ===================================================== */
     .neo-card{
       position: relative;
       border-radius: 16px;
@@ -182,7 +204,7 @@ st.markdown(
         0 16px 34px rgba(0,0,0,.40),
         inset 0 1px 0 rgba(255,255,255,.05);
       overflow:hidden;
-      min-height: 118px;
+      min-height: 120px;
     }
 
     .neo-card:after{
@@ -217,6 +239,17 @@ st.markdown(
       color: rgba(255,255,255,.96);
     }
 
+    /* número + % em 2 linhas (fica igual mock) */
+    .neo-value .pct{
+      display:block;
+      margin-top: 6px;
+      font-size: 1.65rem;
+      font-weight: 900;
+      letter-spacing: .2px;
+      color: rgba(232,237,246,.92);
+      opacity: .95;
+    }
+
     .neo-subline{
       margin-top: 10px;
       font-size: .90rem;
@@ -224,7 +257,9 @@ st.markdown(
       font-weight: 650;
     }
 
-    /* ===== green card (ACEITAS) ===== */
+    /* =====================================================
+       ACEITAS (VERDE)
+    ===================================================== */
     .neo-success{
       border-color: rgba(55,214,122,.22);
     }
@@ -237,14 +272,16 @@ st.markdown(
       width: 160%;
       height: 90%;
       background:
-        radial-gradient(60% 70% at 35% 55%, rgba(55,214,122,.28), transparent 62%),
+        radial-gradient(60% 70% at 35% 55%, rgba(55,214,122,.30), transparent 62%),
         radial-gradient(55% 65% at 70% 55%, rgba(55,214,122,.18), transparent 65%);
       transform: rotate(-6deg);
       opacity: .95;
       pointer-events:none;
     }
 
-    /* ===== red card w/ wave (REJEITADAS) ===== */
+    /* =====================================================
+       REJEITADAS (VERMELHO)
+    ===================================================== */
     .neo-danger{
       border-color: rgba(255,77,77,.22);
     }
@@ -264,10 +301,10 @@ st.markdown(
       pointer-events:none;
     }
 
-    /* ===== aderência progress ===== */
-    .neo-progress-wrap{
-      margin-top: 14px;
-    }
+    /* =====================================================
+       PROGRESS (ADERÊNCIA)
+    ===================================================== */
+    .neo-progress-wrap{ margin-top: 14px; }
     .neo-progress{
       width:100%;
       height: 12px;
@@ -288,7 +325,6 @@ st.markdown(
       );
       filter: drop-shadow(0 6px 14px rgba(0,0,0,.35));
     }
-
     .neo-scale{
       display:flex;
       justify-content:space-between;
@@ -298,6 +334,9 @@ st.markdown(
       font-weight: 700;
     }
 
+    /* =====================================================
+       RESPONSIVO
+    ===================================================== */
     @media (max-width: 1100px){
       .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .neo-grid-2{ grid-template-columns: 1fr; }
@@ -306,7 +345,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
 
 
 # ---------------------------------------------------------
