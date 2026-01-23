@@ -120,7 +120,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     pct_bar = max(0.0, min(float(ader_pct), 100.0))
 
     # =========================
-    # TOP 3 POR HORAS (STREAMLIT PURO)
+    # TOP 3 POR HORAS
     # =========================
     top3 = []
     if ("pessoa_entregadora" in df_mes.columns) and ("segundos_abs" in df_mes.columns):
@@ -138,7 +138,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             top3.append((str(r["pessoa_entregadora"]), float(r["segundos_abs"]) / 3600.0))
 
     # =========================
-    # HEADER (SEM HTML) — aqui some o “bagulho”
+    # HEADER (STREAMLIT PURO)
     # =========================
     hL, hR = st.columns([4, 1])
     with hL:
@@ -152,10 +152,8 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             st.rerun()
 
     # =========================
-    # CONTEÚDO (mantém seu layout com shell)
+    # CONTEÚDO (SEM neo-shell porque ele cria card vazio)
     # =========================
-    st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
-
     st.markdown(f'<div class="neo-section">Resumo do mês ({mes_txt})</div>', unsafe_allow_html=True)
 
     aceitas_html = f"{_fmt_int(aceitas)}<span class='pct'>({_fmt_pct(acc_pct, 1)})</span>"
@@ -227,7 +225,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
 
     c1, c2 = st.columns([1, 2])
 
-    # SH (card como tá)
     with c1:
         st.markdown(
             f"""
@@ -240,19 +237,11 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             unsafe_allow_html=True
         )
 
-    # TOP3 (sem HTML)
     with c2:
-        # Card vazio só pra caixa
-        st.markdown(
-            """
-            <div class="neo-card">
-              <div class="neo-label">Top 3 entregadores (horas)</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        # Conteúdo streamlit (não vai imprimir HTML nunca)
+        # sem card, sem HTML: só ranking alinhado
+        st.markdown("### Top 3 entregadores (horas)")
         medals = ["🥇", "🥈", "🥉"]
+
         if not top3:
             st.caption("Sem dados suficientes.")
         else:
@@ -262,5 +251,3 @@ def render(df: pd.DataFrame, USUARIOS: dict):
                     st.markdown(f"**{medals[i]} {nome}**")
                 with r:
                     st.markdown(f"**{horas:.1f}h**")
-
-    st.markdown("</div>", unsafe_allow_html=True)
