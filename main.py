@@ -29,60 +29,264 @@ st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 # -------------------------------------------------------------------
 # Estilo
 # -------------------------------------------------------------------
-st.markdown("""
-<style>
-/* Centraliza e limita largura do conteúdo principal */
-.block-container {
-  max-width: 1100px !important;
-  padding-top: 2.0rem;
-}
+st.markdown(
+    """
+    <style>
+    :root{
+      --bg: #0b0f14;
+      --panel: rgba(20, 24, 33, .55);
+      --panel2: rgba(18, 22, 30, .70);
+      --stroke: rgba(255,255,255,.08);
+      --stroke2: rgba(255,255,255,.12);
 
-/* "Shell" do painel (moldura grande) */
-.panel-shell {
-  background: radial-gradient(1200px 400px at 20% 0%, rgba(255,255,255,0.06), transparent 60%),
-              linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.10));
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 22px;
-  padding: 18px 18px 22px 18px;
-  box-shadow: 0 25px 60px rgba(0,0,0,0.55);
-}
+      --text: #e8edf6;
+      --muted: rgba(232,237,246,.70);
 
-/* Topbar dentro do painel */
-.panel-topbar {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap: 12px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
-  border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 16px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-}
+      --blue: #58a6ff;
+      --blue2: #3b82f6;
+      --cyan: #00d4ff;
+      --purple: #a78bfa;
 
-.panel-topbar .left {
-  display:flex;
-  align-items:center;
-  gap:10px;
-  color:#f3f4f6;
-  font-weight:700;
-}
+      --red: #ff4d4d;
+      --orange: #ffb020;
+      --green: #37d67a;
+    }
 
-.panel-topbar .meta {
-  margin-top:2px;
-  color:#9ca3af;
-  font-size:0.82rem;
-  font-weight:500;
-}
+    /* ===== Page background (neon haze) ===== */
+    body{
+      background:
+        radial-gradient(900px 500px at 15% 10%, rgba(88,166,255,.15), transparent 60%),
+        radial-gradient(700px 420px at 85% 0%, rgba(167,139,250,.14), transparent 55%),
+        radial-gradient(700px 420px at 70% 95%, rgba(0,212,255,.08), transparent 55%),
+        linear-gradient(180deg, #070a0f 0%, #0b0f14 45%, #0b0f14 100%);
+      color: var(--text);
+    }
 
-/* Linha divisória sutil dentro do painel */
-.panel-divider {
-  height:1px;
-  background: rgba(255,255,255,0.08);
-  margin: 14px 0;
-}
-</style>
-""", unsafe_allow_html=True)
+    /* ===== Streamlit container width ===== */
+    .block-container{
+      max-width: 1180px !important;
+      padding-top: 1.3rem !important;
+      padding-bottom: 2.0rem !important;
+    }
+
+    /* remove excess blank */
+    [data-testid="stVerticalBlock"]{ gap: 0.6rem; }
+
+    /* ===== Sidebar ===== */
+    section[data-testid="stSidebar"]{
+      background: rgba(18,22,30,.92);
+      border-right: 1px solid rgba(255,255,255,.07);
+    }
+
+    /* ===== Buttons ===== */
+    .stButton>button{
+      background: linear-gradient(135deg, rgba(88,166,255,.92), rgba(59,130,246,.92));
+      color: white;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 14px;
+      padding: .70rem 1.20rem;
+      font-weight: 700;
+      box-shadow: 0 12px 26px rgba(0,0,0,.45);
+    }
+    .stButton>button:hover{
+      filter: brightness(1.08);
+      border-color: rgba(255,255,255,.18);
+    }
+
+    /* ===== “App panel” shell ===== */
+    .neo-shell{
+      position: relative;
+      border-radius: 22px;
+      padding: 18px 18px 22px 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow:
+        0 30px 70px rgba(0,0,0,.60),
+        inset 0 1px 0 rgba(255,255,255,.06);
+      overflow: hidden;
+    }
+    .neo-shell:before{
+      content:"";
+      position:absolute; inset:-2px;
+      background:
+        radial-gradient(600px 240px at 20% 10%, rgba(88,166,255,.22), transparent 60%),
+        radial-gradient(520px 220px at 80% 0%, rgba(167,139,250,.18), transparent 60%);
+      filter: blur(18px);
+      opacity: .75;
+      pointer-events:none;
+    }
+    .neo-shell > *{ position: relative; z-index: 2; }
+
+    /* ===== topbar (glass) ===== */
+    .neo-topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:14px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03));
+      border: 1px solid rgba(255,255,255,.08);
+      margin-bottom: 14px;
+    }
+    .neo-title{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      font-size: 1.65rem;
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
+    .neo-sub{
+      margin-top: 4px;
+      font-size: .95rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .neo-divider{
+      height: 1px;
+      background: rgba(255,255,255,.08);
+      margin: 14px 0;
+    }
+
+    /* ===== section title ===== */
+    .neo-section{
+      font-size: 1.2rem;
+      font-weight: 800;
+      margin: 6px 2px 12px 2px;
+      color: rgba(232,237,246,.92);
+    }
+
+    /* ===== grid layout (cards) ===== */
+    .neo-grid-4{
+      display:grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .neo-grid-2{
+      display:grid;
+      grid-template-columns: 340px 1fr;
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    /* ===== cards (glass + neon edge) ===== */
+    .neo-card{
+      position: relative;
+      border-radius: 16px;
+      padding: 16px 16px 14px 16px;
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+      border: 1px solid rgba(255,255,255,.09);
+      box-shadow:
+        0 16px 34px rgba(0,0,0,.40),
+        inset 0 1px 0 rgba(255,255,255,.05);
+      overflow:hidden;
+      min-height: 110px;
+    }
+
+    .neo-card:after{
+      content:"";
+      position:absolute;
+      inset:-1px;
+      border-radius: 16px;
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(88,166,255,.22), rgba(167,139,250,.12), rgba(0,212,255,.12));
+      -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events:none;
+      opacity:.65;
+    }
+
+    .neo-label{
+      font-size: .92rem;
+      font-weight: 700;
+      letter-spacing: .02em;
+      color: rgba(232,237,246,.85);
+      margin-bottom: 10px;
+    }
+
+    .neo-value{
+      font-size: 2.3rem;
+      font-weight: 900;
+      letter-spacing: .4px;
+      line-height: 1.05;
+      color: rgba(255,255,255,.96);
+    }
+
+    .neo-subline{
+      margin-top: 10px;
+      font-size: .90rem;
+      color: rgba(232,237,246,.70);
+    }
+
+    /* ===== red card w/ wave ===== */
+    .neo-danger{
+      border-color: rgba(255,77,77,.22);
+    }
+    .neo-danger .neo-value{ color: rgba(255,110,110,.98); }
+    .neo-danger:before{
+      content:"";
+      position:absolute;
+      left:-20%;
+      bottom:-35%;
+      width: 160%;
+      height: 90%;
+      background:
+        radial-gradient(60% 70% at 35% 55%, rgba(255,77,77,.38), transparent 62%),
+        radial-gradient(55% 65% at 70% 55%, rgba(255,77,77,.26), transparent 65%);
+      transform: rotate(-6deg);
+      opacity: .95;
+      pointer-events:none;
+    }
+
+    /* ===== aderência progress ===== */
+    .neo-progress-wrap{
+      margin-top: 14px;
+    }
+    .neo-progress{
+      width:100%;
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.10);
+      overflow:hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+    }
+    .neo-progress > div{
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg,
+        rgba(255,77,77,.95),
+        rgba(255,176,32,.95),
+        rgba(55,214,122,.95),
+        rgba(0,212,255,.80)
+      );
+      filter: drop-shadow(0 6px 14px rgba(0,0,0,.35));
+    }
+
+    .neo-scale{
+      display:flex;
+      justify-content:space-between;
+      margin-top: 8px;
+      font-size: .88rem;
+      color: rgba(232,237,246,.60);
+      font-weight: 600;
+    }
+
+    /* responsive */
+    @media (max-width: 1100px){
+      .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .neo-grid-2{ grid-template-columns: 1fr; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 
 
