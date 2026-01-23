@@ -6,9 +6,16 @@ from relatorios import utr_por_entregador_turno
 
 def _fmt_int(x):
     try:
-        return f"{int(x):,}".replace(",", ".")
+        return f"{int(round(float(x))):,}".replace(",", ".")
     except Exception:
         return "0"
+
+
+def _fmt_pct(x, nd=1):
+    try:
+        return f"{float(x):.{nd}f}%".replace(".", ",")
+    except Exception:
+        return "0,0%"
 
 
 def render(df: pd.DataFrame, _USUARIOS: dict):
@@ -22,20 +29,34 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     base = df[df["mes_ano"] == ultimo_mes].copy()
     mes_txt = pd.to_datetime(ultimo_mes).strftime("%m/%Y")
 
-    # KPIs
-    ofertadas = int(pd.to_numeric(base.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
-    aceitas = int(pd.to_numeric(base.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
-    rejeitadas = int(pd.to_numeric(base.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
+    # data mais recente do mês (pra mostrar no topo)
+    data_str = None
+    for c in ("data_do_periodo", "data", "data_do_periodo_de_referencia"):
+        if c in base.columns:
+            dt = pd.to_datetime(base[c], errors="coerce").max()
+            if pd.notna(dt):
+                data_str = pd.to_datetime(dt).strftime("%d/%m/%Y")
+                break
 
+    # KPIs
+    ofertadas = float(pd.to_numeric(base.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
+    aceitas = float(pd.to_numeric(base.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
+    rejeitadas = float(pd.to_numeric(base.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
+
+    # % aceitação / rejeição (sobre ofertadas)
+    acc_pct = (aceitas / ofertadas * 100.0) if ofertadas > 0 else 0.0
+    rej_pct = (rejeitadas / ofertadas * 100.0) if ofertadas > 0 else 0.0
+
+    # ativos
     m_act = (
         pd.to_numeric(base.get("segundos_abs", 0), errors="coerce").fillna(0)
         + pd.to_numeric(base.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0)
         + pd.to_numeric(base.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0)
         + pd.to_numeric(base.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0)
     ) > 0
-
     ativos = int(base.loc[m_act, "pessoa_entregadora"].dropna().nunique()) if "pessoa_entregadora" in base.columns else 0
 
+    # UTR abs + média
     seg = float(pd.to_numeric(base.get("segundos_abs", 0), errors="coerce").fillna(0).sum())
     horas = seg / 3600.0 if seg > 0 else 0.0
     utr_abs = (ofertadas / horas) if horas > 0 else 0.0
@@ -53,16 +74,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     # Aderência
     ader = None
     reg = vagas = 0
-    data_str = None
-    try:
-        # data mais recente (se existir)
-        if "data" in base.columns:
-            dmax = pd.to_datetime(base["data"], errors="coerce").max()
-            if pd.notna(dmax):
-                data_str = pd.to_datetime(dmax).strftime("%d/%m/%Y")
-    except Exception:
-        data_str = None
-
     if ("numero_minimo_de_entregadores_regulares_na_escala" in base.columns) and ("tag" in base.columns):
         try:
             ap = calcular_aderencia(base)
@@ -106,6 +117,9 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     # ==========================================================
     st.markdown(f'<div class="neo-section">Resumo do mês ({mes_txt})</div>', unsafe_allow_html=True)
 
+    aceitas_label = f"{_fmt_int(aceitas)} ({_fmt_pct(acc_pct, 1)})"
+    rejeitadas_label = f"{_fmt_int(rejeitadas)} ({_fmt_pct(rej_pct, 1)})"
+
     st.markdown(
         f"""
         <div class="neo-grid-4">
@@ -115,15 +129,15 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             <div class="neo-subline">Absoluto {utr_abs:.2f} • Média {utr_med:.2f}</div>
           </div>
 
-          <div class="neo-card">
+          <div class="neo-card neo-success">
             <div class="neo-label">Aceitas</div>
-            <div class="neo-value">{_fmt_int(aceitas)}</div>
+            <div class="neo-value">{aceitas_label}</div>
             <div class="neo-subline">&nbsp;</div>
           </div>
 
           <div class="neo-card neo-danger">
             <div class="neo-label">Rejeitadas</div>
-            <div class="neo-value">{_fmt_int(rejeitadas)}</div>
+            <div class="neo-value">{rejeitadas_label}</div>
             <div class="neo-subline">&nbsp;</div>
           </div>
 
@@ -142,7 +156,10 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     # ==========================================================
     if ader is not None:
         st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="neo-section">Aderência <span style="font-weight:600;color:rgba(232,237,246,.70)">(REGULAR)</span></div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="neo-section">Aderência <span style="font-weight:700;color:rgba(232,237,246,.70)">(REGULAR)</span></div>',
+            unsafe_allow_html=True
+        )
 
         st.markdown(
             f"""
