@@ -1,6 +1,3 @@
-# views/home.py  (SUBSTITUA o arquivo inteiro por este)
-# Patch: Top 3 SEM HTML (pra não vazar nunca) + Supply Hours card
-
 import streamlit as st
 import pandas as pd
 from relatorios import utr_por_entregador_turno
