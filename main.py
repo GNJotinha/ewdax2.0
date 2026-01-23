@@ -32,26 +32,74 @@ st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 st.markdown(
     """
     <style>
-        body { background-color: #0e1117; color: #c9d1d9; }
-        .stButton>button {
-            background-color: #1f6feb;
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-weight: bold;
-        }
-        .stButton>button:hover { background-color: #388bfd; }
-        .stSidebar { background-color: #161b22; }
-        h1, h2, h3 { color: #58a6ff; }
-        .stSelectbox, .stMultiSelect, .stTextInput {
-            background-color: #21262d;
-            color: #c9d1d9;
-        }
+    /* ---------- BASE ---------- */
+    body {
+        background-color: #121417;
+        color: #e5e7eb;
+    }
+
+    h1, h2, h3 {
+        color: #f3f4f6;
+        font-weight: 600;
+    }
+
+    /* ---------- SIDEBAR ---------- */
+    section[data-testid="stSidebar"] {
+        background-color: #16181d;
+        border-right: 1px solid #262a33;
+    }
+
+    /* ---------- BOTÕES ---------- */
+    .stButton > button {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 0.55rem 1rem;
+        font-weight: 600;
+    }
+
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+    }
+
+    /* ---------- CARDS ---------- */
+    .card {
+        background-color: #1b1e24;
+        border: 1px solid #262a33;
+        border-radius: 16px;
+        padding: 1.2rem 1.4rem;
+    }
+
+    .card-title {
+        font-size: 0.85rem;
+        color: #9ca3af;
+        margin-bottom: 0.4rem;
+    }
+
+    .card-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #f9fafb;
+    }
+
+    .card-sub {
+        font-size: 0.8rem;
+        color: #9ca3af;
+        margin-top: 0.25rem;
+    }
+
+    /* ---------- DIVIDER ---------- */
+    hr {
+        border: none;
+        border-top: 1px solid #262a33;
+        margin: 1.5rem 0;
+    }
     </style>
     """,
     unsafe_allow_html=True
 )
+
 
 # ---------------------------------------------------------
 # Estado inicial
