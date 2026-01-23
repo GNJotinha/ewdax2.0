@@ -3,9 +3,13 @@ import pandas as pd
 from utils import calcular_aderencia
 from relatorios import utr_por_entregador_turno
 
+
 def _fmt_int(x):
-    try: return f"{int(x):,}".replace(",", ".")
-    except: return "0"
+    try:
+        return f"{int(x):,}".replace(",", ".")
+    except Exception:
+        return "0"
+
 
 def render(df: pd.DataFrame, _USUARIOS: dict):
 
@@ -13,107 +17,151 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.info("Sem dados carregados.")
         return
 
+    # mês atual
     ultimo_mes = df["mes_ano"].max()
     base = df[df["mes_ano"] == ultimo_mes].copy()
+    mes_txt = pd.to_datetime(ultimo_mes).strftime("%m/%Y")
 
     # KPIs
-    ofertadas  = int(base["numero_de_corridas_ofertadas"].sum())
-    aceitas    = int(base["numero_de_corridas_aceitas"].sum())
-    rejeitadas = int(base["numero_de_corridas_rejeitadas"].sum())
+    ofertadas = int(pd.to_numeric(base.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
+    aceitas = int(pd.to_numeric(base.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
+    rejeitadas = int(pd.to_numeric(base.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
 
-    ativos = base.loc[
-        (base["numero_de_corridas_ofertadas"]
-        + base["numero_de_corridas_aceitas"]
-        + base["numero_de_corridas_completadas"]
-        + base["segundos_abs"]) > 0,
-        "pessoa_entregadora"
-    ].nunique()
+    m_act = (
+        pd.to_numeric(base.get("segundos_abs", 0), errors="coerce").fillna(0)
+        + pd.to_numeric(base.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0)
+        + pd.to_numeric(base.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0)
+        + pd.to_numeric(base.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0)
+    ) > 0
 
-    sh = base["segundos_abs"].sum() / 3600 if base["segundos_abs"].sum() > 0 else 0
-    utr_abs = ofertadas / sh if sh > 0 else 0
+    ativos = int(base.loc[m_act, "pessoa_entregadora"].dropna().nunique()) if "pessoa_entregadora" in base.columns else 0
+
+    seg = float(pd.to_numeric(base.get("segundos_abs", 0), errors="coerce").fillna(0).sum())
+    horas = seg / 3600.0 if seg > 0 else 0.0
+    utr_abs = (ofertadas / horas) if horas > 0 else 0.0
 
     utr_base = utr_por_entregador_turno(base)
-    utr_med = (
-        (utr_base["corridas_ofertadas"] / utr_base["supply_hours"])
-        .replace([float("inf"), -float("inf")], 0)
-        .dropna()
-        .mean()
-        if not utr_base.empty else 0
-    )
+    if not utr_base.empty and "supply_hours" in utr_base.columns and "corridas_ofertadas" in utr_base.columns:
+        tmp = utr_base.copy()
+        tmp["supply_hours"] = pd.to_numeric(tmp["supply_hours"], errors="coerce").fillna(0)
+        tmp["corridas_ofertadas"] = pd.to_numeric(tmp["corridas_ofertadas"], errors="coerce").fillna(0)
+        tmp = tmp[tmp["supply_hours"] > 0]
+        utr_med = float((tmp["corridas_ofertadas"] / tmp["supply_hours"]).mean()) if not tmp.empty else 0.0
+    else:
+        utr_med = 0.0
 
-    # aderência
-    reg = vagas = None
+    # Aderência
     ader = None
-    if "numero_minimo_de_entregadores_regulares_na_escala" in base.columns and "tag" in base.columns:
+    reg = vagas = 0
+    data_str = None
+    try:
+        # data mais recente (se existir)
+        if "data" in base.columns:
+            dmax = pd.to_datetime(base["data"], errors="coerce").max()
+            if pd.notna(dmax):
+                data_str = pd.to_datetime(dmax).strftime("%d/%m/%Y")
+    except Exception:
+        data_str = None
+
+    if ("numero_minimo_de_entregadores_regulares_na_escala" in base.columns) and ("tag" in base.columns):
         try:
             ap = calcular_aderencia(base)
             reg = int(ap["regulares_atuaram"].sum())
-            vagas = int(ap["vagas"].sum())
-            ader = (reg / vagas * 100) if vagas > 0 else 0
-        except:
-            pass
+            vagas = float(ap["vagas"].sum())
+            ader = (reg / vagas * 100.0) if vagas > 0 else 0.0
+        except Exception:
+            ader = None
 
-    # ---------- helpers ----------
-    def card(col, titulo, valor, sub=None, danger=False):
-        cls = "card card-danger" if danger else "card"
-        with col:
-            st.markdown(
-                f"""
-                <div class="{cls}">
-                    <div class="card-title">{titulo}</div>
-                    <div class="card-value">{valor}</div>
-                    {f'<div class="card-sub">{sub}</div>' if sub else ''}
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+    pct = max(0.0, min(float(ader) if ader is not None else 0.0, 100.0))
 
-    # ---------- SHELL ----------
-    st.markdown('<div class="panel-shell">', unsafe_allow_html=True)
+    # ==========================================================
+    # SHELL + TOPBAR
+    # ==========================================================
+    st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
 
-    # Topbar (título + data) + botão
-    left, right = st.columns([3, 1])
-    with left:
+    topL, topR = st.columns([4, 1])
+    with topL:
         st.markdown(
-            """
-            <div class="panel-topbar">
+            f"""
+            <div class="neo-topbar">
               <div>
-                <div class="left">📋&nbsp;Painel de Entregadores</div>
-                <div class="meta">Dados atualizados • mês atual</div>
+                <div class="neo-title">🗂️&nbsp;Painel de Entregadores</div>
+                <div class="neo-sub">Dados atualizados • {data_str if data_str else "mês atual"}</div>
               </div>
             </div>
             """,
             unsafe_allow_html=True
         )
 
-    with right:
-        if st.button("🔄 Atualizar dados", use_container_width=True):
+    with topR:
+        if st.button("Atualizar dados", use_container_width=True):
             st.session_state.force_refresh = True
             st.session_state.just_refreshed = True
             st.rerun()
 
-    st.markdown('<div class="panel-divider"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
 
-    st.markdown(f"#### Resumo do mês ({pd.to_datetime(ultimo_mes).strftime('%m/%Y')})")
+    # ==========================================================
+    # RESUMO DO MÊS
+    # ==========================================================
+    st.markdown(f'<div class="neo-section">Resumo do mês ({mes_txt})</div>', unsafe_allow_html=True)
 
-    cols = st.columns(4)
-    card(cols[0], "Ofertadas – UTR", _fmt_int(ofertadas), f"Absoluto {utr_abs:.2f} • Média {utr_med:.2f}")
-    card(cols[1], "Aceitas", _fmt_int(aceitas))
-    card(cols[2], "Rejeitadas", _fmt_int(rejeitadas), danger=True)
-    card(cols[3], "Entregadores ativos", _fmt_int(ativos))
+    st.markdown(
+        f"""
+        <div class="neo-grid-4">
+          <div class="neo-card">
+            <div class="neo-label">Ofertadas – UTR</div>
+            <div class="neo-value">{_fmt_int(ofertadas)}</div>
+            <div class="neo-subline">Absoluto {utr_abs:.2f} • Média {utr_med:.2f}</div>
+          </div>
 
+          <div class="neo-card">
+            <div class="neo-label">Aceitas</div>
+            <div class="neo-value">{_fmt_int(aceitas)}</div>
+            <div class="neo-subline">&nbsp;</div>
+          </div>
+
+          <div class="neo-card neo-danger">
+            <div class="neo-label">Rejeitadas</div>
+            <div class="neo-value">{_fmt_int(rejeitadas)}</div>
+            <div class="neo-subline">&nbsp;</div>
+          </div>
+
+          <div class="neo-card">
+            <div class="neo-label">Entregadores ativos</div>
+            <div class="neo-value">{_fmt_int(ativos)}</div>
+            <div class="neo-subline">&nbsp;</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # ==========================================================
+    # ADERÊNCIA
+    # ==========================================================
     if ader is not None:
-        st.markdown('<div class="panel-divider"></div>', unsafe_allow_html=True)
-        pct = max(0, min(float(ader), 100))
+        st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="neo-section">Aderência <span style="font-weight:600;color:rgba(232,237,246,.70)">(REGULAR)</span></div>', unsafe_allow_html=True)
+
         st.markdown(
             f"""
-            <div class="card">
-              <div class="card-title">Aderência (REGULAR)</div>
-              <div class="card-value">{ader:.1f}%</div>
-              <div class="card-sub">Regulares: {reg} / Vagas: {vagas}</div>
-              <div class="progress-wrap">
-                <div class="progress">
-                  <div class="progress-bar" style="width:{pct}%"></div>
+            <div class="neo-grid-2">
+              <div class="neo-card">
+                <div class="neo-value">{ader:.1f}%</div>
+                <div class="neo-subline">Regulares: {_fmt_int(reg)} / Vagas: {_fmt_int(vagas)}</div>
+              </div>
+
+              <div class="neo-card">
+                <div class="neo-label">Regulares: {_fmt_int(reg)} / Vagas: {_fmt_int(vagas)}</div>
+
+                <div class="neo-progress-wrap">
+                  <div class="neo-progress">
+                    <div style="width:{pct:.1f}%;"></div>
+                  </div>
+                  <div class="neo-scale">
+                    <span>0%</span><span>50%</span><span>100%</span>
+                  </div>
                 </div>
               </div>
             </div>
