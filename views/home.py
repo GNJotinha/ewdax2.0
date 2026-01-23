@@ -18,45 +18,48 @@ def _fmt_pct(x, nd=1):
         return "0,0%"
 
 
+def _pick_col(cols, candidates):
+    for c in candidates:
+        if c in cols:
+            return c
+    return None
+
+
 def render(df: pd.DataFrame, _USUARIOS: dict):
 
     if df is None or df.empty:
         st.info("Sem dados carregados.")
         return
 
-    # mês atual
     ultimo_mes = df["mes_ano"].max()
     base = df[df["mes_ano"] == ultimo_mes].copy()
     mes_txt = pd.to_datetime(ultimo_mes).strftime("%m/%Y")
 
     # data mais recente do mês (topo)
     data_str = None
-    for c in ("data_do_periodo", "data", "data_do_periodo_de_referencia"):
-        if c in base.columns:
-            dt = pd.to_datetime(base[c], errors="coerce").max()
-            if pd.notna(dt):
-                data_str = pd.to_datetime(dt).strftime("%d/%m/%Y")
-                break
+    date_col = _pick_col(base.columns, ["data", "data_do_periodo", "data_do_periodo_de_referencia"])
+    if date_col:
+        dt = pd.to_datetime(base[date_col], errors="coerce").max()
+        if pd.notna(dt):
+            data_str = pd.to_datetime(dt).strftime("%d/%m/%Y")
 
-    # KPIs (robusto)
+    # KPIs
     ofertadas = float(pd.to_numeric(base.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
     aceitas = float(pd.to_numeric(base.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
     rejeitadas = float(pd.to_numeric(base.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
 
-    # % aceitação / rejeição (sobre ofertadas)
     acc_pct = (aceitas / ofertadas * 100.0) if ofertadas > 0 else 0.0
     rej_pct = (rejeitadas / ofertadas * 100.0) if ofertadas > 0 else 0.0
 
-    # ativos
     m_act = (
         pd.to_numeric(base.get("segundos_abs", 0), errors="coerce").fillna(0)
         + pd.to_numeric(base.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0)
         + pd.to_numeric(base.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0)
         + pd.to_numeric(base.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0)
     ) > 0
+
     ativos = int(base.loc[m_act, "pessoa_entregadora"].dropna().nunique()) if "pessoa_entregadora" in base.columns else 0
 
-    # UTR abs + média
     seg = float(pd.to_numeric(base.get("segundos_abs", 0), errors="coerce").fillna(0).sum())
     horas = seg / 3600.0 if seg > 0 else 0.0
     utr_abs = (ofertadas / horas) if horas > 0 else 0.0
@@ -71,23 +74,38 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     else:
         utr_med = 0.0
 
-    # Aderência: tenta calcular; se não der, fica None (mas a seção aparece)
+    # ==========================================================
+    # ADERÊNCIA (ROBUSTA)
+    # ==========================================================
     ader = None
     reg = 0
     vagas = 0.0
+
+    turno_col = _pick_col(base.columns, ["turno", "turno_simplificado", "turno_label", "faixa_turno"])
+    vagas_col = _pick_col(base.columns, ["numero_minimo_de_entregadores_regulares_na_escala", "vagas", "vagas_regulares"])
+    tag_col = _pick_col(base.columns, ["tag", "tag_entregador", "categoria"])
+
+    # Se tiver pelo menos o necessário, calcula
     try:
-        ap = calcular_aderencia(base)
-        if not ap.empty and "regulares_atuaram" in ap.columns and "vagas" in ap.columns:
-            reg = int(pd.to_numeric(ap["regulares_atuaram"], errors="coerce").fillna(0).sum())
-            vagas = float(pd.to_numeric(ap["vagas"], errors="coerce").fillna(0).sum())
-            ader = (reg / vagas * 100.0) if vagas > 0 else 0.0
+        if date_col and turno_col and vagas_col and tag_col and ("segundos_abs" in base.columns):
+            ap = calcular_aderencia(
+                base,
+                group_cols=(date_col, turno_col),
+                vagas_col=vagas_col,
+                tag_col=tag_col,
+                tag_regular="REGULAR",
+            )
+            if not ap.empty:
+                reg = int(pd.to_numeric(ap["regulares_atuaram"], errors="coerce").fillna(0).sum())
+                vagas = float(pd.to_numeric(ap["vagas"], errors="coerce").fillna(0).sum())
+                ader = (reg / vagas * 100.0) if vagas > 0 else 0.0
     except Exception:
         ader = None
 
     pct = max(0.0, min(float(ader) if ader is not None else 0.0, 100.0))
 
     # ==========================================================
-    # SHELL + TOPBAR
+    # UI
     # ==========================================================
     st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
 
@@ -113,10 +131,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
 
-    # ==========================================================
-    # RESUMO DO MÊS
-    # (Número grande + % embaixo em linha separada)
-    # ==========================================================
     st.markdown(f'<div class="neo-section">Resumo do mês ({mes_txt})</div>', unsafe_allow_html=True)
 
     aceitas_html = f"{_fmt_int(aceitas)}<span class='pct'>({_fmt_pct(acc_pct, 1)})</span>"
@@ -153,9 +167,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         unsafe_allow_html=True
     )
 
-    # ==========================================================
-    # ADERÊNCIA (SEMPRE APARECE)
-    # ==========================================================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="neo-section">Aderência <span style="font-weight:700;color:rgba(232,237,246,.70)">(REGULAR)</span></div>',
@@ -164,7 +175,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     if ader is None:
         st.markdown(
-            """
+            f"""
             <div class="neo-grid-2">
               <div class="neo-card">
                 <div class="neo-value">—</div>
