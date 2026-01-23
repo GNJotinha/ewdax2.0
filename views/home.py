@@ -1,3 +1,4 @@
+# views/home.py
 import streamlit as st
 import pandas as pd
 from relatorios import utr_por_entregador_turno
@@ -31,7 +32,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         return
 
     # =========================
-    # MÊS ATUAL (igual teu original)
+    # MÊS ATUAL
     # =========================
     hoje = pd.Timestamp.today()
     mes_atual, ano_atual = int(hoje.month), int(hoje.year)
@@ -39,6 +40,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     if ("mes" in df.columns) and ("ano" in df.columns):
         df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
     else:
+        # fallback
         if "mes_ano" in df.columns:
             ultimo_mes = df["mes_ano"].max()
             df_mes = df[df["mes_ano"] == ultimo_mes].copy()
@@ -78,6 +80,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     horas_total = float(seg_total / 3600.0) if seg_total > 0 else 0.0
     utr_abs = (ofertadas / horas_total) if horas_total > 0 else 0.0
 
+    # UTR média (mesma assinatura que você já usa)
     utr_medias = 0.0
     try:
         base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
@@ -89,7 +92,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         pass
 
     # =========================
-    # ADERÊNCIA (igual tua lógica)
+    # ADERÊNCIA
     # =========================
     ader_pct = 0.0
     ader_reg = 0
@@ -121,7 +124,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     pct_bar = max(0.0, min(float(ader_pct), 100.0))
 
     # =========================
-    # SH + TOP 3 ENTREGADORES (HORAS)
+    # SUPPLY HOURS + TOP 3 POR HORAS
     # =========================
     sh_total = horas_total
 
@@ -129,12 +132,14 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     if ("pessoa_entregadora" in df_mes.columns) and ("segundos_abs" in df_mes.columns):
         tmp_h = df_mes[["pessoa_entregadora", "segundos_abs"]].copy()
         tmp_h["segundos_abs"] = pd.to_numeric(tmp_h["segundos_abs"], errors="coerce").fillna(0)
+
         top = (
             tmp_h.groupby("pessoa_entregadora", as_index=False)["segundos_abs"]
             .sum()
             .sort_values("segundos_abs", ascending=False)
             .head(3)
         )
+
         for _, r in top.iterrows():
             nome = str(r["pessoa_entregadora"])
             horas = float(r["segundos_abs"]) / 3600.0
@@ -175,6 +180,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             """,
             unsafe_allow_html=True
         )
+
     with topR:
         if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_home"):
             st.session_state.force_refresh = True
@@ -226,7 +232,11 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         unsafe_allow_html=True
     )
 
-    incons_html = "<div class='neo-subline' style='color:rgba(255,176,32,.95)'>⚠️ Vagas inconsistentes.</div>" if vagas_incons else ""
+    incons_html = (
+        "<div class='neo-subline' style='color:rgba(255,176,32,.95)'>⚠️ Vagas inconsistentes.</div>"
+        if vagas_incons
+        else ""
+    )
 
     st.markdown(
         f"""
@@ -254,9 +264,10 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     # =========================
-    # NOVA SEÇÃO (ESPAÇO DE BAIXO): SH + TOP 3
+    # SEÇÃO INFERIOR (títulos fora, igual aderência)
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
 
     st.markdown(
         f"""
@@ -268,7 +279,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
           </div>
 
           <div class="neo-card">
-            <div class="neo-label">Top 3 entregadores (horas)</div>
             {top_html}
           </div>
         </div>
