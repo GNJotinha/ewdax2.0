@@ -30,16 +30,15 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         st.info("Sem dados carregados.")
         return
 
-    # ============================================
-    # MÊS ATUAL (IGUAL TEU ORIGINAL)
-    # ============================================
+    # =========================
+    # MÊS ATUAL (igual teu original)
+    # =========================
     hoje = pd.Timestamp.today()
     mes_atual, ano_atual = int(hoje.month), int(hoje.year)
 
     if ("mes" in df.columns) and ("ano" in df.columns):
         df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
     else:
-        # fallback se alguém não tiver mes/ano
         if "mes_ano" in df.columns:
             ultimo_mes = df["mes_ano"].max()
             df_mes = df[df["mes_ano"] == ultimo_mes].copy()
@@ -61,9 +60,9 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         if pd.notna(dtmax):
             data_str = pd.to_datetime(dtmax).strftime("%d/%m/%Y")
 
-    # ============================================
+    # =========================
     # KPIs
-    # ============================================
+    # =========================
     ofertadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
     aceitas = int(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
     rejeitadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
@@ -75,9 +74,9 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     acc_pct = (aceitas / ofertadas * 100.0) if ofertadas > 0 else 0.0
     rej_pct = (rejeitadas / ofertadas * 100.0) if ofertadas > 0 else 0.0
 
-    seg = pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
-    horas = seg / 3600.0 if seg > 0 else 0.0
-    utr_abs = (ofertadas / horas) if horas > 0 else 0.0
+    seg_total = pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
+    horas_total = float(seg_total / 3600.0) if seg_total > 0 else 0.0
+    utr_abs = (ofertadas / horas_total) if horas_total > 0 else 0.0
 
     utr_medias = 0.0
     try:
@@ -89,14 +88,13 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     except Exception:
         pass
 
-    # ============================================
-    # ADERÊNCIA (MANTENDO SUA LÓGICA + DEBUG UTIL)
-    # ============================================
+    # =========================
+    # ADERÊNCIA (igual tua lógica)
+    # =========================
     ader_pct = 0.0
     ader_reg = 0
     ader_vagas = 0.0
     vagas_incons = False
-    ader_warn = ""  # aviso se der erro
 
     vagas_col = _pick_col(df_mes.columns, ["numero_minimo_de_entregadores_regulares_na_escala", "vagas"])
     tag_col = _pick_col(df_mes.columns, ["tag"])
@@ -117,25 +115,51 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             if ader_vagas > 0:
                 ader_pct = round((ader_reg / ader_vagas) * 100.0, 1)
             vagas_incons = bool(base_ap.get("vagas_inconsistente", False).fillna(False).any())
-        except Exception as e:
-            # NÃO some com os dados: mostra 0% e avisa o motivo
-            ader_warn = f"⚠️ Aderência não calculada: {type(e).__name__}: {e}"
-    else:
-        # avisa qual peça tá faltando (isso mata o mistério na hora)
-        faltando = []
-        if df_mes.empty: faltando.append("df_mes vazio")
-        if not vagas_col: faltando.append("coluna vagas")
-        if not tag_col: faltando.append("coluna tag")
-        if not data_col: faltando.append("coluna data")
-        if "segundos_abs" not in df_mes.columns: faltando.append("segundos_abs")
-        if faltando:
-            ader_warn = "⚠️ Aderência não calculada (faltando: " + ", ".join(faltando) + ")"
+        except Exception:
+            pass
 
     pct_bar = max(0.0, min(float(ader_pct), 100.0))
 
-    # ============================================
-    # UI (SEU DESIGN NOVO)
-    # ============================================
+    # =========================
+    # SH + TOP 3 ENTREGADORES (HORAS)
+    # =========================
+    sh_total = horas_total
+
+    top3 = []
+    if ("pessoa_entregadora" in df_mes.columns) and ("segundos_abs" in df_mes.columns):
+        tmp_h = df_mes[["pessoa_entregadora", "segundos_abs"]].copy()
+        tmp_h["segundos_abs"] = pd.to_numeric(tmp_h["segundos_abs"], errors="coerce").fillna(0)
+        top = (
+            tmp_h.groupby("pessoa_entregadora", as_index=False)["segundos_abs"]
+            .sum()
+            .sort_values("segundos_abs", ascending=False)
+            .head(3)
+        )
+        for _, r in top.iterrows():
+            nome = str(r["pessoa_entregadora"])
+            horas = float(r["segundos_abs"]) / 3600.0
+            top3.append((nome, horas))
+
+    medals = ["🥇", "🥈", "🥉"]
+    if top3:
+        rows = []
+        for i, (nome, horas) in enumerate(top3):
+            m = medals[i] if i < 3 else "•"
+            rows.append(
+                f"""
+                <div class="toprow">
+                  <div class="name">{m}&nbsp;{nome}</div>
+                  <div class="hours">{horas:.1f}h</div>
+                </div>
+                """
+            )
+        top_html = "".join(rows)
+    else:
+        top_html = "<div class='neo-subline'>Sem dados suficientes.</div>"
+
+    # =========================
+    # UI
+    # =========================
     st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
 
     topL, topR = st.columns([4, 1])
@@ -144,7 +168,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             f"""
             <div class="neo-topbar">
               <div>
-                <div class="neo-title">🗂️&nbsp;Painel de Entregadores</div>
+                <div class="neo-title">📁&nbsp;Painel de Entregadores</div>
                 <div class="neo-sub">Dados atualizados • {data_str}</div>
               </div>
             </div>
@@ -202,8 +226,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         unsafe_allow_html=True
     )
 
-    # bloco aderência sempre renderiza (igual tua lógica antiga: não some)
-    warn_html = f"<div class='neo-subline' style='color:rgba(255,176,32,.95)'>{ader_warn}</div>" if ader_warn else ""
     incons_html = "<div class='neo-subline' style='color:rgba(255,176,32,.95)'>⚠️ Vagas inconsistentes.</div>" if vagas_incons else ""
 
     st.markdown(
@@ -213,7 +235,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             <div class="neo-value">{ader_pct:.1f}%</div>
             <div class="neo-subline">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
             {incons_html}
-            {warn_html}
           </div>
 
           <div class="neo-card">
@@ -226,6 +247,29 @@ def render(df: pd.DataFrame, USUARIOS: dict):
                 <span>0%</span><span>50%</span><span>100%</span>
               </div>
             </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # =========================
+    # NOVA SEÇÃO (ESPAÇO DE BAIXO): SH + TOP 3
+    # =========================
+    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
+
+    st.markdown(
+        f"""
+        <div class="neo-grid-2">
+          <div class="neo-card">
+            <div class="neo-label">Supply Hours (SH)</div>
+            <div class="neo-value">{sh_total:.1f}h</div>
+            <div class="neo-subline">Total no mês ({mes_txt})</div>
+          </div>
+
+          <div class="neo-card">
+            <div class="neo-label">Top 3 entregadores (horas)</div>
+            {top_html}
           </div>
         </div>
         """,
