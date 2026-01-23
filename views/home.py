@@ -3,21 +3,27 @@ import pandas as pd
 from utils import calcular_aderencia
 from relatorios import utr_por_entregador_turno
 
+
 def _fmt_int(x):
     try:
         return f"{int(x):,}".replace(",", ".")
     except Exception:
         return "0"
 
+
 def render(df: pd.DataFrame, _USUARIOS: dict):
 
-    # =========================
+    # =====================================================
     # HEADER
-    # =========================
+    # =====================================================
     c1, c2 = st.columns([3, 1])
+
     with c1:
         st.markdown("## 📋 Painel de Entregadores")
-        st.caption("Dados mais recentes")
+        st.markdown(
+            "<span style='color:#9ca3af;font-size:0.85rem'>Dados atualizados • mês atual</span>",
+            unsafe_allow_html=True
+        )
 
     with c2:
         if st.button("🔄 Atualizar dados", use_container_width=True):
@@ -27,19 +33,19 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     st.divider()
 
-    # =========================
-    # BASE MÊS ATUAL
-    # =========================
     if df is None or df.empty:
         st.info("Sem dados carregados.")
         return
 
+    # =====================================================
+    # BASE MÊS ATUAL
+    # =====================================================
     ultimo_mes = df["mes_ano"].max()
     base = df[df["mes_ano"] == ultimo_mes].copy()
 
-    # =========================
+    # =====================================================
     # KPIs
-    # =========================
+    # =====================================================
     ofertadas = int(base["numero_de_corridas_ofertadas"].sum())
     aceitas   = int(base["numero_de_corridas_aceitas"].sum())
     rejeitadas= int(base["numero_de_corridas_rejeitadas"].sum())
@@ -64,16 +70,15 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         if not utr_base.empty else 0
     )
 
-    # =========================
-    # CARDS
-    # =========================
-    cols = st.columns(4)
-
-    def card(col, titulo, valor, sub=None):
+    # =====================================================
+    # FUNÇÃO CARD
+    # =====================================================
+    def card(col, titulo, valor, sub=None, danger=False):
+        cls = "card card-danger" if danger else "card"
         with col:
             st.markdown(
                 f"""
-                <div class="card">
+                <div class="{cls}">
                     <div class="card-title">{titulo}</div>
                     <div class="card-value">{valor}</div>
                     {f'<div class="card-sub">{sub}</div>' if sub else ''}
@@ -82,16 +87,22 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 unsafe_allow_html=True
             )
 
-    card(cols[0], "Ofertadas – UTR", _fmt_int(ofertadas), f"Absoluto {utr_abs:.2f} • Média {utr_med:.2f}")
+    # =====================================================
+    # CARDS KPI
+    # =====================================================
+    cols = st.columns(4)
+
+    card(cols[0], "Ofertadas – UTR", _fmt_int(ofertadas),
+         f"Absoluto {utr_abs:.2f} • Média {utr_med:.2f}")
     card(cols[1], "Aceitas", _fmt_int(aceitas))
-    card(cols[2], "Rejeitadas", _fmt_int(rejeitadas))
+    card(cols[2], "Rejeitadas", _fmt_int(rejeitadas), danger=True)
     card(cols[3], "Entregadores ativos", _fmt_int(ativos))
 
     st.divider()
 
-    # =========================
-    # ADERÊNCIA
-    # =========================
+    # =====================================================
+    # ADERÊNCIA (REGULAR)
+    # =====================================================
     if (
         "numero_minimo_de_entregadores_regulares_na_escala" in base.columns
         and "tag" in base.columns
@@ -101,13 +112,20 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             reg = int(ap["regulares_atuaram"].sum())
             vagas = int(ap["vagas"].sum())
             ader = (reg / vagas * 100) if vagas > 0 else 0
+            pct = max(0, min(ader, 100))
 
             st.markdown(
                 f"""
-                <div class="card" style="max-width:420px">
+                <div class="card" style="max-width:520px">
                     <div class="card-title">Aderência (REGULAR)</div>
                     <div class="card-value">{ader:.1f}%</div>
                     <div class="card-sub">Regulares: {reg} / Vagas: {vagas}</div>
+
+                    <div class="progress-wrap">
+                        <div class="progress">
+                            <div class="progress-bar" style="width:{pct}%"></div>
+                        </div>
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True
