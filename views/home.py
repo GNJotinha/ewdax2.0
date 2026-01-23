@@ -1,3 +1,7 @@
+# views/home.py
+# Topbar sem cápsula + Top3 alinhado DENTRO do card (HTML correto)
+
+import html
 import streamlit as st
 import pandas as pd
 from relatorios import utr_por_entregador_turno
@@ -122,7 +126,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     pct_bar = max(0.0, min(float(ader_pct), 100.0))
 
     # =========================
-    # SUPPLY HOURS + TOP 3 POR HORAS (SEM HTML)
+    # SUPPLY HOURS + TOP 3 POR HORAS
     # =========================
     sh_total = horas_total
 
@@ -144,7 +148,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             top3.append((nome, horas))
 
     # =========================
-    # UI (parte principal em HTML)
+    # UI
     # =========================
     st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
 
@@ -243,7 +247,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     # =========================
-    # SEÇÃO INFERIOR (sem HTML pro Top3)
+    # Supply & Ranking
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
@@ -263,25 +267,30 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         )
 
     with c2:
+        medals = ["🥇", "🥈", "🥉"]
+
+        if not top3:
+            rows = "<div class='neo-subline'>Sem dados suficientes.</div>"
+        else:
+            rows = ""
+            for i, (nome, horas) in enumerate(top3[:3]):
+                m = medals[i]
+                nome_safe = html.escape(str(nome))
+                rows += f"""
+                  <div class="toprow">
+                    <div class="name">{m}&nbsp;{nome_safe}</div>
+                    <div class="hours">{horas:.1f}h</div>
+                  </div>
+                """
+
         st.markdown(
-            """
+            f"""
             <div class="neo-card">
               <div class="neo-label">Top 3 entregadores (horas)</div>
+              {rows}
             </div>
             """,
             unsafe_allow_html=True
         )
-
-        medals = ["🥇", "🥈", "🥉"]
-        if not top3:
-            st.caption("Sem dados suficientes.")
-        else:
-            for i, (nome, horas) in enumerate(top3):
-                m = medals[i] if i < 3 else "•"
-                l, r = st.columns([4, 1])
-                with l:
-                    st.markdown(f"**{m} {nome}**")
-                with r:
-                    st.markdown(f"**{horas:.1f}h**")
 
     st.markdown("</div>", unsafe_allow_html=True)
