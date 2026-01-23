@@ -1,116 +1,116 @@
 import streamlit as st
 import pandas as pd
-from relatorios import utr_por_entregador_turno
-from shared import hms_from_hours
 from utils import calcular_aderencia
+from relatorios import utr_por_entregador_turno
 
-def render(df: pd.DataFrame, USUARIOS: dict):
-    st.title("📋 Painel de Entregadores")
-
-    nivel = USUARIOS.get(st.session_state.usuario, {}).get("nivel", "")
-    logo_admin = st.secrets.get("LOGO_ADMIN_URL", "")
-    logo_user  = st.secrets.get("LOGO_USER_URL", "")
-    bg_logo = logo_admin if nivel == "admin" and logo_admin else logo_user
-    if bg_logo:
-        st.markdown(f'''
-            <style>
-              .home-bg:before {{
-                content: "";
-                position: absolute; inset: 0;
-                background-image: url("{bg_logo}");
-                background-repeat: no-repeat;
-                background-position: center 20%;
-                background-size: 40%;
-                opacity: 0.06; pointer-events: none;
-              }}
-            </style>
-        ''', unsafe_allow_html=True)
-    st.markdown("<div class='home-bg' style='position:relative;'>", unsafe_allow_html=True)
-
+def _fmt_int(x):
     try:
-        ultimo_dia = pd.to_datetime(df["data"]).max().date()
-        ultimo_dia_txt = ultimo_dia.strftime("%d/%m/%Y")
+        return f"{int(x):,}".replace(",", ".")
     except Exception:
-        ultimo_dia_txt = "—"
+        return "0"
 
-    c1, c2 = st.columns([1,2])
+def render(df: pd.DataFrame, _USUARIOS: dict):
+
+    # =========================
+    # HEADER
+    # =========================
+    c1, c2 = st.columns([3, 1])
     with c1:
-        st.subheader("Dados mais recentes")
-        st.metric("", ultimo_dia_txt)
+        st.markdown("## 📋 Painel de Entregadores")
+        st.caption("Dados mais recentes")
+
     with c2:
-        st.subheader("Atualização de base")
-        if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_drive"):
+        if st.button("🔄 Atualizar dados", use_container_width=True):
             st.session_state.force_refresh = True
             st.session_state.just_refreshed = True
-            st.cache_data.clear()
             st.rerun()
 
     st.divider()
 
-    hoje = pd.Timestamp.today()
-    mes_atual, ano_atual = int(hoje.month), int(hoje.year)
-    df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
+    # =========================
+    # BASE MÊS ATUAL
+    # =========================
+    if df is None or df.empty:
+        st.info("Sem dados carregados.")
+        return
 
-    # ------------------------------
-    # Aderência (mês atual)
-    # ------------------------------
-    ader_pct = 0.0
-    ader_reg = 0
-    ader_vagas = 0
-    vagas_incons = False
+    ultimo_mes = df["mes_ano"].max()
+    base = df[df["mes_ano"] == ultimo_mes].copy()
 
-    if not df_mes.empty and ("numero_minimo_de_entregadores_regulares_na_escala" in df_mes.columns) and ("tag" in df_mes.columns):
-        turno_col = next((c for c in ("turno", "tipo_turno", "periodo") if c in df_mes.columns), None)
-        group_cols = ("data", turno_col) if turno_col else ("data",)
-        try:
-            base_ap = calcular_aderencia(df_mes, group_cols=group_cols)
-            ader_reg = int(base_ap.get("regulares_atuaram", 0).sum())
-            ader_vagas = float(base_ap.get("vagas", 0).sum())
-            if ader_vagas > 0:
-                ader_pct = round((ader_reg / ader_vagas) * 100.0, 1)
-            vagas_incons = bool(base_ap.get("vagas_inconsistente", False).any())
-        except Exception:
-            pass
+    # =========================
+    # KPIs
+    # =========================
+    ofertadas = int(base["numero_de_corridas_ofertadas"].sum())
+    aceitas   = int(base["numero_de_corridas_aceitas"].sum())
+    rejeitadas= int(base["numero_de_corridas_rejeitadas"].sum())
 
-    ofertadas  = int(df_mes.get("numero_de_corridas_ofertadas", 0).sum())
-    aceitas    = int(df_mes.get("numero_de_corridas_aceitas", 0).sum())
-    rejeitadas = int(df_mes.get("numero_de_corridas_rejeitadas", 0).sum())
-    entreg_uniq = int(df_mes.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().nunique())
+    ativos = base.loc[
+        (base["numero_de_corridas_ofertadas"]
+        + base["numero_de_corridas_aceitas"]
+        + base["numero_de_corridas_completadas"]
+        + base["segundos_abs"]) > 0,
+        "pessoa_entregadora"
+    ].nunique()
 
-    acc_pct = round((aceitas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
-    rej_pct = round((rejeitadas / ofertadas) * 100, 1) if ofertadas > 0 else 0.0
+    sh = base["segundos_abs"].sum() / 3600 if base["segundos_abs"].sum() > 0 else 0
+    utr_abs = ofertadas / sh if sh > 0 else 0
 
-    base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
-    if not df_mes.empty:
-        seg = pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
-        horas = seg / 3600.0 if seg > 0 else 0.0
-        utr_abs = (ofertadas / horas) if horas > 0 else 0.0
-    else:
-        utr_abs = 0.0
-    if not base_home.empty:
-        base_pos = base_home[base_home["supply_hours"] > 0].copy()
-        utr_medias = (base_pos["corridas_ofertadas"] / base_pos["supply_hours"]).mean() if not base_pos.empty else 0.0
-    else:
-        utr_medias = 0.0
+    utr_base = utr_por_entregador_turno(base)
+    utr_med = (
+        (utr_base["corridas_ofertadas"] / utr_base["supply_hours"])
+        .replace([float("inf"), -float("inf")], 0)
+        .dropna()
+        .mean()
+        if not utr_base.empty else 0
+    )
 
-    st.subheader(f"📦 Resumo do mês atual ({mes_atual:02d}/{ano_atual})")
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Ofertadas - UTR", f"{ofertadas:,}".replace(",", "."))
-    m1.caption(f"Absoluto: **{utr_abs:.2f}**")
-    m1.caption(f"Médias: **{utr_medias:.2f}**")
-    m2.metric("Aceitas", f"{aceitas:,}".replace(",", "."), f"{acc_pct:.1f}%")
-    m3.metric("Rejeitadas", f"{rejeitadas:,}".replace(",", "."), f"{rej_pct:.1f}%")
-    m4.metric("Entregadores ativos", f"{entreg_uniq}")
+    # =========================
+    # CARDS
+    # =========================
+    cols = st.columns(4)
 
-    # Aderência
-    a1, = st.columns(1)
-    a1.metric("📌 Aderência (REGULAR)", f"{ader_pct:.1f}%")
-    a1.caption(f"Regulares: **{ader_reg}** / Vagas: **{int(ader_vagas)}**")
-    if vagas_incons:
-        a1.warning("⚠️ Vagas inconsistentes em alguns dias/turnos (coluna variando dentro do mesmo grupo).")
+    def card(col, titulo, valor, sub=None):
+        with col:
+            st.markdown(
+                f"""
+                <div class="card">
+                    <div class="card-title">{titulo}</div>
+                    <div class="card-value">{valor}</div>
+                    {f'<div class="card-sub">{sub}</div>' if sub else ''}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    card(cols[0], "Ofertadas – UTR", _fmt_int(ofertadas), f"Absoluto {utr_abs:.2f} • Média {utr_med:.2f}")
+    card(cols[1], "Aceitas", _fmt_int(aceitas))
+    card(cols[2], "Rejeitadas", _fmt_int(rejeitadas))
+    card(cols[3], "Entregadores ativos", _fmt_int(ativos))
 
     st.divider()
-    ano = int(hoje.year)
-    total_corridas_ano = int(df[df["ano"] == ano]["numero_de_corridas_completadas"].sum())
-    st.metric("Total de corridas completadas no ano", f"{total_corridas_ano:,}".replace(",", "."))
-    st.markdown("</div>", unsafe_allow_html=True)
+
+    # =========================
+    # ADERÊNCIA
+    # =========================
+    if (
+        "numero_minimo_de_entregadores_regulares_na_escala" in base.columns
+        and "tag" in base.columns
+    ):
+        try:
+            ap = calcular_aderencia(base)
+            reg = int(ap["regulares_atuaram"].sum())
+            vagas = int(ap["vagas"].sum())
+            ader = (reg / vagas * 100) if vagas > 0 else 0
+
+            st.markdown(
+                f"""
+                <div class="card" style="max-width:420px">
+                    <div class="card-title">Aderência (REGULAR)</div>
+                    <div class="card-value">{ader:.1f}%</div>
+                    <div class="card-sub">Regulares: {reg} / Vagas: {vagas}</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        except Exception:
+            pass
