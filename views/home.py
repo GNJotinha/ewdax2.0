@@ -29,7 +29,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     base = df[df["mes_ano"] == ultimo_mes].copy()
     mes_txt = pd.to_datetime(ultimo_mes).strftime("%m/%Y")
 
-    # data mais recente do mês (pra mostrar no topo)
+    # data mais recente do mês (topo)
     data_str = None
     for c in ("data_do_periodo", "data", "data_do_periodo_de_referencia"):
         if c in base.columns:
@@ -38,7 +38,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 data_str = pd.to_datetime(dt).strftime("%d/%m/%Y")
                 break
 
-    # KPIs
+    # KPIs (robusto)
     ofertadas = float(pd.to_numeric(base.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
     aceitas = float(pd.to_numeric(base.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
     rejeitadas = float(pd.to_numeric(base.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
@@ -71,17 +71,18 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     else:
         utr_med = 0.0
 
-    # Aderência
+    # Aderência: tenta calcular; se não der, fica None (mas a seção aparece)
     ader = None
-    reg = vagas = 0
-    if ("numero_minimo_de_entregadores_regulares_na_escala" in base.columns) and ("tag" in base.columns):
-        try:
-            ap = calcular_aderencia(base)
-            reg = int(ap["regulares_atuaram"].sum())
-            vagas = float(ap["vagas"].sum())
+    reg = 0
+    vagas = 0.0
+    try:
+        ap = calcular_aderencia(base)
+        if not ap.empty and "regulares_atuaram" in ap.columns and "vagas" in ap.columns:
+            reg = int(pd.to_numeric(ap["regulares_atuaram"], errors="coerce").fillna(0).sum())
+            vagas = float(pd.to_numeric(ap["vagas"], errors="coerce").fillna(0).sum())
             ader = (reg / vagas * 100.0) if vagas > 0 else 0.0
-        except Exception:
-            ader = None
+    except Exception:
+        ader = None
 
     pct = max(0.0, min(float(ader) if ader is not None else 0.0, 100.0))
 
@@ -114,11 +115,12 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     # ==========================================================
     # RESUMO DO MÊS
+    # (Número grande + % embaixo em linha separada)
     # ==========================================================
     st.markdown(f'<div class="neo-section">Resumo do mês ({mes_txt})</div>', unsafe_allow_html=True)
 
-    aceitas_label = f"{_fmt_int(aceitas)} ({_fmt_pct(acc_pct, 1)})"
-    rejeitadas_label = f"{_fmt_int(rejeitadas)} ({_fmt_pct(rej_pct, 1)})"
+    aceitas_html = f"{_fmt_int(aceitas)}<span class='pct'>({_fmt_pct(acc_pct, 1)})</span>"
+    rejeitadas_html = f"{_fmt_int(rejeitadas)}<span class='pct'>({_fmt_pct(rej_pct, 1)})</span>"
 
     st.markdown(
         f"""
@@ -131,13 +133,13 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
           <div class="neo-card neo-success">
             <div class="neo-label">Aceitas</div>
-            <div class="neo-value">{aceitas_label}</div>
+            <div class="neo-value">{aceitas_html}</div>
             <div class="neo-subline">&nbsp;</div>
           </div>
 
           <div class="neo-card neo-danger">
             <div class="neo-label">Rejeitadas</div>
-            <div class="neo-value">{rejeitadas_label}</div>
+            <div class="neo-value">{rejeitadas_html}</div>
             <div class="neo-subline">&nbsp;</div>
           </div>
 
@@ -152,15 +154,34 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     )
 
     # ==========================================================
-    # ADERÊNCIA
+    # ADERÊNCIA (SEMPRE APARECE)
     # ==========================================================
-    if ader is not None:
-        st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="neo-section">Aderência <span style="font-weight:700;color:rgba(232,237,246,.70)">(REGULAR)</span></div>',
+        unsafe_allow_html=True
+    )
+
+    if ader is None:
         st.markdown(
-            '<div class="neo-section">Aderência <span style="font-weight:700;color:rgba(232,237,246,.70)">(REGULAR)</span></div>',
+            """
+            <div class="neo-grid-2">
+              <div class="neo-card">
+                <div class="neo-value">—</div>
+                <div class="neo-subline">Sem dados de aderência neste período.</div>
+              </div>
+              <div class="neo-card">
+                <div class="neo-label">Regulares: — / Vagas: —</div>
+                <div class="neo-progress-wrap">
+                  <div class="neo-progress"><div style="width:0%"></div></div>
+                  <div class="neo-scale"><span>0%</span><span>50%</span><span>100%</span></div>
+                </div>
+              </div>
+            </div>
+            """,
             unsafe_allow_html=True
         )
-
+    else:
         st.markdown(
             f"""
             <div class="neo-grid-2">
@@ -171,7 +192,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
               <div class="neo-card">
                 <div class="neo-label">Regulares: {_fmt_int(reg)} / Vagas: {_fmt_int(vagas)}</div>
-
                 <div class="neo-progress-wrap">
                   <div class="neo-progress">
                     <div style="width:{pct:.1f}%;"></div>
