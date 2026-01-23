@@ -1,3 +1,4 @@
+import html
 import streamlit as st
 import pandas as pd
 from relatorios import utr_por_entregador_turno
@@ -138,7 +139,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             top3.append((str(r["pessoa_entregadora"]), float(r["segundos_abs"]) / 3600.0))
 
     # =========================
-    # HEADER (STREAMLIT PURO)
+    # HEADER (SEM HTML)
     # =========================
     hL, hR = st.columns([4, 1])
     with hL:
@@ -152,7 +153,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             st.rerun()
 
     # =========================
-    # CONTEÚDO (SEM neo-shell porque ele cria card vazio)
+    # CONTEÚDO
     # =========================
     st.markdown(f'<div class="neo-section">Resumo do mês ({mes_txt})</div>', unsafe_allow_html=True)
 
@@ -223,8 +224,10 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
 
-    c1, c2 = st.columns([1, 2])
+    # ✅ colunas 1:1 = SH e ranking com mesmo “peso”
+    c1, c2 = st.columns([1, 1])
 
+    # SH (card)
     with c1:
         st.markdown(
             f"""
@@ -237,17 +240,29 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             unsafe_allow_html=True
         )
 
+    # ✅ Ranking dentro do card (HTML único, alinhado)
     with c2:
-        # sem card, sem HTML: só ranking alinhado
-        st.markdown("### Top 3 entregadores (horas)")
         medals = ["🥇", "🥈", "🥉"]
 
         if not top3:
-            st.caption("Sem dados suficientes.")
+            rows = "<div class='neo-subline'>Sem dados suficientes.</div>"
         else:
+            rows = ""
             for i, (nome, horas) in enumerate(top3[:3]):
-                l, r = st.columns([4, 1])
-                with l:
-                    st.markdown(f"**{medals[i]} {nome}**")
-                with r:
-                    st.markdown(f"**{horas:.1f}h**")
+                nome_safe = html.escape(str(nome))
+                rows += f"""
+                  <div class="toprow">
+                    <div class="name">{medals[i]}&nbsp;{nome_safe}</div>
+                    <div class="hours">{horas:.1f}h</div>
+                  </div>
+                """
+
+        st.markdown(
+            f"""
+            <div class="neo-card">
+              <div class="neo-label">Top 3 entregadores (horas)</div>
+              {rows}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
