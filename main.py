@@ -29,131 +29,61 @@ st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 # -------------------------------------------------------------------
 # Estilo
 # -------------------------------------------------------------------
-st.markdown(
-    """
-    <style>
-    /* =====================================================
-       BASE
-    ===================================================== */
-    body {
-        background-color: #121417;
-        color: #e5e7eb;
-    }
+st.markdown("""
+<style>
+/* Centraliza e limita largura do conteúdo principal */
+.block-container {
+  max-width: 1100px !important;
+  padding-top: 2.0rem;
+}
 
-    h1, h2, h3 {
-        color: #f9fafb;
-        font-weight: 600;
-    }
+/* "Shell" do painel (moldura grande) */
+.panel-shell {
+  background: radial-gradient(1200px 400px at 20% 0%, rgba(255,255,255,0.06), transparent 60%),
+              linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.10));
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 22px;
+  padding: 18px 18px 22px 18px;
+  box-shadow: 0 25px 60px rgba(0,0,0,0.55);
+}
 
-    /* =====================================================
-       SIDEBAR
-    ===================================================== */
-    section[data-testid="stSidebar"] {
-        background-color: #16181d;
-        border-right: 1px solid #262a33;
-    }
+/* Topbar dentro do painel */
+.panel-topbar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 16px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
 
-    /* =====================================================
-       BOTÕES
-    ===================================================== */
-    .stButton > button {
-        background: linear-gradient(135deg, #2563eb, #1d4ed8);
-        color: white;
-        border: none;
-        border-radius: 14px;
-        padding: 0.65rem 1.3rem;
-        font-weight: 600;
-    }
+.panel-topbar .left {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  color:#f3f4f6;
+  font-weight:700;
+}
 
-    .stButton > button:hover {
-        background: linear-gradient(135deg, #3b82f6, #2563eb);
-    }
+.panel-topbar .meta {
+  margin-top:2px;
+  color:#9ca3af;
+  font-size:0.82rem;
+  font-weight:500;
+}
 
-    /* =====================================================
-       CARDS
-    ===================================================== */
-    .card {
-        background: linear-gradient(
-            160deg,
-            rgba(50,54,65,0.9),
-            rgba(24,26,32,0.95)
-        );
-        border: 1px solid rgba(255,255,255,0.06);
-        border-radius: 18px;
-        padding: 1.4rem 1.5rem;
-        box-shadow:
-            0 12px 30px rgba(0,0,0,0.45),
-            inset 0 1px 0 rgba(255,255,255,0.05);
-    }
+/* Linha divisória sutil dentro do painel */
+.panel-divider {
+  height:1px;
+  background: rgba(255,255,255,0.08);
+  margin: 14px 0;
+}
+</style>
+""", unsafe_allow_html=True)
 
-    .card-danger {
-        background: linear-gradient(
-            160deg,
-            rgba(120,40,40,0.9),
-            rgba(45,18,18,0.95)
-        );
-        border: 1px solid rgba(255,80,80,0.35);
-    }
-
-    .card-title {
-        font-size: 0.78rem;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: #c7cad1;
-        margin-bottom: 0.6rem;
-    }
-
-    .card-value {
-        font-size: 2.3rem;
-        font-weight: 800;
-        color: #ffffff;
-        line-height: 1.1;
-    }
-
-    .card-sub {
-        font-size: 0.75rem;
-        color: #b3b7c0;
-        margin-top: 0.5rem;
-    }
-
-    /* =====================================================
-       PROGRESS BAR (ADERÊNCIA)
-    ===================================================== */
-    .progress-wrap {
-        margin-top: 0.8rem;
-    }
-
-    .progress {
-        width: 100%;
-        height: 8px;
-        border-radius: 999px;
-        background: #2a2e36;
-        overflow: hidden;
-    }
-
-    .progress-bar {
-        height: 100%;
-        border-radius: 999px;
-        background: linear-gradient(
-            90deg,
-            #ef4444,
-            #f59e0b,
-            #22c55e
-        );
-    }
-
-    /* =====================================================
-       DIVIDER
-    ===================================================== */
-    hr {
-        border: none;
-        border-top: 1px solid #262a33;
-        margin: 1.5rem 0;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 
 # ---------------------------------------------------------
