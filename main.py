@@ -16,7 +16,6 @@ def get_df_once():
     return carregar_dados(prefer_drive=prefer, _ts=ts)
 
 
-# ✅ ajuda o Cloud a iniciar aberto
 st.set_page_config(
     page_title="Painel de Entregadores",
     page_icon="📋",
@@ -42,9 +41,8 @@ st.markdown(
     }
 
     /* =============================
-       FIX REAL DO SIDEBAR (Cloud)
+       FIX DO SIDEBAR (Cloud)
        - NÃO esconder o header
-       - (o botão de expandir/abrir depende disso)
        ============================= */
     header[data-testid="stHeader"]{
       background: transparent !important;
@@ -52,48 +50,38 @@ st.markdown(
       border: 0 !important;
     }
 
-    /* se quiser esconder a toolbar feia, ok — mas sem matar o header todo */
     header [data-testid="stToolbar"]{
       visibility: hidden !important;
     }
 
     /* =============================
-       TRAVA: DESATIVAR "RECOLHER"
-       - Some apenas o botão de COLLAPSE/CLOSE
-       - Mantém o de OPEN/EXPAND (caso fique fechado)
+       ✅ MATA O BOTÃO SAFADO "<<" (recolher)
+       Ele fica no header do sidebar.
+       Isso deixa o sidebar fixo aberto.
        ============================= */
-
-    /* Inglês (mais comum) */
-    button[aria-label*="Collapse sidebar" i],
-    button[aria-label*="Close sidebar" i],
-    button[title*="Collapse sidebar" i],
-    button[title*="Close sidebar" i]{
+    div[data-testid="stSidebarHeader"] button[data-testid="baseButton-header"],
+    div[data-testid="stSidebarHeader"] button[kind="headerNoPadding"]{
       display: none !important;
     }
 
-    /* Português (varia por browser/versão) */
-    button[aria-label*="Recolher" i],
-    button[aria-label*="Fechar" i],
-    button[title*="Recolher" i],
-    button[title*="Fechar" i]{
+    /* Fallback: algumas versões usam aria-label/title */
+    div[data-testid="stSidebarHeader"] button[aria-label*="collapse" i],
+    div[data-testid="stSidebarHeader"] button[aria-label*="close" i],
+    div[data-testid="stSidebarHeader"] button[aria-label*="recolher" i],
+    div[data-testid="stSidebarHeader"] button[aria-label*="fechar" i],
+    div[data-testid="stSidebarHeader"] button[title*="collapse" i],
+    div[data-testid="stSidebarHeader"] button[title*="close" i],
+    div[data-testid="stSidebarHeader"] button[title*="recolher" i],
+    div[data-testid="stSidebarHeader"] button[title*="fechar" i]{
       display: none !important;
     }
 
-    /* mantém "Expand/Open" sempre possível */
-    button[aria-label*="Expand sidebar" i],
-    button[aria-label*="Open sidebar" i],
-    button[aria-label*="Expandir" i],
-    button[aria-label*="Abrir" i],
-    button[title*="Expand sidebar" i],
-    button[title*="Open sidebar" i],
-    button[title*="Expandir" i],
-    button[title*="Abrir" i]{
-      display: inline-flex !important;
+    /* mantém o botão de ABRIR caso o Cloud inicie fechado (não mexe nisso) */
+    [data-testid="collapsedControl"]{
       visibility: visible !important;
       z-index: 999999 !important;
     }
 
-    /* teus hides padrão */
     footer{ display:none !important; }
     #MainMenu{ visibility:hidden !important; }
     [data-testid="stAppViewContainer"]{ padding-top: 0rem !important; }
