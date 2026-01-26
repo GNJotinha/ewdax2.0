@@ -1,7 +1,5 @@
-# home.py
+# views/home.py
 # Home — Supply em card único + Ranking em Streamlit puro (fora de cards)
-# ✅ Supply agora com infos extras + comparação vs mês anterior
-# ✅ Ranking mantido IGUAL ao original
 
 import streamlit as st
 import pandas as pd
@@ -31,35 +29,6 @@ def _pick_col(cols, candidates):
         if c in cols:
             return c
     return None
-
-
-def _fmt_h(h):
-    try:
-        return f"{float(h):.1f}h".replace(".", ",")
-    except Exception:
-        return "—"
-
-
-def _fmt_delta_h(dh):
-    if dh is None:
-        return "—"
-    sign = "+" if dh > 0 else ""
-    return f"{sign}{dh:.1f}h".replace(".", ",")
-
-
-def _fmt_delta_pct(dp):
-    if dp is None:
-        return "—"
-    sign = "+" if dp > 0 else ""
-    return f"{sign}{dp:.1f}%".replace(".", ",")
-
-
-def _arrow(dh):
-    if dh is None:
-        return "⚪"
-    if abs(dh) < 1e-9:
-        return "⚪"
-    return "🟢⬆" if dh > 0 else "🔴⬇"
 
 
 # ---------------------------------------------------------
@@ -115,7 +84,9 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     horas_total = float(seg_total / 3600.0) if seg_total > 0 else 0.0
     utr_abs = (ofertadas / horas_total) if horas_total > 0 else 0.0
 
+    # =========================
     # UTR média
+    # =========================
     utr_medias = 0.0
     try:
         base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
@@ -176,30 +147,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             top3.append((str(r["pessoa_entregadora"]), float(r["segundos_abs"]) / 3600.0))
 
     # =========================
-    # COMPARAÇÃO SH vs MÊS ANTERIOR
-    # =========================
-    if mes_atual == 1:
-        mes_prev, ano_prev = 12, ano_atual - 1
-    else:
-        mes_prev, ano_prev = mes_atual - 1, ano_atual
-
-    df_prev = pd.DataFrame()
-    if {"mes", "ano"}.issubset(df.columns):
-        df_prev = df[(df["mes"] == mes_prev) & (df["ano"] == ano_prev)].copy()
-    elif "mes_ano" in df.columns:
-        alvo = pd.Timestamp(year=ano_prev, month=mes_prev, day=1)
-        df_prev = df[pd.to_datetime(df["mes_ano"], errors="coerce") == alvo].copy()
-
-    seg_prev = pd.to_numeric(df_prev.get("segundos_abs", 0), errors="coerce").fillna(0).sum() if not df_prev.empty else 0
-    horas_prev = float(seg_prev / 3600.0) if seg_prev > 0 else 0.0
-
-    dh = horas_total - horas_prev
-    dp = (dh / horas_prev * 100.0) if horas_prev > 0 else None
-    prev_txt = f"{mes_prev:02d}/{ano_prev}"
-    arrow = _arrow(dh)
-
-    # =========================
-    # UI (original)
+    # UI (ORIGINAL)
     # =========================
     st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
 
@@ -294,13 +242,13 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     # =========================
-    # SUPPLY (card único, agora maior com infos + comparação)
+    # SUPPLY — ÚNICA PARTE ALTERADA
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="neo-section">Supply</div>', unsafe_allow_html=True)
 
     horas_media_entregador = (horas_total / entreg_uniq) if entreg_uniq > 0 else 0.0
-    horas_media_dia = (horas_total / df_mes[data_col].nunique()) if (data_col and data_col in df_mes.columns) else 0.0
+    horas_media_dia = (horas_total / df_mes[data_col].nunique()) if data_col else 0.0
 
     st.markdown(
         f"""
@@ -316,22 +264,15 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             <div class="neo-subline">• Média por dia: <b>{horas_media_dia:.1f}h</b></div>
             <div class="neo-subline">• UTR absoluta: <b>{utr_abs:.2f}</b></div>
           </div>
-
-          <div style="margin-top:14px; line-height:1.6;">
-            <div class="neo-subline"><b>Comparação vs mês anterior</b></div>
-            <div class="neo-subline">• SH {prev_txt}: <b>{_fmt_h(horas_prev)}</b></div>
-            <div class="neo-subline">• Δ: <b>{_fmt_delta_h(dh)}</b> ({_fmt_delta_pct(dp)}) {arrow}</div>
-          </div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
     # =========================
-    # RANKING (MANTIDO IGUAL AO ORIGINAL)
+    # RANKING — ORIGINAL, SEM TOCAR
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
-
     st.subheader("🏆 Top 3 SH")
 
     if not top3:
