@@ -1,4 +1,6 @@
-import html
+# views/home.py
+# Top 3 minimalista (SEM HTML nas linhas) + Supply Hours card + mantém neo-shell
+
 import streamlit as st
 import pandas as pd
 from relatorios import utr_por_entregador_turno
@@ -68,7 +70,9 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     aceitas = int(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
     rejeitadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
 
-    entreg_uniq = int(df_mes["pessoa_entregadora"].dropna().nunique()) if "pessoa_entregadora" in df_mes.columns else 0
+    entreg_uniq = 0
+    if "pessoa_entregadora" in df_mes.columns:
+        entreg_uniq = int(df_mes["pessoa_entregadora"].dropna().nunique())
 
     acc_pct = (aceitas / ofertadas * 100.0) if ofertadas > 0 else 0.0
     rej_pct = (rejeitadas / ofertadas * 100.0) if ofertadas > 0 else 0.0
@@ -121,7 +125,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     pct_bar = max(0.0, min(float(ader_pct), 100.0))
 
     # =========================
-    # TOP 3 POR HORAS
+    # TOP 3 POR HORAS (dados)
     # =========================
     top3 = []
     if ("pessoa_entregadora" in df_mes.columns) and ("segundos_abs" in df_mes.columns):
@@ -139,27 +143,38 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             top3.append((str(r["pessoa_entregadora"]), float(r["segundos_abs"]) / 3600.0))
 
     # =========================
-    # HEADER (SEM HTML)
+    # UI
     # =========================
-    hL, hR = st.columns([4, 1])
-    with hL:
-        st.title("📁 Painel de Entregadores")
-        st.caption(f"Dados atualizados • {data_str}")
-    with hR:
+    st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
+
+    topL, topR = st.columns([4, 1])
+    with topL:
+        st.markdown(
+            f"""
+            <div class="neo-topbar">
+              <div>
+                <div class="neo-title">📁&nbsp;Painel de Entregadores</div>
+                <div class="neo-sub">Dados atualizados • {data_str}</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with topR:
         if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_home"):
             st.session_state.force_refresh = True
             st.session_state.just_refreshed = True
             st.cache_data.clear()
             st.rerun()
 
-    # =========================
-    # CONTEÚDO
-    # =========================
+    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown(f'<div class="neo-section">Resumo do mês ({mes_txt})</div>', unsafe_allow_html=True)
 
     aceitas_html = f"{_fmt_int(aceitas)}<span class='pct'>({_fmt_pct(acc_pct, 1)})</span>"
     rejeitadas_html = f"{_fmt_int(rejeitadas)}<span class='pct'>({_fmt_pct(rej_pct, 1)})</span>"
 
+    # Cards: mantém neo-success/neo-danger (glow/degradê vem do CSS do main.py)
     st.markdown(
         f"""
         <div class="neo-grid-4">
@@ -192,9 +207,15 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="neo-section">Aderência (REGULAR)</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="neo-section">Aderência <span style="font-weight:700;color:rgba(232,237,246,.70)">(REGULAR)</span></div>',
+        unsafe_allow_html=True
+    )
 
-    incons_txt = "⚠️ Vagas inconsistentes." if vagas_incons else ""
+    incons_html = (
+        "<div class='neo-subline' style='color:rgba(255,176,32,.95)'>⚠️ Vagas inconsistentes.</div>"
+        if vagas_incons else ""
+    )
 
     st.markdown(
         f"""
@@ -202,7 +223,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
           <div class="neo-card">
             <div class="neo-value">{ader_pct:.1f}%</div>
             <div class="neo-subline">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
-            <div class="neo-subline" style="color:rgba(255,176,32,.95)">{incons_txt}</div>
+            {incons_html}
           </div>
 
           <div class="neo-card">
@@ -221,13 +242,14 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         unsafe_allow_html=True
     )
 
+    # =========================
+    # SUPPLY & RANKING (minimalista)
+    # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
 
-    # ✅ colunas 1:1 = SH e ranking com mesmo “peso”
     c1, c2 = st.columns([1, 1])
 
-    # SH (card)
     with c1:
         st.markdown(
             f"""
@@ -240,29 +262,30 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             unsafe_allow_html=True
         )
 
-    # ✅ Ranking dentro do card (HTML único, alinhado)
+    # Ranking: SEM HTML nas linhas (zero chance de vazar tags)
     with c2:
+        st.markdown("### 🏆 Top 3 entregadores (horas)")
+        st.caption(f"Base: mês {mes_txt}")
+
         medals = ["🥇", "🥈", "🥉"]
 
         if not top3:
-            rows = "<div class='neo-subline'>Sem dados suficientes.</div>"
+            st.info("Sem dados suficientes.")
         else:
-            rows = ""
-            for i, (nome, horas) in enumerate(top3[:3]):
-                nome_safe = html.escape(str(nome))
-                rows += f"""
-                  <div class="toprow">
-                    <div class="name">{medals[i]}&nbsp;{nome_safe}</div>
-                    <div class="hours">{horas:.1f}h</div>
-                  </div>
-                """
+            max_h = max(h for _, h in top3)
+            max_h = max(max_h, 1e-9)
 
-        st.markdown(
-            f"""
-            <div class="neo-card">
-              <div class="neo-label">Top 3 entregadores (horas)</div>
-              {rows}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+            for i, (nome, horas) in enumerate(top3[:3]):
+                l, m, r = st.columns([5, 3, 2])
+
+                with l:
+                    st.markdown(f"**{medals[i]} {nome}**")
+
+                with m:
+                    pct = int(round((horas / max_h) * 100.0))
+                    st.progress(min(max(pct, 0), 100))
+
+                with r:
+                    st.markdown(f"**{horas:.1f}h**")
+
+    st.markdown("</div>", unsafe_allow_html=True)
