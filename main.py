@@ -14,7 +14,7 @@ def get_df_once():
     ts = pd.Timestamp.now().timestamp() if prefer else None
     return carregar_dados(prefer_drive=prefer, _ts=ts)
 
-# ✅ patch: garantir que não inicia fechado
+# ✅ PATCH: evita iniciar com sidebar fechada
 st.set_page_config(
     page_title="Painel de Entregadores",
     page_icon="📋",
@@ -39,23 +39,42 @@ st.markdown(
       --green: #37d67a;
     }
 
-    /* ============================
-       ✅ PATCH MENU LATERAL
-       - NÃO esconder o header (senão o botão ☰ some)
-       - esconder toolbar
-       - forçar collapsedControl aparecer
-       ============================ */
+    /* =========================================================
+       ✅ FIX MENU LATERAL:
+       - NÃO esconda o header (senão some o botão de reabrir sidebar)
+       - deixe o header transparente
+       - esconda a toolbar (ícones do Streamlit)
+       - force o controle de abrir sidebar a ficar visível
+       ========================================================= */
+
     header[data-testid="stHeader"]{
       background: transparent !important;
       box-shadow: none !important;
       border: 0 !important;
     }
+
+    /* esconde toolbar do Streamlit */
     header [data-testid="stToolbar"]{
       visibility: hidden !important;
     }
+
+    /* tenta o seletor “oficial” do controle recolhido */
     header [data-testid="collapsedControl"]{
       visibility: visible !important;
       display: flex !important;
+      position: fixed !important;
+      top: 0.75rem !important;
+      left: 0.75rem !important;
+      z-index: 999999 !important;
+    }
+
+    /* fallback por aria-label (algumas versões mudam data-testid) */
+    button[aria-label="Open sidebar"],
+    button[aria-label="Close sidebar"],
+    button[aria-label="Expand sidebar"],
+    button[aria-label="Collapse sidebar"]{
+      visibility: visible !important;
+      display: inline-flex !important;
       position: fixed !important;
       top: 0.75rem !important;
       left: 0.75rem !important;
