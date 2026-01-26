@@ -1,6 +1,7 @@
 import importlib
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -9,16 +10,17 @@ from data_loader import carregar_dados
 
 TZ = ZoneInfo("America/Sao_Paulo")
 
+
 def get_df_once():
     prefer = st.session_state.pop("force_refresh", False)
     ts = pd.Timestamp.now().timestamp() if prefer else None
     return carregar_dados(prefer_drive=prefer, _ts=ts)
 
-# ✅ PATCH: evita iniciar com sidebar fechada
+
 st.set_page_config(
     page_title="Painel de Entregadores",
     page_icon="📋",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded",  # ✅ evita iniciar fechado
 )
 
 st.markdown(
@@ -40,11 +42,10 @@ st.markdown(
     }
 
     /* =========================================================
-       ✅ FIX MENU LATERAL:
-       - NÃO esconda o header (senão some o botão de reabrir sidebar)
-       - deixe o header transparente
-       - esconda a toolbar (ícones do Streamlit)
-       - force o controle de abrir sidebar a ficar visível
+       ✅ FIX SIDEBAR (Streamlit Cloud-safe)
+       - NÃO usar display:none nem height:0 no header
+       - esconder toolbar (mas manter header vivo)
+       - forçar o botão do sidebar aparecer (várias versões)
        ========================================================= */
 
     header[data-testid="stHeader"]{
@@ -53,13 +54,12 @@ st.markdown(
       border: 0 !important;
     }
 
-    /* esconde toolbar do Streamlit */
     header [data-testid="stToolbar"]{
       visibility: hidden !important;
     }
 
-    /* tenta o seletor “oficial” do controle recolhido */
-    header [data-testid="collapsedControl"]{
+    /* Algumas versões: collapsedControl */
+    [data-testid="collapsedControl"]{
       visibility: visible !important;
       display: flex !important;
       position: fixed !important;
@@ -68,11 +68,15 @@ st.markdown(
       z-index: 999999 !important;
     }
 
-    /* fallback por aria-label (algumas versões mudam data-testid) */
-    button[aria-label="Open sidebar"],
-    button[aria-label="Close sidebar"],
-    button[aria-label="Expand sidebar"],
-    button[aria-label="Collapse sidebar"]{
+    /* Fallbacks: aria-label / title mudam entre versões/idiomas */
+    button[aria-label*="sidebar" i],
+    button[title*="sidebar" i],
+    button[aria-label*="barra lateral" i],
+    button[title*="barra lateral" i],
+    button[aria-label*="open sidebar" i],
+    button[aria-label*="close sidebar" i],
+    button[aria-label*="expand sidebar" i],
+    button[aria-label*="collapse sidebar" i]{
       visibility: visible !important;
       display: inline-flex !important;
       position: fixed !important;
@@ -304,6 +308,7 @@ if "module" not in st.session_state:
 if "open_cat" not in st.session_state:
     st.session_state.open_cat = None
 
+
 # ---------------- Login ----------------
 if not st.session_state.logado:
     st.title("🔐 Login do Painel")
@@ -317,6 +322,31 @@ if not st.session_state.logado:
         else:
             st.error("Usuário ou senha incorretos")
     st.stop()
+
+
+# ✅ Botão “resgate” (Cloud às vezes deixa sidebar travada no browser)
+col_a, col_b = st.columns([1, 4])
+with col_a:
+    if st.button("🧹 Destravar menu", use_container_width=True, help="Limpa estado salvo do sidebar no navegador e recarrega."):
+        components.html(
+            """
+            <script>
+              try{
+                for (const k of Object.keys(localStorage)) {
+                  const kk = (k || "").toLowerCase();
+                  if (kk.includes("sidebar") || kk.includes("collapsed") || kk.includes("streamlit")) {
+                    localStorage.removeItem(k);
+                  }
+                }
+              }catch(e){}
+              window.location.reload();
+            </script>
+            """,
+            height=0,
+        )
+with col_b:
+    st.caption("Se o menu lateral sumir no Cloud, clica em **Destravar menu** (isso limpa o estado do navegador).")
+
 
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
@@ -343,6 +373,7 @@ MENU = {
     },
 }
 
+
 def _sig_ok_now() -> bool:
     ok = bool(st.session_state.get("_sig_ok"))
     if not ok:
@@ -355,6 +386,7 @@ def _sig_ok_now() -> bool:
     except Exception:
         return False
     return datetime.now(TZ) <= dt_until
+
 
 with st.sidebar:
     st.markdown("### Navegação")
@@ -373,13 +405,21 @@ with st.sidebar:
         with st.expander("Acesso restrito", expanded=False):
             if st.button("Comparativo entregador", use_container_width=True):
                 st.session_state.sig_target = "by_entregador"
-                st.session_state.module = "views.auditoria_sigilosa" if st.session_state.get("_sig_ok") else "views.auditoria_gate"
+                st.session_state.module = (
+                    "views.auditoria_sigilosa"
+                    if st.session_state.get("_sig_ok")
+                    else "views.auditoria_gate"
+                )
                 st.session_state.open_cat = None
                 st.rerun()
 
             if st.button("Comparativo geral", use_container_width=True):
                 st.session_state.sig_target = "geral"
-                st.session_state.module = "views.auditoria_sigilosa" if st.session_state.get("_sig_ok") else "views.auditoria_gate"
+                st.session_state.module = (
+                    "views.auditoria_sigilosa"
+                    if st.session_state.get("_sig_ok")
+                    else "views.auditoria_gate"
+                )
                 st.session_state.open_cat = None
                 st.rerun()
 
@@ -392,6 +432,7 @@ with st.sidebar:
                     st.session_state.open_cat = cat
                     st.rerun()
 
+
 # --------------- Dados ---------------
 mod = st.session_state.module
 if mod in ("views.auditoria_sigilosa", "views.auditoria_gate"):
@@ -400,6 +441,7 @@ else:
     df = get_df_once()
     if st.session_state.pop("just_refreshed", False):
         st.success("✅ Base atualizada a partir do Google Drive.")
+
 
 # --------------- Roteador ---------------
 try:
