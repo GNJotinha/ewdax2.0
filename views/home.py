@@ -263,34 +263,29 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         )
 
     # Ranking minimalista (sem barrinha)
-    with c2:
-        medals = ["🥇", "🥈", "🥉"]
+with c2:
+    medals = ["🥇", "🥈", "🥉"]
 
-        if not top3:
-            rows_html = "<div class='neo-subline'>Sem dados suficientes.</div>"
-        else:
-            rows = []
-            for i, (nome, horas) in enumerate(top3):
-                nome_safe = html.escape(nome)
-                rows.append(f"""
-                  <div class="rank-row">
-                    <div class="rank-name">{medals[i]}&nbsp;{nome_safe}</div>
-                    <div class="rank-hours">{horas:.1f}h</div>
-                  </div>
-                """)
-            rows_html = "\n".join(rows)
+    if not top3:
+        rows_html = "<div class='neo-subline'>Sem dados suficientes.</div>"
+    else:
+        rows = []
+        for i, (nome, horas) in enumerate(top3[:3]):
+            nome_safe = html.escape(nome)
+            rows.append(
+                f"<div class='rank-row'>"
+                f"  <div class='rank-name'>{medals[i]}&nbsp;{nome_safe}</div>"
+                f"  <div class='rank-hours'>{horas:.1f}h</div>"
+                f"</div>"
+            )
+        rows_html = "".join(rows)
 
-        st.markdown(
-            f"""
-            <div class="neo-card">
-              <div class="neo-label">🏆 Top 3 entregadores (horas)</div>
-              <div class="neo-subline">Base: mês {mes_txt}</div>
-              <div style="margin-top:10px;">
-                {rows_html}
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    card_html = (
+        f"<div class='neo-card'>"
+        f"  <div class='neo-label'>🏆 Top 3 entregadores (horas)</div>"
+        f"  <div class='neo-subline'>Base: mês {mes_txt}</div>"
+        f"  <div style='margin-top:10px;'>{rows_html}</div>"
+        f"</div>"
+    )
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown(card_html, unsafe_allow_html=True)
