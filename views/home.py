@@ -263,29 +263,33 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         )
 
     # Ranking: SEM HTML nas linhas (zero chance de vazar tags)
-    with c2:
-        st.markdown("### 🏆 Top 3 entregadores (horas)")
-        st.caption(f"Base: mês {mes_txt}")
+with c2:
+    medals = ["🥇", "🥈", "🥉"]
 
-        medals = ["🥇", "🥈", "🥉"]
+    if not top3:
+        rows_html = "<div class='neo-subline'>Sem dados suficientes.</div>"
+    else:
+        rows = []
+        for i, (nome, horas) in enumerate(top3[:3]):
+            nome_safe = html.escape(str(nome))
+            rows.append(f"""
+              <div class="rank-row">
+                <div class="rank-name">{medals[i]}&nbsp;{nome_safe}</div>
+                <div class="rank-hours">{horas:.1f}h</div>
+              </div>
+            """)
+        rows_html = "\n".join(rows)
 
-        if not top3:
-            st.info("Sem dados suficientes.")
-        else:
-            max_h = max(h for _, h in top3)
-            max_h = max(max_h, 1e-9)
+    st.markdown(
+        f"""
+        <div class="neo-card">
+          <div class="neo-label">🏆 Top 3 entregadores (horas)</div>
+          <div class="neo-subline" style="margin-top:-2px;">Base: mês {mes_txt}</div>
+          <div style="margin-top:10px;">
+            {rows_html}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-            for i, (nome, horas) in enumerate(top3[:3]):
-                l, m, r = st.columns([5, 3, 2])
-
-                with l:
-                    st.markdown(f"**{medals[i]} {nome}**")
-
-                with m:
-                    pct = int(round((horas / max_h) * 100.0))
-                    st.progress(min(max(pct, 0), 100))
-
-                with r:
-                    st.markdown(f"**{horas:.1f}h**")
-
-    st.markdown("</div>", unsafe_allow_html=True)
