@@ -84,9 +84,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     horas_total = float(seg_total / 3600.0) if seg_total > 0 else 0.0
     utr_abs = (ofertadas / horas_total) if horas_total > 0 else 0.0
 
-    # =========================
     # UTR média
-    # =========================
     utr_medias = 0.0
     try:
         base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
@@ -147,7 +145,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             top3.append((str(r["pessoa_entregadora"]), float(r["segundos_abs"]) / 3600.0))
 
     # =========================
-    # UI (ORIGINAL)
+    # UI
     # =========================
     st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
 
@@ -242,37 +240,27 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     # =========================
-    # SUPPLY — ÚNICA PARTE ALTERADA
+    # SUPPLY (somente um card)
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="neo-section">Supply</div>', unsafe_allow_html=True)
-
-    horas_media_entregador = (horas_total / entreg_uniq) if entreg_uniq > 0 else 0.0
-    horas_media_dia = (horas_total / df_mes[data_col].nunique()) if data_col else 0.0
 
     st.markdown(
         f"""
         <div class="neo-card">
           <div class="neo-label">Supply Hours (SH)</div>
-
           <div class="neo-value">{horas_total:.1f}h</div>
           <div class="neo-subline">Total no mês ({mes_txt})</div>
-
-          <div style="margin-top:14px; line-height:1.6;">
-            <div class="neo-subline">• Entregadores ativos: <b>{entreg_uniq}</b></div>
-            <div class="neo-subline">• Média por entregador: <b>{horas_media_entregador:.1f}h</b></div>
-            <div class="neo-subline">• Média por dia: <b>{horas_media_dia:.1f}h</b></div>
-            <div class="neo-subline">• UTR absoluta: <b>{utr_abs:.2f}</b></div>
-          </div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
     # =========================
-    # RANKING — ORIGINAL, SEM TOCAR
+    # RANKING (Streamlit puro, fora de card)
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
+
     st.subheader("🏆 Top 3 SH")
 
     if not top3:
