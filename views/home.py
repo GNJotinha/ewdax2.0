@@ -1,5 +1,5 @@
 # views/home.py
-# Home — ranking em Streamlit puro + cards neo no restante
+# Home — Supply em card único + Ranking em Streamlit puro (fora de cards)
 
 import streamlit as st
 import pandas as pd
@@ -241,40 +241,39 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     # =========================
-    # SUPPLY & RANKING
+    # SUPPLY (somente um card)
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
+    st.markdown('<div class="neo-section">Supply</div>', unsafe_allow_html=True)
 
-    c1, c2 = st.columns([1, 1])
+    st.markdown(
+        f"""
+        <div class="neo-card">
+          <div class="neo-label">Supply Hours (SH)</div>
+          <div class="neo-value">{horas_total:.1f}h</div>
+          <div class="neo-subline">Total no mês ({mes_txt})</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-    # Supply Hours
-    with c1:
-        st.markdown(
-            f"""
-            <div class="neo-card">
-              <div class="neo-label">Supply Hours (SH)</div>
-              <div class="neo-value">{horas_total:.1f}h</div>
-              <div class="neo-subline">Total no mês ({mes_txt})</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    # =========================
+    # RANKING (Streamlit puro, fora de card)
+    # =========================
+    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
 
-    # Ranking — Streamlit puro (sem card)
-    with c2:
-        st.subheader("🏆 Top 3 entregadores (horas)")
-        st.caption(f"Base: mês {mes_txt}")
+    st.subheader("🏆 Top 3 entregadores (horas)")
+    st.caption(f"Base: mês {mes_txt}")
 
-        if not top3:
-            st.info("Sem dados suficientes.")
-        else:
-            medals = ["🥇", "🥈", "🥉"]
-            for i, (nome, horas) in enumerate(top3):
-                a, b = st.columns([5, 1])
-                with a:
-                    st.markdown(f"**{medals[i]} {nome}**")
-                with b:
-                    st.markdown(f"**{horas:.1f}h**")
+    if not top3:
+        st.info("Sem dados suficientes.")
+    else:
+        medals = ["🥇", "🥈", "🥉"]
+        for i, (nome, horas) in enumerate(top3):
+            a, b = st.columns([6, 1])
+            with a:
+                st.markdown(f"**{medals[i]} {nome}**")
+            with b:
+                st.markdown(f"**{horas:.1f}h**")
 
     st.markdown("</div>", unsafe_allow_html=True)
