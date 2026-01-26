@@ -9,32 +9,18 @@ from data_loader import carregar_dados
 
 TZ = ZoneInfo("America/Sao_Paulo")
 
-# =========================================================
-# 🔄 Carga ÚNICA do DF por render + suporte a hard refresh
-# =========================================================
 def get_df_once():
-    """
-    Carrega o df uma única vez por render.
-    Se o usuário clicou em 'Atualizar dados', força baixar do Drive.
-    """
     prefer = st.session_state.pop("force_refresh", False)
     ts = pd.Timestamp.now().timestamp() if prefer else None
     return carregar_dados(prefer_drive=prefer, _ts=ts)
 
-# -------------------------------------------------------------------
-# Config da página
-# -------------------------------------------------------------------
 st.set_page_config(page_title="Painel de Entregadores", page_icon="📋")
 
-# -------------------------------------------------------------------
-# Estilo
-# -------------------------------------------------------------------
 st.markdown(
     """
     <style>
     :root{
       --bg: #0b0f14;
-
       --text: #e8edf6;
       --muted: rgba(232,237,246,.70);
 
@@ -48,18 +34,12 @@ st.markdown(
       --green: #37d67a;
     }
 
-    /* =========================================
-       LIMPAR BARRAS DO STREAMLIT (máx possível)
-    ========================================== */
     header[data-testid="stHeader"]{ display:none !important; }
     footer{ display:none !important; }
     #MainMenu{ visibility:hidden !important; }
     [data-testid="stAppViewContainer"]{ padding-top: 0rem !important; }
     div[data-testid="stDecoration"]{ display:none !important; }
 
-    /* =========================================
-       FUNDO
-    ========================================== */
     body{
       background:
         radial-gradient(900px 500px at 15% 10%, rgba(88,166,255,.15), transparent 60%),
@@ -81,9 +61,6 @@ st.markdown(
       border-right: 1px solid rgba(255,255,255,.07);
     }
 
-    /* =========================================
-       BOTÕES
-    ========================================== */
     .stButton>button{
       background: linear-gradient(135deg, rgba(88,166,255,.92), rgba(59,130,246,.92));
       color: white;
@@ -98,9 +75,6 @@ st.markdown(
       border-color: rgba(255,255,255,.18);
     }
 
-    /* =========================================
-       SHELL (PAINEL CENTRAL)
-    ========================================== */
     .neo-shell{
       position: relative;
       border-radius: 22px;
@@ -118,35 +92,6 @@ st.markdown(
       content:none !important;
     }
 
-    /* =========================================
-       TOPBAR
-    ========================================== */
-    .neo-topbar{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:14px;
-      padding: 16px 18px;
-      border-radius: 16px;
-      background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03));
-      border: 1px solid rgba(255,255,255,.08);
-      margin-bottom: 14px;
-    }
-    .neo-title{
-      display:flex;
-      align-items:center;
-      gap:12px;
-      font-size: 1.65rem;
-      font-weight: 900;
-      letter-spacing: .2px;
-    }
-    .neo-sub{
-      margin-top: 4px;
-      font-size: .95rem;
-      color: var(--muted);
-      font-weight: 600;
-    }
-
     .neo-divider{
       height: 1px;
       background: rgba(255,255,255,.08);
@@ -160,9 +105,6 @@ st.markdown(
       color: rgba(232,237,246,.92);
     }
 
-    /* =========================================
-       GRIDS
-    ========================================== */
     .neo-grid-4{
       display:grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -175,9 +117,6 @@ st.markdown(
       align-items: stretch;
     }
 
-    /* =========================================
-       CARDS
-    ========================================== */
     .neo-card{
       position: relative;
       border-radius: 16px;
@@ -239,49 +178,12 @@ st.markdown(
       font-weight: 650;
     }
 
-    /* ✅ ACEITAS (glow / degradê) */
-    .neo-success{
-      border-color: rgba(55,214,122,.22);
-    }
+    .neo-success{ border-color: rgba(55,214,122,.22); }
     .neo-success .neo-value{ color: rgba(160,255,205,.98); }
-    .neo-success:before{
-      content:"";
-      position:absolute;
-      left:-20%;
-      bottom:-35%;
-      width: 160%;
-      height: 90%;
-      background:
-        radial-gradient(60% 70% at 35% 55%, rgba(55,214,122,.30), transparent 62%),
-        radial-gradient(55% 65% at 70% 55%, rgba(55,214,122,.18), transparent 65%);
-      transform: rotate(-6deg);
-      opacity: .95;
-      pointer-events:none;
-    }
 
-    /* ✅ REJEITADAS (glow / degradê) */
-    .neo-danger{
-      border-color: rgba(255,77,77,.22);
-    }
+    .neo-danger{ border-color: rgba(255,77,77,.22); }
     .neo-danger .neo-value{ color: rgba(255,110,110,.98); }
-    .neo-danger:before{
-      content:"";
-      position:absolute;
-      left:-20%;
-      bottom:-35%;
-      width: 160%;
-      height: 90%;
-      background:
-        radial-gradient(60% 70% at 35% 55%, rgba(255,77,77,.38), transparent 62%),
-        radial-gradient(55% 65% at 70% 55%, rgba(255,77,77,.26), transparent 65%);
-      transform: rotate(-6deg);
-      opacity: .95;
-      pointer-events:none;
-    }
 
-    /* =========================================
-       PROGRESS (ADERÊNCIA)
-    ========================================== */
     .neo-progress-wrap{ margin-top: 14px; }
     .neo-progress{
       width:100%;
@@ -312,46 +214,40 @@ st.markdown(
       font-weight: 700;
     }
 
-        /* ===== Ranking card (sem firula) ===== */
-    .rank-row{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-      padding: 8px 10px;
-      border-radius: 12px;
-      background: rgba(255,255,255,.03);
-      border: 1px solid rgba(255,255,255,.06);
-      margin-top: 8px;
-    }
-    
-    .rank-name{
-      font-weight: 850;
-      color: rgba(232,237,246,.92);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: calc(100% - 80px);
-    }
-    
-    .rank-hours{
-      width: 70px;
-      text-align:right;
-      font-weight: 900;
-    }
-
     @media (max-width: 1100px){
       .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .neo-grid-2{ grid-template-columns: 1fr; }
     }
+    .toprow{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin: 10px 0;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    .toprow .name{
+      font-weight: 800;
+      color: rgba(232,237,246,.92);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .toprow .hours{
+      font-weight: 900;
+      color: rgba(232,237,246,.70);
+      flex-shrink: 0;
+    }
+
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# ---------------------------------------------------------
-# Estado inicial
-# ---------------------------------------------------------
+# ---------------- Estado inicial ----------------
 if "logado" not in st.session_state:
     st.session_state.logado = False
     st.session_state.usuario = ""
@@ -362,9 +258,7 @@ if "module" not in st.session_state:
 if "open_cat" not in st.session_state:
     st.session_state.open_cat = None
 
-# ---------------------------------------------------------
-# Login
-# ---------------------------------------------------------
+# ---------------- Login ----------------
 if not st.session_state.logado:
     st.title("🔐 Login do Painel")
     usuario = st.text_input("Usuário")
@@ -380,13 +274,8 @@ if not st.session_state.logado:
 
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
-# ---------------------------------------------------------
-# Menu
-# ---------------------------------------------------------
 MENU = {
-    "Promoção da virada": {
-        "Ranking": "views.promo_virada",
-    },
+    "Promoção da virada": {"Ranking": "views.promo_virada"},
     "Desempenho do Entregador": {
         "Ver geral": "views.ver_geral",
         "Simplificada (WhatsApp)": "views.simplificada",
@@ -408,14 +297,11 @@ MENU = {
     },
 }
 
-# ---------------------------------------------------------
-# Helper: validade do acesso sigiloso
-# ---------------------------------------------------------
 def _sig_ok_now() -> bool:
     ok = bool(st.session_state.get("_sig_ok"))
     if not ok:
         return False
-    until = st.session_state.get("_sig_until")  # ISO str ou None
+    until = st.session_state.get("_sig_until")
     if until is None:
         return True
     try:
@@ -424,11 +310,9 @@ def _sig_ok_now() -> bool:
         return False
     return datetime.now(TZ) <= dt_until
 
-# ---------------------------------------------------------
-# Sidebar
-# ---------------------------------------------------------
 with st.sidebar:
     st.markdown("### Navegação")
+
     if st.button("Início", use_container_width=True):
         st.session_state.module = "views.home"
         st.session_state.open_cat = None
@@ -443,53 +327,35 @@ with st.sidebar:
         with st.expander("Acesso restrito", expanded=False):
             if st.button("Comparativo entregador", use_container_width=True):
                 st.session_state.sig_target = "by_entregador"
-                if st.session_state.get("_sig_ok"):
-                    st.session_state.sig_modo = "by_entregador"
-                    st.session_state.module = "views.auditoria_sigilosa"
-                else:
-                    st.session_state.module = "views.auditoria_gate"
+                st.session_state.module = "views.auditoria_sigilosa" if st.session_state.get("_sig_ok") else "views.auditoria_gate"
                 st.session_state.open_cat = None
                 st.rerun()
 
             if st.button("Comparativo geral", use_container_width=True):
                 st.session_state.sig_target = "geral"
-                if st.session_state.get("_sig_ok"):
-                    st.session_state.sig_modo = "geral"
-                    st.session_state.module = "views.auditoria_sigilosa"
-                else:
-                    st.session_state.module = "views.auditoria_gate"
+                st.session_state.module = "views.auditoria_sigilosa" if st.session_state.get("_sig_ok") else "views.auditoria_gate"
                 st.session_state.open_cat = None
                 st.rerun()
 
     for cat, opts in MENU.items():
-        if isinstance(opts, str):
-            if st.button(cat, use_container_width=True):
-                st.session_state.module = opts
-                st.session_state.open_cat = None
-                st.rerun()
-        else:
-            expanded = (st.session_state.open_cat == cat)
-            with st.expander(cat, expanded=expanded):
-                for label, module in opts.items():
-                    if st.button(label, key=f"btn_{cat}_{label}", use_container_width=True):
-                        st.session_state.module = module
-                        st.session_state.open_cat = cat
-                        st.rerun()
+        expanded = (st.session_state.open_cat == cat)
+        with st.expander(cat, expanded=expanded):
+            for label, module in opts.items():
+                if st.button(label, key=f"btn_{cat}_{label}", use_container_width=True):
+                    st.session_state.module = module
+                    st.session_state.open_cat = cat
+                    st.rerun()
 
-# ---------------------------------------------------------
-# Dados
-# ---------------------------------------------------------
+# --------------- Dados ---------------
 mod = st.session_state.module
 if mod in ("views.auditoria_sigilosa", "views.auditoria_gate"):
     df = pd.DataFrame()
 else:
-    df = carregar_dados(prefer_drive=st.session_state.pop("force_refresh", False))
+    df = get_df_once()
     if st.session_state.pop("just_refreshed", False):
         st.success("✅ Base atualizada a partir do Google Drive.")
 
-# ---------------------------------------------------------
-# Roteador
-# ---------------------------------------------------------
+# --------------- Roteador ---------------
 try:
     page = importlib.import_module(st.session_state.module)
 except Exception as e:
