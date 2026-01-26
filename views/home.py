@@ -300,60 +300,60 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
 
     # layout original: Supply em card, Ranking em Streamlit puro (sem mexer)
-c1, c2 = st.columns(2)
-
-with c1:
-    horas_media_entregador = (horas_total / entreg_uniq) if entreg_uniq > 0 else 0.0
-    horas_media_dia = (horas_total / df_mes[data_col].nunique()) if data_col else 0.0
-
-    st.markdown(
-        f"""
-        <div class="neo-card">
-          <div class="neo-label">Supply Hours (SH)</div>
-
-          <div class="neo-value">{horas_total:.1f}h</div>
-          <div class="neo-subline">Total no mês ({mes_txt})</div>
-
-          <div style="margin-top:14px; line-height:1.6;">
-            <div class="neo-subline">• Entregadores ativos: <b>{entreg_uniq}</b></div>
-            <div class="neo-subline">• Média por entregador: <b>{horas_media_entregador:.1f}h</b></div>
-            <div class="neo-subline">• Média por dia: <b>{horas_media_dia:.1f}h</b></div>
-            <div class="neo-subline">• UTR absoluta: <b>{utr_abs:.2f}</b></div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-with c2:
-    # monta o ranking em HTML dentro de um neo-card (sem vazar)
-    if not top3:
-        rows_html = "<div class='neo-subline' style='margin-top:12px;'>Sem dados suficientes.</div>"
-    else:
-        medals = ["🥇", "🥈", "🥉"]
-        rows = []
-        for i, (nome, horas) in enumerate(top3):
-            rows.append(
-                f"""
-                <div class="rank-row">
-                  <div class="rank-name">{medals[i]}&nbsp;{nome}</div>
-                  <div class="rank-hours">{horas:.1f}h</div>
-                </div>
-                """
-            )
-        rows_html = "\n".join(rows)
-
-    st.markdown(
-        f"""
-        <div class="neo-card">
-          <div class="neo-label">🏆 Top 3 entregadores (horas)</div>
-          <div class="neo-subline">Base: mês {mes_txt}</div>
-
-          <div style="margin-top:12px;">
-            {rows_html}
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        horas_media_entregador = (horas_total / entreg_uniq) if entreg_uniq > 0 else 0.0
+        horas_media_dia = (horas_total / df_mes[data_col].nunique()) if data_col else 0.0
+    
+        st.markdown(
+            f"""
+            <div class="neo-card">
+              <div class="neo-label">Supply Hours (SH)</div>
+    
+              <div class="neo-value">{horas_total:.1f}h</div>
+              <div class="neo-subline">Total no mês ({mes_txt})</div>
+    
+              <div style="margin-top:14px; line-height:1.6;">
+                <div class="neo-subline">• Entregadores ativos: <b>{entreg_uniq}</b></div>
+                <div class="neo-subline">• Média por entregador: <b>{horas_media_entregador:.1f}h</b></div>
+                <div class="neo-subline">• Média por dia: <b>{horas_media_dia:.1f}h</b></div>
+                <div class="neo-subline">• UTR absoluta: <b>{utr_abs:.2f}</b></div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    
+    with c2:
+        # monta o ranking em HTML dentro de um neo-card (sem vazar)
+        if not top3:
+            rows_html = "<div class='neo-subline' style='margin-top:12px;'>Sem dados suficientes.</div>"
+        else:
+            medals = ["🥇", "🥈", "🥉"]
+            rows = []
+            for i, (nome, horas) in enumerate(top3):
+                rows.append(
+                    f"""
+                    <div class="rank-row">
+                      <div class="rank-name">{medals[i]}&nbsp;{nome}</div>
+                      <div class="rank-hours">{horas:.1f}h</div>
+                    </div>
+                    """
+                )
+            rows_html = "\n".join(rows)
+    
+        st.markdown(
+            f"""
+            <div class="neo-card">
+              <div class="neo-label">🏆 Top 3 entregadores (horas)</div>
+              <div class="neo-subline">Base: mês {mes_txt}</div>
+    
+              <div style="margin-top:12px;">
+                {rows_html}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    
