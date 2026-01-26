@@ -1,7 +1,6 @@
 # views/home.py
-# Home — ranking minimalista (sem barrinha) + cards padrão neo
+# Home — ranking em Streamlit puro + cards neo no restante
 
-import html
 import streamlit as st
 import pandas as pd
 from relatorios import utr_por_entregador_turno
@@ -262,30 +261,20 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             unsafe_allow_html=True
         )
 
-        # Ranking minimalista (sem barrinha)
+    # Ranking — Streamlit puro (sem card)
     with c2:
-        medals = ["🥇", "🥈", "🥉"]
-    
+        st.subheader("🏆 Top 3 entregadores (horas)")
+        st.caption(f"Base: mês {mes_txt}")
+
         if not top3:
-            rows_html = "<div class='neo-subline'>Sem dados suficientes.</div>"
+            st.info("Sem dados suficientes.")
         else:
-            rows = []
-            for i, (nome, horas) in enumerate(top3[:3]):
-                nome_safe = html.escape(nome)
-                rows.append(
-                    f"<div class='rank-row'>"
-                    f"  <div class='rank-name'>{medals[i]}&nbsp;{nome_safe}</div>"
-                    f"  <div class='rank-hours'>{horas:.1f}h</div>"
-                    f"</div>"
-                )
-            rows_html = "".join(rows)
-    
-        card_html = (
-            f"<div class='neo-card'>"
-            f"  <div class='neo-label'>🏆 Top 3 entregadores (horas)</div>"
-            f"  <div class='neo-subline'>Base: mês {mes_txt}</div>"
-            f"  <div style='margin-top:10px;'>{rows_html}</div>"
-            f"</div>"
-        )
-    
-        st.markdown(card_html, unsafe_allow_html=True)
+            medals = ["🥇", "🥈", "🥉"]
+            for i, (nome, horas) in enumerate(top3):
+                a, b = st.columns([5, 1])
+                with a:
+                    st.markdown(f"**{medals[i]} {nome}**")
+                with b:
+                    st.markdown(f"**{horas:.1f}h**")
+
+    st.markdown("</div>", unsafe_allow_html=True)
