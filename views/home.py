@@ -1,5 +1,6 @@
 # views/home.py
-# Home — Topo sem "card duplo" + SH e Ranking com mesma altura (lado a lado)
+# Home — topo sem "bolha" (remove neo-shell) + SH e Ranking com mesma altura
+# Ranking renderizado em 1 bloco HTML pra não vazar no DOM do Streamlit
 
 import streamlit as st
 import pandas as pd
@@ -88,7 +89,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     utr_medias = 0.0
     try:
         base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
-        if not base_home.empty:
+        if base_home is not None and not base_home.empty:
             base_pos = base_home[base_home["supply_hours"] > 0]
             if not base_pos.empty:
                 utr_medias = float((base_pos["corridas_ofertadas"] / base_pos["supply_hours"]).mean())
@@ -145,14 +146,14 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             top3.append((str(r["pessoa_entregadora"]), float(r["segundos_abs"]) / 3600.0))
 
     # =========================
-    # UI
+    # UI (SEM neo-shell -> sem "bolha" gigante no topo)
     # =========================
-    st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
 
     # ---------------------------------------------------------
     # TOPO (sem card) — título + botão
     # ---------------------------------------------------------
     hL, hR = st.columns([6, 2])
+
     with hL:
         st.markdown(
             f"""
@@ -248,7 +249,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     # =========================
-    # SUPPLY & RANKING (mesma altura)
+    # SUPPLY & RANKING (mesma altura, ranking não vaza)
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
@@ -270,32 +271,28 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         )
 
     with c2:
-        # abre o card
-        st.markdown(
-            f"""
-            <div class="neo-card" style="min-height:{card_min_h}px;">
-              <div class="neo-label">🏆 Top 3 entregadores (horas)</div>
-              <div class="neo-subline">Base: mês {mes_txt}</div>
-            """,
-            unsafe_allow_html=True
-        )
-
         if not top3:
-            st.markdown("<div class='neo-subline'>Sem dados suficientes.</div>", unsafe_allow_html=True)
+            rows_html = "<div class='neo-subline' style='margin-top:12px;'>Sem dados suficientes.</div>"
         else:
             medals = ["🥇", "🥈", "🥉"]
+            rows = []
             for i, (nome, horas) in enumerate(top3):
-                st.markdown(
+                rows.append(
                     f"""
                     <div class="rank-row">
                       <div class="rank-name">{medals[i]}&nbsp;{nome}</div>
                       <div class="rank-hours">{horas:.1f}h</div>
                     </div>
-                    """,
-                    unsafe_allow_html=True
+                    """
                 )
+            rows_html = "\n".join(rows)
 
-        # fecha o card
-        st.markdown("</div>", unsafe_allow_html=True)
+        ranking_card_html = f"""
+        <div class="neo-card" style="min-height:{card_min_h}px;">
+          <div class="neo-label">🏆 Top 3 entregadores (horas)</div>
+          <div class="neo-subline">Base: mês {mes_txt}</div>
+          {rows_html}
+        </div>
+        """
 
-    st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown(ranking_card_html, unsafe_allow_html=True)
