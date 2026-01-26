@@ -1,5 +1,5 @@
 # views/home.py
-# Home — Supply em card único + Ranking em Streamlit puro (fora de cards)
+# Home — Topo sem "card duplo" + SH e Ranking com mesma altura (lado a lado)
 
 import streamlit as st
 import pandas as pd
@@ -84,7 +84,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     horas_total = float(seg_total / 3600.0) if seg_total > 0 else 0.0
     utr_abs = (ofertadas / horas_total) if horas_total > 0 else 0.0
 
-    # UTR média
+    # UTR média (mantém consistência com utr_por_entregador_turno)
     utr_medias = 0.0
     try:
         base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
@@ -149,20 +149,27 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     # =========================
     st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
 
-    # Topbar
-    hL, hR = st.columns([4, 1])
+    # ---------------------------------------------------------
+    # TOPO (sem card) — título + botão
+    # ---------------------------------------------------------
+    hL, hR = st.columns([6, 2])
     with hL:
         st.markdown(
             f"""
-            <div class="neo-topbar">
-              <div>
-                <div class="neo-title">📁&nbsp;Painel de Entregadores</div>
-                <div class="neo-sub">Dados atualizados • {data_str}</div>
+            <div style="padding: 6px 2px 6px 2px;">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <div style="font-size: 1.95rem; font-weight: 950; letter-spacing: .2px;">
+                  📁 Painel de Entregadores
+                </div>
+              </div>
+              <div style="margin-top:6px; font-size: .95rem; color: rgba(232,237,246,.70); font-weight: 650;">
+                Dados atualizados • {data_str}
               </div>
             </div>
             """,
             unsafe_allow_html=True
         )
+
     with hR:
         if st.button("Atualizar dados", use_container_width=True):
             st.session_state.force_refresh = True
@@ -221,6 +228,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
           <div class="neo-card">
             <div class="neo-value">{ader_pct:.1f}%</div>
             <div class="neo-subline" style="color:#ffb020">{incons_txt}</div>
+            <div class="neo-subline">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
           </div>
 
           <div class="neo-card">
@@ -240,38 +248,54 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     # =========================
-    # SUPPLY (somente um card)
+    # SUPPLY & RANKING (mesma altura)
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="neo-section">Supply</div>', unsafe_allow_html=True)
+    st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
 
-    st.markdown(
-        f"""
-        <div class="neo-card">
-          <div class="neo-label">Supply Hours (SH)</div>
-          <div class="neo-value">{horas_total:.1f}h</div>
-          <div class="neo-subline">Total no mês ({mes_txt})</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    card_min_h = 220  # ajusta aqui se quiser mais alto/baixo
 
-    # =========================
-    # RANKING (Streamlit puro, fora de card)
-    # =========================
-    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
 
-    st.subheader("🏆 Top 3 SH")
+    with c1:
+        st.markdown(
+            f"""
+            <div class="neo-card" style="min-height:{card_min_h}px;">
+              <div class="neo-label">Supply Hours (SH)</div>
+              <div class="neo-value">{horas_total:.1f}h</div>
+              <div class="neo-subline">Total no mês ({mes_txt})</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
-    if not top3:
-        st.info("Sem dados suficientes.")
-    else:
-        medals = ["🥇", "🥈", "🥉"]
-        for i, (nome, horas) in enumerate(top3):
-            a, b = st.columns([6, 1])
-            with a:
-                st.markdown(f"**{medals[i]} {nome}**")
-            with b:
-                st.markdown(f"**{horas:.1f}h**")
+    with c2:
+        # abre o card
+        st.markdown(
+            f"""
+            <div class="neo-card" style="min-height:{card_min_h}px;">
+              <div class="neo-label">🏆 Top 3 entregadores (horas)</div>
+              <div class="neo-subline">Base: mês {mes_txt}</div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        if not top3:
+            st.markdown("<div class='neo-subline'>Sem dados suficientes.</div>", unsafe_allow_html=True)
+        else:
+            medals = ["🥇", "🥈", "🥉"]
+            for i, (nome, horas) in enumerate(top3):
+                st.markdown(
+                    f"""
+                    <div class="rank-row">
+                      <div class="rank-name">{medals[i]}&nbsp;{nome}</div>
+                      <div class="rank-hours">{horas:.1f}h</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+        # fecha o card
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
