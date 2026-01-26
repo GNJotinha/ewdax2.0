@@ -220,7 +220,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         <div class="neo-grid-2">
           <div class="neo-card">
             <div class="neo-value">{ader_pct:.1f}%</div>
-            <div class="neo-subline">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
             <div class="neo-subline" style="color:#ffb020">{incons_txt}</div>
           </div>
 
@@ -262,8 +261,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
 
-    st.subheader("🏆 Top 3 entregadores (horas)")
-    st.caption(f"Base: mês {mes_txt}")
+    st.subheader("🏆 Top 3 SH")
 
     if not top3:
         st.info("Sem dados suficientes.")
