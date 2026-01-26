@@ -312,6 +312,34 @@ st.markdown(
       font-weight: 700;
     }
 
+        /* ===== Ranking card (sem firula) ===== */
+    .rank-row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.06);
+      margin-top: 8px;
+    }
+    
+    .rank-name{
+      font-weight: 850;
+      color: rgba(232,237,246,.92);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: calc(100% - 80px);
+    }
+    
+    .rank-hours{
+      width: 70px;
+      text-align:right;
+      font-weight: 900;
+    }
+
     @media (max-width: 1100px){
       .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .neo-grid-2{ grid-template-columns: 1fr; }
