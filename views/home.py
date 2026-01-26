@@ -1,6 +1,6 @@
-# views/home.py
-# Home — topo limpo (sem neo-shell) + SH com comparação vs mês anterior
-# Ranking mantido do jeito original (Streamlit puro)
+# home.py
+# Home — Supply em card único + Ranking em Streamlit puro (fora de cards)
+# ✅ Supply com comparação vs mês anterior (aumenta tamanho do card sem mexer no ranking)
 
 import streamlit as st
 import pandas as pd
@@ -32,30 +32,31 @@ def _pick_col(cols, candidates):
     return None
 
 
-def _delta(cur: float, prev: float | None):
-    if prev is None:
-        return None, None
-    d = float(cur) - float(prev)
-    pct = (d / float(prev) * 100.0) if prev != 0 else None
-    return d, pct
+def _fmt_h(h):
+    try:
+        return f"{float(h):.1f}h".replace(".", ",")
+    except Exception:
+        return "—"
 
 
-def _fmt_delta_h(dh: float | None):
+def _fmt_delta_h(dh):
     if dh is None:
         return "—"
     sign = "+" if dh > 0 else ""
     return f"{sign}{dh:.1f}h".replace(".", ",")
 
 
-def _fmt_delta_pct(dp: float | None):
+def _fmt_delta_pct(dp):
     if dp is None:
         return "—"
     sign = "+" if dp > 0 else ""
     return f"{sign}{dp:.1f}%".replace(".", ",")
 
 
-def _arrow(dh: float | None):
-    if dh is None or abs(dh) < 1e-9:
+def _arrow(dh):
+    if dh is None:
+        return "⚪"
+    if abs(dh) < 1e-9:
         return "⚪"
     return "🟢⬆" if dh > 0 else "🔴⬇"
 
@@ -113,11 +114,11 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     horas_total = float(seg_total / 3600.0) if seg_total > 0 else 0.0
     utr_abs = (ofertadas / horas_total) if horas_total > 0 else 0.0
 
-    # UTR média (mantém consistência com utr_por_entregador_turno)
+    # UTR média
     utr_medias = 0.0
     try:
         base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
-        if base_home is not None and not base_home.empty:
+        if not base_home.empty:
             base_pos = base_home[base_home["supply_hours"] > 0]
             if not base_pos.empty:
                 utr_medias = float((base_pos["corridas_ofertadas"] / base_pos["supply_hours"]).mean())
@@ -174,48 +175,50 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             top3.append((str(r["pessoa_entregadora"]), float(r["segundos_abs"]) / 3600.0))
 
     # =========================
-    # MÊS ANTERIOR (p/ comparação SH)
+    # COMPARAÇÃO VS MÊS ANTERIOR (SH)
     # =========================
     if mes_atual == 1:
         mes_prev, ano_prev = 12, ano_atual - 1
     else:
         mes_prev, ano_prev = mes_atual - 1, ano_atual
 
+    horas_prev = None
     df_prev = None
+
     if {"mes", "ano"}.issubset(df.columns):
         df_prev = df[(df["mes"] == mes_prev) & (df["ano"] == ano_prev)].copy()
     elif "mes_ano" in df.columns:
-        # tenta achar pelo timestamp do mês anterior
         alvo = pd.Timestamp(year=ano_prev, month=mes_prev, day=1)
         df_prev = df[pd.to_datetime(df["mes_ano"], errors="coerce") == alvo].copy()
 
-    horas_prev = None
     if df_prev is not None and not df_prev.empty:
         seg_prev = pd.to_numeric(df_prev.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
         horas_prev = float(seg_prev / 3600.0) if seg_prev > 0 else 0.0
 
-    dh, dp = _delta(horas_total, horas_prev)
+    dh = (horas_total - horas_prev) if horas_prev is not None else None
+    dp = ((dh / horas_prev) * 100.0) if (horas_prev not in (None, 0)) else None
     arrow = _arrow(dh)
+    prev_txt = f"{mes_prev:02d}/{ano_prev}"
 
     # =========================
-    # UI (Topo limpo)
+    # UI
     # =========================
-    hL, hR = st.columns([6, 2])
+    st.markdown('<div class="neo-shell">', unsafe_allow_html=True)
+
+    # Topbar
+    hL, hR = st.columns([4, 1])
     with hL:
         st.markdown(
             f"""
-            <div style="padding: 6px 2px 6px 2px;">
-              <div style="font-size: 1.95rem; font-weight: 950; letter-spacing: .2px;">
-                📁 Painel de Entregadores
-              </div>
-              <div style="margin-top:6px; font-size: .95rem; color: rgba(232,237,246,.70); font-weight: 650;">
-                Dados atualizados • {data_str}
+            <div class="neo-topbar">
+              <div>
+                <div class="neo-title">📁&nbsp;Painel de Entregadores</div>
+                <div class="neo-sub">Dados atualizados • {data_str}</div>
               </div>
             </div>
             """,
             unsafe_allow_html=True
         )
-
     with hR:
         if st.button("Atualizar dados", use_container_width=True):
             st.session_state.force_refresh = True
@@ -274,7 +277,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
           <div class="neo-card">
             <div class="neo-value">{ader_pct:.1f}%</div>
             <div class="neo-subline" style="color:#ffb020">{incons_txt}</div>
-            <div class="neo-subline">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
           </div>
 
           <div class="neo-card">
@@ -294,47 +296,44 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     # =========================
-    # SUPPLY (card maior com comparação)
+    # SUPPLY (um card, agora maior por conteúdo)
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
+    st.markdown('<div class="neo-section">Supply</div>', unsafe_allow_html=True)
 
-    # layout original: Supply em card, Ranking em Streamlit puro (sem mexer)
-    cL, cR = st.columns(2)
+    st.markdown(
+        f"""
+        <div class="neo-card">
+          <div class="neo-label">Supply Hours (SH)</div>
+          <div class="neo-value">{horas_total:.1f}h</div>
+          <div class="neo-subline">Total no mês ({mes_txt})</div>
 
-    with cL:
-        prev_txt = f"{mes_prev:02d}/{ano_prev}"
-        prev_h_txt = "—" if horas_prev is None else f"{horas_prev:.1f}h".replace(".", ",")
-        st.markdown(
-            f"""
-            <div class="neo-card">
-              <div class="neo-label">Supply Hours (SH)</div>
-              <div class="neo-value">{horas_total:.1f}h</div>
-              <div class="neo-subline">Total no mês ({mes_txt})</div>
-
-              <div style="margin-top:14px; line-height:1.65;">
-                <div class="neo-subline"><b>Comparação vs mês anterior</b></div>
-                <div class="neo-subline">• SH {prev_txt}: <b>{prev_h_txt}</b></div>
-                <div class="neo-subline">• Δ: <b>{_fmt_delta_h(dh)}</b> ({_fmt_delta_pct(dp)}) {arrow}</div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+          <div style="margin-top:14px; line-height:1.65;">
+            <div class="neo-subline"><b>Comparação vs mês anterior</b></div>
+            <div class="neo-subline">• SH {prev_txt}: <b>{_fmt_h(horas_prev)}</b></div>
+            <div class="neo-subline">• Δ: <b>{_fmt_delta_h(dh)}</b> ({_fmt_delta_pct(dp)}) {arrow}</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # =========================
-    # RANKING (deixa como era)
+    # RANKING (original, do jeito que tava)
     # =========================
-    with cR:
-        st.subheader("🏆 Top 3 SH")
+    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
 
-        if not top3:
-            st.info("Sem dados suficientes.")
-        else:
-            medals = ["🥇", "🥈", "🥉"]
-            for i, (nome, horas) in enumerate(top3):
-                a, b = st.columns([6, 1])
-                with a:
-                    st.markdown(f"**{medals[i]} {nome}**")
-                with b:
-                    st.markdown(f"**{horas:.1f}h**")
+    st.subheader("🏆 Top 3 SH")
+
+    if not top3:
+        st.info("Sem dados suficientes.")
+    else:
+        medals = ["🥇", "🥈", "🥉"]
+        for i, (nome, horas) in enumerate(top3):
+            a, b = st.columns([6, 1])
+            with a:
+                st.markdown(f"**{medals[i]} {nome}**")
+            with b:
+                st.markdown(f"**{horas:.1f}h**")
+
+    st.markdown("</div>", unsafe_allow_html=True)
