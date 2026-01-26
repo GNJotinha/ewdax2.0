@@ -1,6 +1,6 @@
 # views/home.py
-# Home — topo sem "bolha" (remove neo-shell) + SH e Ranking com mesma altura
-# Ranking renderizado em 1 bloco HTML pra não vazar no DOM do Streamlit
+# Home — topo limpo (sem neo-shell) + SH com comparação vs mês anterior
+# Ranking mantido do jeito original (Streamlit puro)
 
 import streamlit as st
 import pandas as pd
@@ -30,6 +30,34 @@ def _pick_col(cols, candidates):
         if c in cols:
             return c
     return None
+
+
+def _delta(cur: float, prev: float | None):
+    if prev is None:
+        return None, None
+    d = float(cur) - float(prev)
+    pct = (d / float(prev) * 100.0) if prev != 0 else None
+    return d, pct
+
+
+def _fmt_delta_h(dh: float | None):
+    if dh is None:
+        return "—"
+    sign = "+" if dh > 0 else ""
+    return f"{sign}{dh:.1f}h".replace(".", ",")
+
+
+def _fmt_delta_pct(dp: float | None):
+    if dp is None:
+        return "—"
+    sign = "+" if dp > 0 else ""
+    return f"{sign}{dp:.1f}%".replace(".", ",")
+
+
+def _arrow(dh: float | None):
+    if dh is None or abs(dh) < 1e-9:
+        return "⚪"
+    return "🟢⬆" if dh > 0 else "🔴⬇"
 
 
 # ---------------------------------------------------------
@@ -146,22 +174,39 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             top3.append((str(r["pessoa_entregadora"]), float(r["segundos_abs"]) / 3600.0))
 
     # =========================
-    # UI (SEM neo-shell -> sem "bolha" gigante no topo)
+    # MÊS ANTERIOR (p/ comparação SH)
     # =========================
+    if mes_atual == 1:
+        mes_prev, ano_prev = 12, ano_atual - 1
+    else:
+        mes_prev, ano_prev = mes_atual - 1, ano_atual
 
-    # ---------------------------------------------------------
-    # TOPO (sem card) — título + botão
-    # ---------------------------------------------------------
+    df_prev = None
+    if {"mes", "ano"}.issubset(df.columns):
+        df_prev = df[(df["mes"] == mes_prev) & (df["ano"] == ano_prev)].copy()
+    elif "mes_ano" in df.columns:
+        # tenta achar pelo timestamp do mês anterior
+        alvo = pd.Timestamp(year=ano_prev, month=mes_prev, day=1)
+        df_prev = df[pd.to_datetime(df["mes_ano"], errors="coerce") == alvo].copy()
+
+    horas_prev = None
+    if df_prev is not None and not df_prev.empty:
+        seg_prev = pd.to_numeric(df_prev.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
+        horas_prev = float(seg_prev / 3600.0) if seg_prev > 0 else 0.0
+
+    dh, dp = _delta(horas_total, horas_prev)
+    arrow = _arrow(dh)
+
+    # =========================
+    # UI (Topo limpo)
+    # =========================
     hL, hR = st.columns([6, 2])
-
     with hL:
         st.markdown(
             f"""
             <div style="padding: 6px 2px 6px 2px;">
-              <div style="display:flex; align-items:center; gap:10px;">
-                <div style="font-size: 1.95rem; font-weight: 950; letter-spacing: .2px;">
-                  📁 Painel de Entregadores
-                </div>
+              <div style="font-size: 1.95rem; font-weight: 950; letter-spacing: .2px;">
+                📁 Painel de Entregadores
               </div>
               <div style="margin-top:6px; font-size: .95rem; color: rgba(232,237,246,.70); font-weight: 650;">
                 Dados atualizados • {data_str}
@@ -249,50 +294,47 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     )
 
     # =========================
-    # SUPPLY & RANKING (mesma altura, ranking não vaza)
+    # SUPPLY (card maior com comparação)
     # =========================
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
 
-    card_min_h = 220  # ajusta aqui se quiser mais alto/baixo
+    # layout original: Supply em card, Ranking em Streamlit puro (sem mexer)
+    cL, cR = st.columns(2)
 
-    c1, c2 = st.columns(2)
-
-    with c1:
+    with cL:
+        prev_txt = f"{mes_prev:02d}/{ano_prev}"
+        prev_h_txt = "—" if horas_prev is None else f"{horas_prev:.1f}h".replace(".", ",")
         st.markdown(
             f"""
-            <div class="neo-card" style="min-height:{card_min_h}px;">
+            <div class="neo-card">
               <div class="neo-label">Supply Hours (SH)</div>
               <div class="neo-value">{horas_total:.1f}h</div>
               <div class="neo-subline">Total no mês ({mes_txt})</div>
+
+              <div style="margin-top:14px; line-height:1.65;">
+                <div class="neo-subline"><b>Comparação vs mês anterior</b></div>
+                <div class="neo-subline">• SH {prev_txt}: <b>{prev_h_txt}</b></div>
+                <div class="neo-subline">• Δ: <b>{_fmt_delta_h(dh)}</b> ({_fmt_delta_pct(dp)}) {arrow}</div>
+              </div>
             </div>
             """,
             unsafe_allow_html=True
         )
 
-    with c2:
+    # =========================
+    # RANKING (deixa como era)
+    # =========================
+    with cR:
+        st.subheader("🏆 Top 3 SH")
+
         if not top3:
-            rows_html = "<div class='neo-subline' style='margin-top:12px;'>Sem dados suficientes.</div>"
+            st.info("Sem dados suficientes.")
         else:
             medals = ["🥇", "🥈", "🥉"]
-            rows = []
             for i, (nome, horas) in enumerate(top3):
-                rows.append(
-                    f"""
-                    <div class="rank-row">
-                      <div class="rank-name">{medals[i]}&nbsp;{nome}</div>
-                      <div class="rank-hours">{horas:.1f}h</div>
-                    </div>
-                    """
-                )
-            rows_html = "\n".join(rows)
-
-        ranking_card_html = f"""
-        <div class="neo-card" style="min-height:{card_min_h}px;">
-          <div class="neo-label">🏆 Top 3 entregadores (horas)</div>
-          <div class="neo-subline">Base: mês {mes_txt}</div>
-          {rows_html}
-        </div>
-        """
-
-        st.markdown(ranking_card_html, unsafe_allow_html=True)
+                a, b = st.columns([6, 1])
+                with a:
+                    st.markdown(f"**{medals[i]} {nome}**")
+                with b:
+                    st.markdown(f"**{horas:.1f}h**")
