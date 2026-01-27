@@ -337,6 +337,7 @@ MENU = {
         "Adicional por Hora (Turno)": "views.adicional_turno",
         "Lista adicional": "views.lista_adicional",
         "Elegibilidade": "views.elegibilidade_prioridade",
+        "Confirmação de Turno (Mensagens)": "views.confirmacao_turno",
     },
     "Dashboards": {
         "UTR": "views.utr",
