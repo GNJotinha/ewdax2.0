@@ -336,6 +336,7 @@ MENU = {
         "Saídas": "views.saidas",
         "Adicional por Hora (Turno)": "views.adicional_turno",
         "Lista adicional": "views.lista_adicional",
+        "Elegibilidade": "views.elegibilidade_prioridade",
     },
     "Dashboards": {
         "UTR": "views.utr",
