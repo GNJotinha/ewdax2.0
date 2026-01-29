@@ -46,6 +46,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             try:
                 mes_atual = int(pd.to_datetime(ultimo_mes).month)
                 ano_atual = int(pd.to_datetime(ultimo_mes).year)
+            exceptToggle = False
             except Exception:
                 pass
         else:
@@ -228,23 +229,9 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     c1, c2 = st.columns([1, 1])
 
     # =========================
-    # SH (card) — ÚNICA MUDANÇA FOI AQUI (com height:12px no final)
+    # SH (card) — SÓ MÉDIA POR ENTREGADOR
     # =========================
     with c1:
-        # Dias com dados (fallback: dias do mês)
-        dias_com_dados = 0
-        if data_col:
-            dts = pd.to_datetime(df_mes[data_col], errors="coerce")
-            if dts.notna().any():
-                dias_com_dados = int(dts.dt.date.nunique())
-
-        if dias_com_dados <= 0:
-            try:
-                dias_com_dados = int(pd.Period(f"{ano_atual}-{mes_atual:02d}").days_in_month)
-            except Exception:
-                dias_com_dados = 30
-
-        media_por_dia = (horas_total / dias_com_dados) if dias_com_dados else 0.0
         media_por_entreg = (horas_total / entreg_uniq) if entreg_uniq else 0.0
 
         st.markdown(
@@ -254,16 +241,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
   <div class="neo-subline">Total no mês ({mes_txt})</div>
 
   <div style="height:10px"></div>
-
-  <div class="toprow">
-    <div class="name">📆 Dias com dados</div>
-    <div class="hours">{_fmt_int(dias_com_dados)}</div>
-  </div>
-
-  <div class="toprow">
-    <div class="name">📈 Média por dia</div>
-    <div class="hours">{media_por_dia:.1f}h</div>
-  </div>
 
   <div class="toprow">
     <div class="name">👤 Média por entregador</div>
