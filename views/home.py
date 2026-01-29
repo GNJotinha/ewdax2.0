@@ -46,7 +46,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             try:
                 mes_atual = int(pd.to_datetime(ultimo_mes).month)
                 ano_atual = int(pd.to_datetime(ultimo_mes).year)
-            exceptToggle = False
             except Exception:
                 pass
         else:
