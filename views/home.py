@@ -1,14 +1,9 @@
+
 import html
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
-import pandas as pd
 import streamlit as st
-
+import pandas as pd
 from relatorios import utr_por_entregador_turno
 from utils import calcular_aderencia
-
-TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 
 def _fmt_int(x):
@@ -32,186 +27,67 @@ def _pick_col(cols, candidates):
     return None
 
 
-def _sum_numeric(df: pd.DataFrame, col: str) -> float:
-    """Soma numérica segura: se não existir coluna, retorna 0; se existir, converte e soma."""
-    if not col or col not in df.columns:
-        return 0.0
-    s = pd.to_numeric(df[col], errors="coerce").fillna(0)
-    try:
-        return float(s.sum())
-    except Exception:
-        return 0.0
-
-
-def _to_mes_ano_dt(series: pd.Series) -> pd.Series:
-    """Converte coluna mes_ano (vários formatos) pra datetime (primeiro dia do mês)."""
-    if pd.api.types.is_datetime64_any_dtype(series):
-        return pd.to_datetime(series, errors="coerce")
-
-    s = series.astype(str).str.strip()
-    # limpa "nan"/vazios
-    s = s.replace({"nan": None, "NaT": None, "None": None, "": None})
-
-    valid = s.dropna()
-    if not valid.empty and valid.str.fullmatch(r"\d{6}").all():
-        # YYYYMM
-        return pd.to_datetime(s, format="%Y%m", errors="coerce")
-
-    # tenta parse geral (dd/mm/aaaa, mm/aaaa, aaaa-mm, etc.)
-    return pd.to_datetime(s, errors="coerce", dayfirst=True)
-
-
-def _fmt_hm_from_seconds(seconds: float) -> str:
-    try:
-        sec = float(seconds)
-    except Exception:
-        return "0m"
-
-    if sec <= 0:
-        return "0m"
-
-    mins = int(round(sec / 60.0))
-    h = mins // 60
-    m = mins % 60
-    if h > 0:
-        return f"{h}h {m:02d}m"
-    return f"{m}m"
-
-
-def _calc_utr_media_fallback(df_mes: pd.DataFrame, ofert_col: str, seg_col: str, turno_col: str | None) -> float:
-    """Fallback da UTR média direto do df_mes, caso utr_por_entregador_turno falhe."""
-    if df_mes is None or df_mes.empty:
-        return 0.0
-    if not ofert_col or ofert_col not in df_mes.columns:
-        return 0.0
-    if not seg_col or seg_col not in df_mes.columns:
-        return 0.0
-    if "pessoa_entregadora" not in df_mes.columns:
-        return 0.0
-
-    group_cols = ["pessoa_entregadora"]
-    if turno_col and turno_col in df_mes.columns:
-        group_cols.append(turno_col)
-
-    tmp = df_mes[group_cols + [ofert_col, seg_col]].copy()
-    tmp["pessoa_entregadora"] = tmp["pessoa_entregadora"].astype(str).str.strip()
-
-    # remove nomes vazios
-    tmp = tmp[tmp["pessoa_entregadora"].notna() & (tmp["pessoa_entregadora"] != "")]
-
-    tmp["_ofert"] = pd.to_numeric(tmp[ofert_col], errors="coerce").fillna(0)
-    tmp["_sh"] = pd.to_numeric(tmp[seg_col], errors="coerce").fillna(0) / 3600.0
-
-    agg = tmp.groupby(group_cols, as_index=False).agg({"_ofert": "sum", "_sh": "sum"})
-    agg = agg[agg["_sh"] > 0]
-
-    if agg.empty:
-        return 0.0
-
-    return float((agg["_ofert"] / agg["_sh"]).mean())
-
-
 def render(df: pd.DataFrame, USUARIOS: dict):
     if df is None or df.empty:
         st.info("Sem dados carregados.")
         return
 
-    debug_home = bool(st.session_state.get("debug_home", False))
-
     # =========================
-    # MÊS ATUAL (timezone SP)
+    # MÊS ATUAL
     # =========================
-    now_sp = datetime.now(TZ_SP)
-    mes_atual, ano_atual = int(now_sp.month), int(now_sp.year)
+    hoje = pd.Timestamp.today()
+    mes_atual, ano_atual = int(hoje.month), int(hoje.year)
 
-    # tenta filtrar por mes/ano
     if ("mes" in df.columns) and ("ano" in df.columns):
         df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
     else:
-        # fallback por mes_ano (robusto)
         if "mes_ano" in df.columns:
-            mes_ano_dt = _to_mes_ano_dt(df["mes_ano"])
-            ultimo_mes_dt = mes_ano_dt.max()
-            if pd.notna(ultimo_mes_dt):
-                df_mes = df[mes_ano_dt == ultimo_mes_dt].copy()
-                mes_atual = int(pd.to_datetime(ultimo_mes_dt).month)
-                ano_atual = int(pd.to_datetime(ultimo_mes_dt).year)
-            else:
-                df_mes = df.copy()
+            ultimo_mes = df["mes_ano"].max()
+            df_mes = df[df["mes_ano"] == ultimo_mes].copy()
+            try:
+                mes_atual = int(pd.to_datetime(ultimo_mes).month)
+                ano_atual = int(pd.to_datetime(ultimo_mes).year)
+            except Exception:
+                pass
         else:
             df_mes = df.copy()
 
     mes_txt = f"{mes_atual:02d}/{ano_atual}"
 
-    # =========================
     # data mais recente (topo)
-    # =========================
     data_col = _pick_col(df_mes.columns, ["data", "data_do_periodo", "data_do_periodo_de_referencia"])
     data_str = "—"
-    if data_col and (data_col in df_mes.columns) and (not df_mes.empty):
+    if data_col:
         dtmax = pd.to_datetime(df_mes[data_col], errors="coerce").max()
         if pd.notna(dtmax):
-            try:
-                data_str = pd.to_datetime(dtmax).strftime("%d/%m/%Y")
-            except Exception:
-                data_str = str(dtmax)
+            data_str = pd.to_datetime(dtmax).strftime("%d/%m/%Y")
 
     # =========================
-    # KPIs (colunas com fallback)
+    # KPIs
     # =========================
-    ofert_col = _pick_col(df_mes.columns, ["numero_de_corridas_ofertadas", "corridas_ofertadas"])
-    aceitas_col = _pick_col(df_mes.columns, ["numero_de_corridas_aceitas", "corridas_aceitas"])
-    rejeit_col = _pick_col(df_mes.columns, ["numero_de_corridas_rejeitadas", "corridas_rejeitadas"])
-    seg_col = _pick_col(df_mes.columns, ["segundos_abs"])
+    ofertadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
+    aceitas = int(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
+    rejeitadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
 
-    ofertadas = int(_sum_numeric(df_mes, ofert_col))
-    aceitas = int(_sum_numeric(df_mes, aceitas_col))
-    rejeitadas = int(_sum_numeric(df_mes, rejeit_col))
-
-    # entregadores ativos (trim pra não contar "João" e "João " como 2)
-    entreg_uniq = 0
-    if "pessoa_entregadora" in df_mes.columns and not df_mes.empty:
-        s_ent = df_mes["pessoa_entregadora"].dropna().astype(str).str.strip()
-        s_ent = s_ent[s_ent != ""]
-        entreg_uniq = int(s_ent.nunique())
+    entreg_uniq = int(df_mes["pessoa_entregadora"].dropna().nunique()) if "pessoa_entregadora" in df_mes.columns else 0
 
     acc_pct = (aceitas / ofertadas * 100.0) if ofertadas > 0 else 0.0
     rej_pct = (rejeitadas / ofertadas * 100.0) if ofertadas > 0 else 0.0
 
-    seg_total = _sum_numeric(df_mes, seg_col)
+    seg_total = pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
     horas_total = float(seg_total / 3600.0) if seg_total > 0 else 0.0
     utr_abs = (ofertadas / horas_total) if horas_total > 0 else 0.0
 
-    # =========================
-    # UTR média (coerente com o mês)
-    # =========================
-    turno_col = _pick_col(df_mes.columns, ["turno", "tipo_turno", "periodo"])
+    # UTR média
     utr_medias = 0.0
-
-    # tenta função existente primeiro
     try:
-        base_home = utr_por_entregador_turno(df_mes, mes_atual, ano_atual)
-        if (
-            isinstance(base_home, pd.DataFrame)
-            and (not base_home.empty)
-            and ("supply_hours" in base_home.columns)
-            and ("corridas_ofertadas" in base_home.columns)
-        ):
-            base_pos = base_home.copy()
-            base_pos["supply_hours"] = pd.to_numeric(base_pos["supply_hours"], errors="coerce").fillna(0)
-            base_pos["corridas_ofertadas"] = pd.to_numeric(base_pos["corridas_ofertadas"], errors="coerce").fillna(0)
-            base_pos = base_pos[base_pos["supply_hours"] > 0]
+        base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
+        if not base_home.empty and "supply_hours" in base_home.columns and "corridas_ofertadas" in base_home.columns:
+            base_pos = base_home[base_home["supply_hours"] > 0].copy()
             if not base_pos.empty:
                 utr_medias = float((base_pos["corridas_ofertadas"] / base_pos["supply_hours"]).mean())
-        else:
-            # fallback local
-            utr_medias = _calc_utr_media_fallback(df_mes, ofert_col, seg_col, turno_col)
-    except Exception as e:
-        # fallback local
-        utr_medias = _calc_utr_media_fallback(df_mes, ofert_col, seg_col, turno_col)
-        if debug_home:
-            st.warning("Erro calculando UTR média via utr_por_entregador_turno; usando fallback.")
-            st.exception(e)
+    except Exception:
+        pass
 
     # =========================
     # ADERÊNCIA
@@ -223,8 +99,9 @@ def render(df: pd.DataFrame, USUARIOS: dict):
 
     vagas_col = _pick_col(df_mes.columns, ["numero_minimo_de_entregadores_regulares_na_escala", "vagas"])
     tag_col = _pick_col(df_mes.columns, ["tag"])
+    turno_col = _pick_col(df_mes.columns, ["turno", "tipo_turno", "periodo"])
 
-    if (not df_mes.empty) and vagas_col and tag_col and data_col and seg_col:
+    if (not df_mes.empty) and vagas_col and tag_col and data_col and ("segundos_abs" in df_mes.columns):
         group_cols = (data_col, turno_col) if turno_col else (data_col,)
         try:
             base_ap = calcular_aderencia(
@@ -234,46 +111,36 @@ def render(df: pd.DataFrame, USUARIOS: dict):
                 tag_col=tag_col,
                 tag_regular="REGULAR",
             )
-
-            if isinstance(base_ap, pd.DataFrame) and not base_ap.empty:
-                ader_reg = int(_sum_numeric(base_ap, "regulares_atuaram"))
-                ader_vagas = float(_sum_numeric(base_ap, "vagas"))
-
-                if ader_vagas > 0:
-                    ader_pct = round((ader_reg / ader_vagas) * 100.0, 1)
-
-                if "vagas_inconsistente" in base_ap.columns:
-                    vagas_incons = bool(base_ap["vagas_inconsistente"].fillna(False).astype(bool).any())
-        except Exception as e:
-            if debug_home:
-                st.warning("Erro calculando aderência; deixando zerado.")
-                st.exception(e)
+            ader_reg = int(pd.to_numeric(base_ap.get("regulares_atuaram", 0), errors="coerce").fillna(0).sum())
+            ader_vagas = float(pd.to_numeric(base_ap.get("vagas", 0), errors="coerce").fillna(0).sum())
+            if ader_vagas > 0:
+                ader_pct = round((ader_reg / ader_vagas) * 100.0, 1)
+            vagas_incons = bool(base_ap.get("vagas_inconsistente", False).fillna(False).any())
+        except Exception:
+            pass
 
     pct_bar = max(0.0, min(float(ader_pct), 100.0))
 
     # =========================
-    # TOP 3 POR HORAS (mais estável / legível)
+    # TOP 3 POR HORAS
     # =========================
     top3 = []
-    if ("pessoa_entregadora" in df_mes.columns) and seg_col and (seg_col in df_mes.columns) and (not df_mes.empty):
-        tmp_h = df_mes[["pessoa_entregadora", seg_col]].copy()
-        tmp_h["pessoa_entregadora"] = tmp_h["pessoa_entregadora"].astype(str).str.strip()
-        tmp_h = tmp_h[tmp_h["pessoa_entregadora"].notna() & (tmp_h["pessoa_entregadora"] != "")]
-
-        tmp_h["_seg"] = pd.to_numeric(tmp_h[seg_col], errors="coerce").fillna(0)
+    if ("pessoa_entregadora" in df_mes.columns) and ("segundos_abs" in df_mes.columns):
+        tmp_h = df_mes[["pessoa_entregadora", "segundos_abs"]].copy()
+        tmp_h["segundos_abs"] = pd.to_numeric(tmp_h["segundos_abs"], errors="coerce").fillna(0)
 
         top = (
-            tmp_h.groupby("pessoa_entregadora", as_index=False)["_seg"]
+            tmp_h.groupby("pessoa_entregadora", as_index=False)["segundos_abs"]
             .sum()
-            .sort_values(["_seg", "pessoa_entregadora"], ascending=[False, True], kind="mergesort")
+            .sort_values("segundos_abs", ascending=False)
             .head(3)
         )
 
         for _, r in top.iterrows():
-            top3.append((str(r["pessoa_entregadora"]), float(r["_seg"])))
+            top3.append((str(r["pessoa_entregadora"]), float(r["segundos_abs"]) / 3600.0))
 
     # =========================
-    # HEADER
+    # HEADER (SEM HTML)
     # =========================
     hL, hR = st.columns([4, 1])
     with hL:
@@ -283,7 +150,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_home"):
             st.session_state.force_refresh = True
             st.session_state.just_refreshed = True
-            # tirei o st.cache_data.clear(): o main já faz refresh com _ts/prefer_drive
+            st.cache_data.clear()
             st.rerun()
 
     # =========================
@@ -358,20 +225,23 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
 
+    # ✅ colunas 1:1 = SH e ranking com mesmo “peso”
     c1, c2 = st.columns([1, 1])
 
+    # SH (card)
     with c1:
         st.markdown(
             f"""
             <div class="neo-card">
               <div class="neo-label">Supply Hours (SH)</div>
-              <div class="neo-value">{_fmt_hm_from_seconds(seg_total)}</div>
+              <div class="neo-value">{horas_total:.1f}h</div>
               <div class="neo-subline">Total no mês ({mes_txt})</div>
             </div>
             """,
             unsafe_allow_html=True
         )
 
+    # ✅ Ranking dentro do card (HTML único, alinhado)
     with c2:
         medals = ["🥇", "🥈", "🥉"]
 
@@ -379,17 +249,12 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             rows = "<div class='neo-subline'>Sem dados suficientes.</div>"
         else:
             rows = ""
-            for i, (nome, seg) in enumerate(top3[:3]):
+            for i, (nome, horas) in enumerate(top3[:3]):
                 nome_safe = html.escape(str(nome))
-                horas_txt = _fmt_hm_from_seconds(seg)
-
-                # inline styles pra ellipsis funcionar melhor em flex (mesmo se o CSS não ajudar)
                 rows += f"""
-                  <div class="toprow" style="display:flex;align-items:center;gap:.5rem;">
-                    <div class="name" style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                      {medals[i]}&nbsp;{nome_safe}
-                    </div>
-                    <div class="hours" style="flex:0 0 auto;text-align:right;">{horas_txt}</div>
+                  <div class="toprow">
+                    <div class="name">{medals[i]}&nbsp;{nome_safe}</div>
+                    <div class="hours">{horas:.1f}h</div>
                   </div>
                 """
 
@@ -397,7 +262,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             f"""
             <div class="neo-card">
               <div class="neo-label">Top 3 entregadores (horas)</div>
-              <div class="neo-subline">Período: {mes_txt}</div>
               {rows}
             </div>
             """,
