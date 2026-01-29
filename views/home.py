@@ -1,4 +1,3 @@
-
 import html
 import streamlit as st
 import pandas as pd
@@ -241,7 +240,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             unsafe_allow_html=True
         )
 
-    # ✅ Ranking dentro do card (HTML único, alinhado)
+    # ✅ Ranking dentro do card (SEM INDENTAÇÃO NO HTML DINÂMICO)
     with c2:
         medals = ["🥇", "🥈", "🥉"]
 
@@ -251,12 +250,12 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             rows = ""
             for i, (nome, horas) in enumerate(top3[:3]):
                 nome_safe = html.escape(str(nome))
-                rows += f"""
-                  <div class="toprow">
-                    <div class="name">{medals[i]}&nbsp;{nome_safe}</div>
-                    <div class="hours">{horas:.1f}h</div>
-                  </div>
-                """
+                rows += (
+                    f'<div class="toprow">'
+                    f'<div class="name">{medals[i]}&nbsp;{nome_safe}</div>'
+                    f'<div class="hours">{horas:.1f}h</div>'
+                    f'</div>'
+                )
 
         st.markdown(
             f"""
