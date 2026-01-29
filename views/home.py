@@ -228,7 +228,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     c1, c2 = st.columns([1, 1])
 
     # =========================
-    # SH (card) — ÚNICA MUDANÇA FOI AQUI
+    # SH (card) — ÚNICA MUDANÇA FOI AQUI (com height:12px no final)
     # =========================
     with c1:
         # Dias com dados (fallback: dias do mês)
@@ -269,6 +269,8 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     <div class="name">👤 Média por entregador</div>
     <div class="hours">{media_por_entreg:.1f}h</div>
   </div>
+
+  <div style="height:12px"></div>
 </div>""",
             unsafe_allow_html=True
         )
