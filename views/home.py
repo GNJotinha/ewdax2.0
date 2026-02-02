@@ -143,7 +143,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     # =========================
     hL, hR = st.columns([4, 1])
     with hL:
-        st.title("📁 Painel de Entregadores")
+        st.title("Painel de Entregadores")
         st.caption(f"Dados atualizados • {data_str}")
     with hR:
         if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_home"):
