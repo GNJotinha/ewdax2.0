@@ -321,7 +321,6 @@ if not st.session_state.logado:
 st.sidebar.success(f"Bem-vindo, {st.session_state.usuario}!")
 
 MENU = {
-    "Promoção da virada": {"Ranking": "views.promo_virada"},
     "Desempenho do Entregador": {
         "Ver geral": "views.ver_geral",
         "Simplificada (WhatsApp)": "views.simplificada",
