@@ -20,18 +20,9 @@ def _fmt_pct(x, nd=1):
 
 
 def _pick_col(cols, candidates):
-    # 1) tenta match exato
     for c in candidates:
         if c in cols:
             return c
-
-    # 2) tenta case-insensitive (salva quando vem "Data" / "DATA")
-    cols_map = {str(c).strip().lower(): c for c in cols}
-    for c in candidates:
-        key = str(c).strip().lower()
-        if key in cols_map:
-            return cols_map[key]
-
     return None
 
 
@@ -41,38 +32,39 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         return
 
     # =========================
-    # PERÍODO BASE = ÚLTIMO DIA COM DADOS (NÃO QUEBRA NA VIRADA DO MÊS)
+    # PERÍODO BASE (ÚLTIMO COM DADOS)
     # =========================
-    hoje = pd.Timestamp.now(tz="America/Sao_Paulo")
-    mes_cal, ano_cal = int(hoje.month), int(hoje.year)
-
-    # tenta achar uma coluna de data confiável na base inteira
-    data_col_all = _pick_col(df.columns, ["data_do_periodo", "data", "data_do_periodo_de_referencia"])
+    # Em vez de usar o "mês do relógio" (que quebra na virada),
+    # usamos o ÚLTIMO dia existente na base para definir mês/ano.
+    data_col_all = _pick_col(df.columns, ["data", "data_do_periodo", "data_do_periodo_de_referencia"])
     last_dt = pd.NaT
     if data_col_all:
         last_dt = pd.to_datetime(df[data_col_all], errors="coerce").max()
+
+    mes_atual = ano_atual = None
+    data_str = "—"
 
     if pd.notna(last_dt):
         mes_atual, ano_atual = int(last_dt.month), int(last_dt.year)
         data_str = pd.to_datetime(last_dt).strftime("%d/%m/%Y")
     else:
-        # fallback: usa mes_ano se existir
-        mes_atual, ano_atual = mes_cal, ano_cal
-        data_str = "—"
+        # fallback: tenta usar mes_ano (se existir)
         if "mes_ano" in df.columns:
+            ultimo_mes = df["mes_ano"].max()
             try:
-                ultimo_mes = df["mes_ano"].max()
-                ultimo_dt = pd.to_datetime(ultimo_mes, errors="coerce")
-                if pd.notna(ultimo_dt):
-                    mes_atual, ano_atual = int(ultimo_dt.month), int(ultimo_dt.year)
+                ultimo_dt = pd.to_datetime(ultimo_mes)
+                mes_atual, ano_atual = int(ultimo_dt.month), int(ultimo_dt.year)
             except Exception:
                 pass
 
-    # filtra df_mes do mês escolhido (robusto contra mes/ano como float/string)
+    # fallback final (evita crash se vier tudo zoado)
+    if (mes_atual is None) or (ano_atual is None):
+        agora = pd.Timestamp.now(tz="America/Sao_Paulo")
+        mes_atual, ano_atual = int(agora.month), int(agora.year)
+
+    # filtra df do mês escolhido
     if ("mes" in df.columns) and ("ano" in df.columns):
-        m = pd.to_numeric(df["mes"], errors="coerce")
-        a = pd.to_numeric(df["ano"], errors="coerce")
-        df_mes = df[(m == mes_atual) & (a == ano_atual)].copy()
+        df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
     else:
         if data_col_all:
             s = pd.to_datetime(df[data_col_all], errors="coerce")
@@ -83,30 +75,28 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         else:
             df_mes = df.copy()
 
-    # se por alguma treta df_mes ficou vazio, cai pro último mes_ano existente
+    # se por algum motivo o filtro deu vazio, cai pro último mes_ano disponível
     if df_mes.empty and ("mes_ano" in df.columns):
+        ultimo_mes = df["mes_ano"].max()
+        df_mes = df[df["mes_ano"] == ultimo_mes].copy()
         try:
-            ultimo_mes = df["mes_ano"].max()
-            df_mes = df[df["mes_ano"] == ultimo_mes].copy()
-            ultimo_dt = pd.to_datetime(ultimo_mes, errors="coerce")
-            if pd.notna(ultimo_dt):
-                mes_atual, ano_atual = int(ultimo_dt.month), int(ultimo_dt.year)
+            ultimo_dt = pd.to_datetime(ultimo_mes)
+            mes_atual, ano_atual = int(ultimo_dt.month), int(ultimo_dt.year)
         except Exception:
             pass
 
     mes_txt = f"{mes_atual:02d}/{ano_atual}"
 
-    # se ainda não temos data_str (ou veio NaT), tenta achar pelo df_mes
-    if data_str == "—":
-        data_col_mes = _pick_col(df_mes.columns, ["data_do_periodo", "data", "data_do_periodo_de_referencia"])
-        if data_col_mes:
-            dtmax = pd.to_datetime(df_mes[data_col_mes], errors="coerce").max()
-            if pd.notna(dtmax):
-                data_str = pd.to_datetime(dtmax).strftime("%d/%m/%Y")
+    # coluna de data para agrupar/aderência (preferir a da base toda)
+    data_col = data_col_all if (data_col_all and data_col_all in df_mes.columns) else _pick_col(
+        df_mes.columns, ["data", "data_do_periodo", "data_do_periodo_de_referencia"]
+    )
 
-    # aviso útil: mês do calendário != mês exibido (virada sem dados ainda)
-    if (mes_atual != mes_cal) or (ano_atual != ano_cal):
-        st.caption(f"⚠️ Ainda não tem dados para {mes_cal:02d}/{ano_cal}. Exibindo {mes_txt} (último mês com dados).")
+    # se não conseguimos a data do header pela base toda, tenta pelo df_mes
+    if (data_str == "—") and data_col:
+        dtmax = pd.to_datetime(df_mes[data_col], errors="coerce").max()
+        if pd.notna(dtmax):
+            data_str = pd.to_datetime(dtmax).strftime("%d/%m/%Y")
 
     # =========================
     # KPIs
@@ -146,7 +136,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     vagas_col = _pick_col(df_mes.columns, ["numero_minimo_de_entregadores_regulares_na_escala", "vagas"])
     tag_col = _pick_col(df_mes.columns, ["tag"])
     turno_col = _pick_col(df_mes.columns, ["turno", "tipo_turno", "periodo"])
-    data_col = _pick_col(df_mes.columns, ["data_do_periodo", "data", "data_do_periodo_de_referencia"])
 
     if (not df_mes.empty) and vagas_col and tag_col and data_col and ("segundos_abs" in df_mes.columns):
         group_cols = (data_col, turno_col) if turno_col else (data_col,)
@@ -205,8 +194,8 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     # =========================
     st.markdown(f'<div class="neo-section">Resumo do mês ({mes_txt})</div>', unsafe_allow_html=True)
 
-    aceitas_html = f"{_fmt_int(aceitas)}<span class=\'pct\'>({_fmt_pct(acc_pct, 1)})</span>"
-    rejeitadas_html = f"{_fmt_int(rejeitadas)}<span class=\'pct\'>({_fmt_pct(rej_pct, 1)})</span>"
+    aceitas_html = f"{_fmt_int(aceitas)}<span class='pct'>({_fmt_pct(acc_pct, 1)})</span>"
+    rejeitadas_html = f"{_fmt_int(rejeitadas)}<span class='pct'>({_fmt_pct(rej_pct, 1)})</span>"
 
     st.markdown(
         f"""
@@ -272,6 +261,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
 
+    # ✅ colunas 1:1 = SH e ranking com mesmo “peso”
     c1, c2 = st.columns([1, 1])
 
     # SH (card)
@@ -287,7 +277,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             unsafe_allow_html=True
         )
 
-    # Ranking
+    # ✅ Ranking dentro do card (HTML único, alinhado)
     with c2:
         medals = ["🥇", "🥈", "🥉"]
 
