@@ -32,31 +32,68 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         return
 
     # =========================
-    # MÊS ATUAL
+    # PERÍODO BASE (ÚLTIMO COM DADOS)
     # =========================
-    hoje = pd.Timestamp.today()
-    mes_atual, ano_atual = int(hoje.month), int(hoje.year)
+    # Em vez de usar o "mês do relógio" (que quebra na virada),
+    # usamos o ÚLTIMO dia existente na base para definir mês/ano.
+    data_col_all = _pick_col(df.columns, ["data", "data_do_periodo", "data_do_periodo_de_referencia"])
+    last_dt = pd.NaT
+    if data_col_all:
+        last_dt = pd.to_datetime(df[data_col_all], errors="coerce").max()
 
+    mes_atual = ano_atual = None
+    data_str = "—"
+
+    if pd.notna(last_dt):
+        mes_atual, ano_atual = int(last_dt.month), int(last_dt.year)
+        data_str = pd.to_datetime(last_dt).strftime("%d/%m/%Y")
+    else:
+        # fallback: tenta usar mes_ano (se existir)
+        if "mes_ano" in df.columns:
+            ultimo_mes = df["mes_ano"].max()
+            try:
+                ultimo_dt = pd.to_datetime(ultimo_mes)
+                mes_atual, ano_atual = int(ultimo_dt.month), int(ultimo_dt.year)
+            except Exception:
+                pass
+
+    # fallback final (evita crash se vier tudo zoado)
+    if (mes_atual is None) or (ano_atual is None):
+        agora = pd.Timestamp.now(tz="America/Sao_Paulo")
+        mes_atual, ano_atual = int(agora.month), int(agora.year)
+
+    # filtra df do mês escolhido
     if ("mes" in df.columns) and ("ano" in df.columns):
         df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
     else:
-        if "mes_ano" in df.columns:
+        if data_col_all:
+            s = pd.to_datetime(df[data_col_all], errors="coerce")
+            df_mes = df[(s.dt.month == mes_atual) & (s.dt.year == ano_atual)].copy()
+        elif "mes_ano" in df.columns:
             ultimo_mes = df["mes_ano"].max()
             df_mes = df[df["mes_ano"] == ultimo_mes].copy()
-            try:
-                mes_atual = int(pd.to_datetime(ultimo_mes).month)
-                ano_atual = int(pd.to_datetime(ultimo_mes).year)
-            except Exception:
-                pass
         else:
             df_mes = df.copy()
 
+    # se por algum motivo o filtro deu vazio, cai pro último mes_ano disponível
+    if df_mes.empty and ("mes_ano" in df.columns):
+        ultimo_mes = df["mes_ano"].max()
+        df_mes = df[df["mes_ano"] == ultimo_mes].copy()
+        try:
+            ultimo_dt = pd.to_datetime(ultimo_mes)
+            mes_atual, ano_atual = int(ultimo_dt.month), int(ultimo_dt.year)
+        except Exception:
+            pass
+
     mes_txt = f"{mes_atual:02d}/{ano_atual}"
 
-    # data mais recente (topo)
-    data_col = _pick_col(df_mes.columns, ["data", "data_do_periodo", "data_do_periodo_de_referencia"])
-    data_str = "—"
-    if data_col:
+    # coluna de data para agrupar/aderência (preferir a da base toda)
+    data_col = data_col_all if (data_col_all and data_col_all in df_mes.columns) else _pick_col(
+        df_mes.columns, ["data", "data_do_periodo", "data_do_periodo_de_referencia"]
+    )
+
+    # se não conseguimos a data do header pela base toda, tenta pelo df_mes
+    if (data_str == "—") and data_col:
         dtmax = pd.to_datetime(df_mes[data_col], errors="coerce").max()
         if pd.notna(dtmax):
             data_str = pd.to_datetime(dtmax).strftime("%d/%m/%Y")
@@ -143,7 +180,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     # =========================
     hL, hR = st.columns([4, 1])
     with hL:
-        st.title("Painel de Entregadores")
+        st.title("📁 Painel de Entregadores")
         st.caption(f"Dados atualizados • {data_str}")
     with hR:
         if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_home"):
@@ -227,31 +264,20 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     # ✅ colunas 1:1 = SH e ranking com mesmo “peso”
     c1, c2 = st.columns([1, 1])
 
-    # =========================
-    # SH (card) — SÓ MÉDIA POR ENTREGADOR
-    # =========================
+    # SH (card)
     with c1:
-        media_por_entreg = (horas_total / entreg_uniq) if entreg_uniq else 0.0
-
         st.markdown(
-            f"""<div class="neo-card">
-  <div class="neo-label">Supply Hours (SH)</div>
-  <div class="neo-value">{horas_total:.1f}h</div>
-  <div class="neo-subline">Total no mês ({mes_txt})</div>
-
-  <div style="height:10px"></div>
-
-  <div class="toprow">
-    <div class="name">👤 Média por entregador</div>
-    <div class="hours">{media_por_entreg:.1f}h</div>
-  </div>
-
-  <div style="height:12px"></div>
-</div>""",
+            f"""
+            <div class="neo-card">
+              <div class="neo-label">Supply Hours (SH)</div>
+              <div class="neo-value">{horas_total:.1f}h</div>
+              <div class="neo-subline">Total no mês ({mes_txt})</div>
+            </div>
+            """,
             unsafe_allow_html=True
         )
 
-    # ✅ Ranking dentro do card (SEM INDENTAÇÃO NO HTML DINÂMICO)
+    # ✅ Ranking dentro do card (HTML único, alinhado)
     with c2:
         medals = ["🥇", "🥈", "🥉"]
 
@@ -261,12 +287,12 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             rows = ""
             for i, (nome, horas) in enumerate(top3[:3]):
                 nome_safe = html.escape(str(nome))
-                rows += (
-                    f'<div class="toprow">'
-                    f'<div class="name">{medals[i]}&nbsp;{nome_safe}</div>'
-                    f'<div class="hours">{horas:.1f}h</div>'
-                    f'</div>'
-                )
+                rows += f"""
+                  <div class="toprow">
+                    <div class="name">{medals[i]}&nbsp;{nome_safe}</div>
+                    <div class="hours">{horas:.1f}h</div>
+                  </div>
+                """
 
         st.markdown(
             f"""
