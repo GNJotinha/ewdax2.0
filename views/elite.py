@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+import re
 
 META_ELITE = 300
 COL_ELITE = "numero_de_pedidos_aceitos_e_concluidos"
@@ -13,8 +14,24 @@ MESES_PT = {
 
 
 def _fmt_mes(ts) -> str:
+    """Somente para exibir no UI (pode ter /)."""
     ts = pd.to_datetime(ts)
     return f"{MESES_PT.get(ts.month, ts.month)}/{ts.year}"
+
+
+def _safe_sheet_name(name: str) -> str:
+    """
+    openpyxl rules:
+      - max 31 chars
+      - cannot contain: : \\ / ? * [ ]
+    """
+    if name is None:
+        return "ELITE"
+    # remove chars proibidos
+    name = re.sub(r'[:\\\/\?\*\[\]]', "-", str(name))
+    name = name.strip() or "ELITE"
+    # limita 31
+    return name[:31]
 
 
 def _ensure_mes_ano(d: pd.DataFrame) -> pd.DataFrame:
@@ -24,7 +41,6 @@ def _ensure_mes_ano(d: pd.DataFrame) -> pd.DataFrame:
         d["mes_ano"] = pd.to_datetime(d["mes_ano"], errors="coerce")
         return d
 
-    # fallback: tenta derivar de data_do_periodo ou data
     if "data_do_periodo" in d.columns:
         d["data_do_periodo"] = pd.to_datetime(d["data_do_periodo"], errors="coerce")
         d["mes_ano"] = d["data_do_periodo"].dt.to_period("M").dt.to_timestamp()
@@ -54,8 +70,9 @@ def _ensure_uuid(d: pd.DataFrame) -> pd.DataFrame:
 
 def _to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "ELITE"):
     out = BytesIO()
+    safe = _safe_sheet_name(sheet_name)
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name=sheet_name)
+        df.to_excel(writer, index=False, sheet_name=safe)
     out.seek(0)
     return out.getvalue()
 
@@ -83,7 +100,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     d = _ensure_uuid(d)
 
-    # normaliza coluna elite
     d[COL_ELITE] = pd.to_numeric(d[COL_ELITE], errors="coerce").fillna(0)
 
     meses = sorted([m for m in d["mes_ano"].dropna().unique().tolist()])
@@ -94,7 +110,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     mes_sel = st.selectbox(
         "Mês",
         meses,
-        index=len(meses) - 1,  # último mês disponível na base (mais seguro do que "mês do relógio")
+        index=len(meses) - 1,
         format_func=_fmt_mes,
     )
 
@@ -103,7 +119,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.info("Sem dados no mês selecionado.")
         return
 
-    # tabela base (lista completa)
+    # Tabela base (lista completa)
     base = (
         d_mes.groupby(["uuid", "pessoa_entregadora"], as_index=False)[COL_ELITE]
         .sum()
@@ -114,26 +130,37 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     base["elite"] = base["pedidos_ok_mes"] >= META_ELITE
     base["progresso"] = (base["pedidos_ok_mes"] / META_ELITE).clip(upper=1.0)
 
-    # ordenação: quem tá mais perto aparece em cima (sem chamar de ranking)
-    # (elite primeiro, depois maior pedidos_ok_mes)
+    # ordenação útil (ELITE primeiro, depois quem tem mais)
     base = base.sort_values(["elite", "pedidos_ok_mes"], ascending=[False, False]).reset_index(drop=True)
 
-    # ===== Busca =====
+    # ===================== BUSCA com sugestão/typeahead =====================
     st.subheader("🔎 Buscar entregador")
 
-    busca = st.text_input("Digite um nome (ou parte do nome):", value="").strip()
+    nomes = base["nome"].fillna("").astype(str).tolist()
 
-    def _match_nome(x: str) -> bool:
-        return busca.lower() in str(x).lower()
+    col1, col2 = st.columns([2, 3])
+    # 1) Busca padrão tipo “filtro”: você digita e ele filtra a lista automaticamente
+    nome_pick = col1.selectbox(
+        "Digite para buscar (sugestões):",
+        options=[""] + sorted(set(nomes)),
+        index=0,
+        help="Começa a digitar (ex: 'W') e selecione o nome.",
+    )
 
-    if busca:
-        achados = base[base["nome"].apply(_match_nome)].copy()
+    # 2) (Opcional) manter input livre também — útil pra achar parcialmente e trazer múltiplos
+    busca = col2.text_input("Ou busque por parte do nome:", value="").strip()
 
+    achados = base.copy()
+    if nome_pick:
+        achados = achados[achados["nome"] == nome_pick].copy()
+    elif busca:
+        b = busca.lower()
+        achados = achados[achados["nome"].str.lower().str.contains(b, na=False)].copy()
+
+    if (nome_pick or busca):
         if achados.empty:
             st.warning("Não achei ninguém com esse nome nesse mês.")
         else:
-            # mostra “a linha dele” (ou linhas, se bater mais de um)
-            st.caption("Resultado(s):")
             st.dataframe(
                 achados[["uuid", "nome", "pedidos_ok_mes", "faltam_p_300", "elite", "progresso"]]
                 .rename(
@@ -151,20 +178,16 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     st.divider()
 
-    # ===== Lista completa + download =====
+    # ===================== LISTA COMPLETA + DOWNLOAD =====================
     st.subheader("📋 Lista completa do mês")
 
-    col_a, col_b = st.columns([1, 1])
-    only_close = col_a.checkbox("Mostrar só quem tá perto (faltam ≤ 50)", value=False)
-    only_not_elite = col_b.checkbox("Ocultar quem já é ELITE", value=False)
+    # (mantive só esse filtro pq você comentou antes que era útil)
+    only_not_elite = st.checkbox("Ocultar quem já é ELITE", value=False)
 
     view = base.copy()
-    if only_close:
-        view = view[view["faltam_p_300"] <= 50].copy()
     if only_not_elite:
         view = view[~view["elite"]].copy()
 
-    # barrinha na coluna "% da meta"
     def _bar(s):
         return [
             f"background: linear-gradient(90deg, rgba(0,191,255,0.45) {p*100:.1f}%, transparent {p*100:.1f}%);"
@@ -191,8 +214,10 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         hide_index=True,
     )
 
-    # download XLSX
-    xlsx_bytes = _to_xlsx_bytes(show, sheet_name=_fmt_mes(mes_sel))
+    # Nome de aba seguro (sem /)
+    sheet = f"ELITE {_fmt_mes(mes_sel)}"
+    xlsx_bytes = _to_xlsx_bytes(show, sheet_name=sheet)
+
     st.download_button(
         "⬇️ Baixar XLSX",
         data=xlsx_bytes,
