@@ -326,6 +326,7 @@ MENU = {
         "Simplificada (WhatsApp)": "views.simplificada",
         "Relatório Customizado": "views.relatorio_custom",
         "Perfil do Entregador": "views.perfil_entregador",
+        "Elite": "views.elite",
     },
     "Relatórios": {
         "Relatório de faltas": "views.faltas",
