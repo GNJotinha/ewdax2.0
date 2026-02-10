@@ -8,8 +8,7 @@ import bcrypt
 
 TZ = ZoneInfo("America/Sao_Paulo")
 
-# login sem espaço: 3 a 32, só a-z 0-9 . _ -
-LOGIN_RE = re.compile(r"^[a-z0-9._-]{3,32}$")
+LOGIN_RE = re.compile(r"^[a-z0-9._-]{3,32}$")  # sem espaço
 
 
 def canon_login(login: str) -> str:
@@ -22,34 +21,24 @@ def canon_login(login: str) -> str:
     return s
 
 
-def hash_password(password: str) -> str:
-    pw = (password or "").encode("utf-8")
-    if len(pw) < 6:
-        raise ValueError("Senha muito curta (mín. 6).")
-    return bcrypt.hashpw(pw, bcrypt.gensalt()).decode("utf-8")
-
-
-def verify_password(password: str, stored_hash: str) -> bool:
-    try:
-        return bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
-    except Exception:
-        return False
-
-
 def _get_dsn() -> str:
     dsn = None
     try:
         dsn = st.secrets.get("SUPABASE_DB_DSN")
     except Exception:
         dsn = None
-
     if not dsn:
         dsn = os.environ.get("SUPABASE_DB_DSN")
-
     if not dsn:
         raise RuntimeError("SUPABASE_DB_DSN não configurado (Secrets ou env).")
-
     return dsn
+
+
+def _verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
+    except Exception:
+        return False
 
 
 def _lock_policy(failed_attempts: int):
@@ -57,6 +46,18 @@ def _lock_policy(failed_attempts: int):
     if failed_attempts >= 5:
         return True, timedelta(minutes=10)
     return False, None
+
+
+def _get_app_users_columns(conn) -> set[str]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            select column_name
+            from information_schema.columns
+            where table_schema='public' and table_name='app_users'
+            """
+        )
+        return {r[0] for r in cur.fetchall()}
 
 
 def autenticar(login: str, senha: str):
@@ -80,27 +81,77 @@ def autenticar(login: str, senha: str):
     except Exception as e:
         return False, None, f"psycopg não instalado no ambiente. Erro: {e}"
 
-    # conexão
+    # Conecta
     try:
         conn = psycopg.connect(_get_dsn(), connect_timeout=10)
     except Exception as e:
         return False, None, (
             "Falha ao conectar no Supabase. "
-            "Se você estiver usando DSN Direct (5432/IPv6), troque pro Pooler (Transaction 6543). "
+            "Se estiver usando DSN Direct (5432/IPv6), troque pro Pooler (Transaction 6543). "
             f"Erro: {e}"
         )
 
     try:
+        cols = _get_app_users_columns(conn)
+        if not cols:
+            return False, None, "Tabela public.app_users não existe ou sem colunas."
+
+        # Colunas obrigatórias (com fallback de nomes possíveis)
+        def pick(candidates):
+            for c in candidates:
+                if c in cols:
+                    return c
+            return None
+
+        id_col = pick(["id"])
+        login_col = pick(["login"])
+        full_name_col = pick(["full_name", "nome", "name"])
+        dept_col = pick(["department", "setor", "departamento"])
+        is_admin_col = pick(["is_admin"])
+        is_active_col = pick(["is_active", "ativo"])
+        pw_col = pick(["password_hash", "senha_hash", "hash"])
+
+        must_change_col = pick(["must_change_password"])
+        failed_attempts_col = pick(["failed_attempts"])
+        locked_until_col = pick(["locked_until"])
+        last_login_col = pick(["last_login_at"])
+        updated_at_col = pick(["updated_at"])
+
+        # valida mínimos
+        missing_min = []
+        for required, nm in [
+            (id_col, "id"),
+            (login_col, "login"),
+            (full_name_col, "full_name"),
+            (dept_col, "department"),
+            (is_admin_col, "is_admin"),
+            (is_active_col, "is_active"),
+            (pw_col, "password_hash"),
+        ]:
+            if not required:
+                missing_min.append(nm)
+
+        if missing_min:
+            return False, None, f"Tabela app_users sem colunas obrigatórias: {', '.join(missing_min)}"
+
+        select_cols = [
+            id_col, login_col, full_name_col, dept_col, is_admin_col, is_active_col, pw_col
+        ]
+        # opcionais
+        if must_change_col:
+            select_cols.append(must_change_col)
+        if failed_attempts_col:
+            select_cols.append(failed_attempts_col)
+        if locked_until_col:
+            select_cols.append(locked_until_col)
+
+        # Busca usuário (case-insensitive)
         with conn.cursor() as cur:
-            # pega usuário (case-insensitive)
             cur.execute(
-                """
-                select
-                  id, login, full_name, department, is_admin, is_active,
-                  password_hash, must_change_password,
-                  failed_attempts, locked_until
+                f"""
+                select {", ".join(select_cols)}
                 from public.app_users
-                where lower(login) = lower(%s)
+                where lower({login_col}) = lower(%s)
                 limit 1
                 """,
                 (login_norm,),
@@ -110,24 +161,25 @@ def autenticar(login: str, senha: str):
         if not row:
             return False, None, "Usuário não encontrado."
 
-        (
-            user_id,
-            db_login,
-            full_name,
-            department,
-            is_admin,
-            is_active,
-            password_hash_db,
-            must_change_password,
-            failed_attempts,
-            locked_until,
-        ) = row
+        # Mapeia resultado pelo índice
+        idx = {col: i for i, col in enumerate(select_cols)}
+        user_id = row[idx[id_col]]
+        db_login = row[idx[login_col]]
+        full_name = row[idx[full_name_col]]
+        department = row[idx[dept_col]]
+        is_admin = row[idx[is_admin_col]]
+        is_active = row[idx[is_active_col]]
+        password_hash_db = row[idx[pw_col]]
+
+        must_change = bool(row[idx[must_change_col]]) if must_change_col else False
+        failed_attempts = int(row[idx[failed_attempts_col]] or 0) if failed_attempts_col else 0
+        locked_until = row[idx[locked_until_col]] if locked_until_col else None
 
         if not is_active:
             return False, None, "Usuário desativado."
 
-        # lock
-        if locked_until:
+        # lock (se existir no schema)
+        if locked_until is not None:
             try:
                 now = datetime.now(TZ)
                 if now < locked_until:
@@ -136,49 +188,62 @@ def autenticar(login: str, senha: str):
             except Exception:
                 pass
 
-        # valida senha
-        ok = verify_password(senha, password_hash_db)
+        ok = _verify_password(senha, password_hash_db)
         if not ok:
-            failed_attempts = int(failed_attempts or 0) + 1
-            lock, delta = _lock_policy(failed_attempts)
-            new_locked_until = (datetime.now(TZ) + delta) if lock else None
+            # se tiver colunas de lockout, atualiza
+            if failed_attempts_col:
+                failed_attempts += 1
+                new_locked_until = None
+                if locked_until_col:
+                    lock, delta = _lock_policy(failed_attempts)
+                    new_locked_until = (datetime.now(TZ) + delta) if lock else None
 
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    update public.app_users
-                    set failed_attempts=%s,
-                        locked_until=%s,
-                        updated_at=now()
-                    where id=%s
-                    """,
-                    (failed_attempts, new_locked_until, user_id),
-                )
-            conn.commit()
+                with conn.cursor() as cur:
+                    sets = [f"{failed_attempts_col}=%s"]
+                    params = [failed_attempts]
+                    if locked_until_col:
+                        sets.append(f"{locked_until_col}=%s")
+                        params.append(new_locked_until)
+                    if updated_at_col:
+                        sets.append(f"{updated_at_col}=now()")
+
+                    cur.execute(
+                        f"update public.app_users set {', '.join(sets)} where {id_col}=%s",
+                        tuple(params + [user_id]),
+                    )
+                conn.commit()
+
             return False, None, "Senha incorreta."
 
-        # sucesso: zera tentativas + last_login
+        # sucesso: zera lock e atualiza last_login (se existir)
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                update public.app_users
-                set failed_attempts=0,
-                    locked_until=null,
-                    last_login_at=now(),
-                    updated_at=now()
-                where id=%s
-                """,
-                (user_id,),
-            )
+            sets = []
+            params = []
+
+            if failed_attempts_col:
+                sets.append(f"{failed_attempts_col}=%s")
+                params.append(0)
+            if locked_until_col:
+                sets.append(f"{locked_until_col}=null")
+            if last_login_col:
+                sets.append(f"{last_login_col}=now()")
+            if updated_at_col:
+                sets.append(f"{updated_at_col}=now()")
+
+            if sets:
+                cur.execute(
+                    f"update public.app_users set {', '.join(sets)} where {id_col}=%s",
+                    tuple(params + [user_id]),
+                )
         conn.commit()
 
         user = {
             "id": str(user_id),
-            "login": str(db_login),  # mantém como tá no banco (BALA, bala, etc)
+            "login": str(db_login),
             "full_name": str(full_name),
             "department": str(department),
             "is_admin": bool(is_admin),
-            "must_change_password": bool(must_change_password),
+            "must_change_password": bool(must_change),
         }
         return True, user, "ok"
 
