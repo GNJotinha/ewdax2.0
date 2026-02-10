@@ -1,13 +1,20 @@
+import os
 import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import bcrypt
 import streamlit as st
-
-from db import db_conn, audit_log
+import bcrypt
 
 TZ = ZoneInfo("America/Sao_Paulo")
+
+# Fallback antigo (se você ainda tiver USUARIOS no secrets)
+USUARIOS = {}
+try:
+    USUARIOS = st.secrets.get("USUARIOS", {}) or {}
+except Exception:
+    USUARIOS = {}
+
 
 LOGIN_RE = re.compile(r"^[a-z0-9._-]{3,32}$")  # sem espaço
 
@@ -21,32 +28,57 @@ def canon_login(login: str) -> str:
     return s
 
 
-def hash_password(password: str) -> str:
-    pw = (password or "").encode("utf-8")
-    if len(pw) < 6:
-        raise ValueError("Senha muito curta (mínimo 6).")
-    return bcrypt.hashpw(pw, bcrypt.gensalt()).decode("utf-8")
+def _get_dsn() -> str | None:
+    try:
+        dsn = st.secrets.get("SUPABASE_DB_DSN")
+        if dsn:
+            return dsn
+    except Exception:
+        pass
+
+    dsn = os.environ.get("SUPABASE_DB_DSN")
+    return dsn or None
 
 
-def verify_password(password: str, stored_hash: str) -> bool:
+def _db_enabled() -> bool:
+    dsn = _get_dsn()
+    if not dsn:
+        return False
+
+    try:
+        import psycopg  # noqa
+        return True
+    except Exception:
+        return False
+
+
+def _table_exists(conn, table: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            select 1
+            from information_schema.tables
+            where table_schema='public' and table_name=%s
+            limit 1
+            """,
+            (table,),
+        )
+        return cur.fetchone() is not None
+
+
+def _verify_password(password: str, stored_hash: str) -> bool:
     try:
         return bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
     except Exception:
         return False
 
 
-def _lock_policy(failed_attempts: int):
-    # simples e útil
-    # 5 tentativas erradas = lock de 10 minutos
-    if failed_attempts >= 5:
-        return True, timedelta(minutes=10)
-    return False, None
-
-
 def autenticar(login: str, senha: str):
     """
-    Retorna (ok: bool, user: dict|None, msg: str)
-    user contém: id, login, full_name, department, is_admin, must_change_password
+    SEMPRE retorna: (ok: bool, user: dict|None, msg: str)
+
+    user contém (quando ok):
+      id, login, full_name, department, is_admin, must_change_password
     """
     try:
         login = canon_login(login)
@@ -57,85 +89,152 @@ def autenticar(login: str, senha: str):
     if not senha:
         return False, None, "Informe a senha."
 
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                select id, login, full_name, department, is_admin, is_active,
-                       password_hash, must_change_password,
-                       failed_attempts, locked_until
-                from public.app_users
-                where lower(login)=lower(%s)
-                limit 1
-                """,
-                (login,),
-            )
-            row = cur.fetchone()
+    # =========================
+    # 1) TENTA BANCO (Supabase)
+    # =========================
+    if _db_enabled():
+        try:
+            import psycopg
 
-            if not row:
-                audit_log("login_failed", "app_users", login, {"reason": "user_not_found"})
-                return False, None, "Usuário não encontrado."
+            dsn = _get_dsn()
+            conn = psycopg.connect(dsn, connect_timeout=8)
+            try:
+                if _table_exists(conn, "app_users"):
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            select id, login, full_name, department, is_admin, is_active,
+                                   password_hash, must_change_password,
+                                   failed_attempts, locked_until
+                            from public.app_users
+                            where lower(login)=lower(%s)
+                            limit 1
+                            """,
+                            (login,),
+                        )
+                        row = cur.fetchone()
 
-            (
-                user_id, db_login, full_name, department, is_admin, is_active,
-                password_hash_db, must_change, failed_attempts, locked_until
-            ) = row
+                    if not row:
+                        return False, None, "Usuário não encontrado."
 
-            if not is_active:
-                audit_log("login_failed", "app_users", str(user_id), {"reason": "inactive"})
-                return False, None, "Usuário desativado."
+                    (
+                        user_id, db_login, full_name, department, is_admin, is_active,
+                        password_hash_db, must_change, failed_attempts, locked_until
+                    ) = row
 
-            if locked_until and datetime.now(TZ) < locked_until:
-                mins = int((locked_until - datetime.now(TZ)).total_seconds() // 60) + 1
-                audit_log("login_failed", "app_users", str(user_id), {"reason": "locked"})
-                return False, None, f"Usuário bloqueado. Tenta de novo em ~{mins} min."
+                    if not is_active:
+                        return False, None, "Usuário desativado."
 
-            ok = verify_password(senha, password_hash_db)
-            if not ok:
-                failed_attempts = int(failed_attempts or 0) + 1
-                lock, delta = _lock_policy(failed_attempts)
-                new_locked_until = (datetime.now(TZ) + delta) if lock else None
+                    if locked_until:
+                        try:
+                            now = datetime.now(TZ)
+                            if now < locked_until:
+                                mins = int((locked_until - now).total_seconds() // 60) + 1
+                                return False, None, f"Usuário bloqueado. Tente em ~{mins} min."
+                        except Exception:
+                            pass
 
-                cur.execute(
-                    """
-                    update public.app_users
-                    set failed_attempts=%s,
-                        locked_until=%s,
-                        updated_at=now()
-                    where id=%s
-                    """,
-                    (failed_attempts, new_locked_until, user_id),
-                )
-                conn.commit()
+                    ok = _verify_password(senha, password_hash_db)
+                    if not ok:
+                        # incrementa tentativas e trava com 5 erros por 10 min (simples e útil)
+                        failed_attempts = int(failed_attempts or 0) + 1
+                        new_locked_until = None
+                        if failed_attempts >= 5:
+                            new_locked_until = datetime.now(TZ) + timedelta(minutes=10)
 
-                audit_log("login_failed", "app_users", str(user_id), {"reason": "wrong_password"})
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                update public.app_users
+                                set failed_attempts=%s,
+                                    locked_until=%s,
+                                    updated_at=now()
+                                where id=%s
+                                """,
+                                (failed_attempts, new_locked_until, user_id),
+                            )
+                        conn.commit()
+                        return False, None, "Senha incorreta."
+
+                    # sucesso: zera tentativas, atualiza last_login
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            update public.app_users
+                            set failed_attempts=0,
+                                locked_until=null,
+                                last_login_at=now(),
+                                updated_at=now()
+                            where id=%s
+                            """,
+                            (user_id,),
+                        )
+                    conn.commit()
+
+                    user = {
+                        "id": str(user_id),
+                        "login": str(db_login),
+                        "full_name": str(full_name),
+                        "department": str(department),
+                        "is_admin": bool(is_admin),
+                        "must_change_password": bool(must_change),
+                    }
+                    return True, user, "ok"
+
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        except Exception:
+            # se deu ruim no banco, NÃO derruba o app: cai pro fallback
+            pass
+
+    # =========================
+    # 2) FALLBACK: USUARIOS secrets
+    # =========================
+    if login in USUARIOS:
+        entry = USUARIOS.get(login)
+
+        # formatos aceitos:
+        # USUARIOS[login] = {"senha": "...", "department": "...", "is_admin": true, "full_name": "..."}
+        # ou USUARIOS[login] = "senha"
+        if isinstance(entry, dict):
+            senha_ok = (entry.get("senha") == senha) or (entry.get("password") == senha)
+            if not senha_ok:
                 return False, None, "Senha incorreta."
 
-            # sucesso: zera tentativas, atualiza last_login
-            cur.execute(
-                """
-                update public.app_users
-                set failed_attempts=0,
-                    locked_until=null,
-                    last_login_at=now(),
-                    updated_at=now()
-                where id=%s
-                """,
-                (user_id,),
-            )
-            conn.commit()
+            dept = entry.get("department") or entry.get("setor") or entry.get("departamento") or "Operacional"
+            # se no secrets antigo tiver "nivel": "admin"
+            nivel = (entry.get("nivel") or "").lower()
+            is_admin = bool(entry.get("is_admin")) or (nivel == "admin") or (dept.lower() == "administrador")
 
-    user = {
-        "id": str(user_id),
-        "login": db_login,
-        "full_name": full_name,
-        "department": department,
-        "is_admin": bool(is_admin),
-        "must_change_password": bool(must_change),
-    }
+            user = {
+                "id": login,  # sem uuid no fallback
+                "login": login,
+                "full_name": entry.get("full_name") or entry.get("nome") or login,
+                "department": dept,
+                "is_admin": is_admin,
+                "must_change_password": False,
+            }
+            return True, user, "ok"
 
-    audit_log("login_success", "app_users", user["id"], {"login": user["login"]})
-    return True, user, "ok"
+        else:
+            # entry é senha direta
+            if str(entry) != senha:
+                return False, None, "Senha incorreta."
+            user = {
+                "id": login,
+                "login": login,
+                "full_name": login,
+                "department": "Operacional",
+                "is_admin": False,
+                "must_change_password": False,
+            }
+            return True, user, "ok"
+
+    return False, None, "Usuário não encontrado."
 
 
 def is_admin() -> bool:
