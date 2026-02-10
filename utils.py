@@ -17,50 +17,133 @@ def normalizar(texto):
     )
 
 
-# ------------------------------
-# Conversão de tempo
-# ------------------------------
-def tempo_para_segundos(valor):
+# ---------------------------------------------------------
+# Conversão de tempo (HH:MM:SS → segundos)
+# ---------------------------------------------------------
+def tempo_para_segundos(t):
     """
-    Converte "HH:MM:SS" para segundos.
-    Se vier NaN/None/"" retorna 0.
+    Converte strings de tempo em segundos.
+    Aceita formatos: HH:MM:SS, HH:MM, H, ou números puros (segundos).
+    Preserva o sinal (ex: '-00:10:00' → -600).
     """
-    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+    if pd.isna(t):
         return 0
-    s = str(valor).strip()
-    if not s:
-        return 0
+    s = str(t).strip()
+    sign = -1 if s.startswith("-") else 1
+    s = s.lstrip("+-")
     try:
         parts = s.split(":")
-        if len(parts) != 3:
-            return 0
-        h, m, sec = parts
-        return int(h) * 3600 + int(m) * 60 + int(sec)
+        if len(parts) == 3:
+            h, m, s2 = map(int, parts)
+            total = h * 3600 + m * 60 + s2
+        elif len(parts) == 2:
+            h, m = map(int, parts)
+            total = h * 3600 + m * 60
+        else:
+            total = int(float(s))
+        return sign * total
     except Exception:
-        return 0
+        try:
+            return sign * int(float(s))
+        except Exception:
+            return 0
 
 
-# ------------------------------
-# Regras de turno válido
-# ------------------------------
-TURNO_VALIDO_MIN_SEG = 30 * 60  # 30min
+# ---------------------------------------------------------
+# Cálculo de tempo online (%)
+# ---------------------------------------------------------
+def calcular_tempo_online(df_filtrado: pd.DataFrame) -> float:
+    """
+    Tempo online = média de 'tempo_disponivel_escalado' em %.
+
+    Regras:
+      - Ignora apenas linhas com -10:00 (segundos_abs_raw == -600).
+      - Auto-escalona a origem:
+          * mediana <= 1   -> assume 0–1      (multiplica por 100)
+          * <= 100         -> assume 0–100    (usa como está)
+          * > 100          -> assume 0–10000  (divide por 100)
+      - Clip final em [0, 100] e retorna com 1 casa.
+    """
+    if df_filtrado is None or df_filtrado.empty:
+        return 0.0
+
+    d = df_filtrado.copy()
+
+    # ignora -10:00 no cálculo do online
+    if "segundos_abs_raw" in d.columns:
+        d = d[d["segundos_abs_raw"] != -600]
+
+    esc = pd.to_numeric(d.get("tempo_disponivel_escalado"), errors="coerce").dropna()
+    if esc.empty:
+        return 0.0
+
+    med = esc.median()
+    mean_val = float(esc.mean())
+
+    if med <= 1.0:
+        val = mean_val * 100.0       # origem 0–1
+    elif med <= 100.0:
+        val = mean_val               # origem 0–100
+    else:
+        val = mean_val / 100.0       # origem 0–10000 (basis points)
+
+    val = max(0.0, min(100.0, val))
+    return round(val, 1)
 
 
-def mask_turno_valido(df: pd.DataFrame, min_seg: int = TURNO_VALIDO_MIN_SEG) -> pd.Series:
-    """Turno válido se segundos_abs >= min_seg."""
-    s = pd.to_numeric(df.get("segundos_abs", 0), errors="coerce").fillna(0)
-    return s >= int(min_seg)
+# ---------------------------------------------------------
+# Aderência (REGULAR vs vagas)
+# ---------------------------------------------------------
+TURNO_VALIDO_MIN_SEG = 10 * 60  # 00:10:00
 
 
 def _entregador_key(df: pd.DataFrame) -> pd.Series:
     """
-    Chave do entregador pra anti-duplicidade.
-    Preferência: uuid -> id_da_pessoa_entregadora -> pessoa_entregadora_normalizado -> pessoa_entregadora
+    Chave única do entregador (anti-duplicidade).
+    Prioridade:
+      1) uuid
+      2) id_da_pessoa_entregadora
+      3) pessoa_entregadora_normalizado
+      4) pessoa_entregadora
     """
-    for c in ("uuid", "id_da_pessoa_entregadora", "pessoa_entregadora_normalizado", "pessoa_entregadora"):
-        if c in df.columns:
-            return df[c].astype(str).fillna("").str.strip()
-    return pd.Series([""] * len(df), index=df.index)
+    for col in ("uuid", "id_da_pessoa_entregadora"):
+        if col in df.columns:
+            s = df[col].astype(str).fillna("").str.strip()
+            if (s != "").any():
+                return s
+
+    if "pessoa_entregadora_normalizado" in df.columns:
+        return df["pessoa_entregadora_normalizado"].astype(str).fillna("").str.strip()
+
+    if "pessoa_entregadora" in df.columns:
+        return df["pessoa_entregadora"].astype(str).fillna("").str.strip()
+
+    return pd.Series([""] * len(df), index=df.index, dtype="string")
+
+
+def mask_turno_valido(df: pd.DataFrame, min_seg: int = TURNO_VALIDO_MIN_SEG) -> pd.Series:
+    secs = pd.to_numeric(df.get("segundos_abs", 0), errors="coerce").fillna(0)
+    return secs >= float(min_seg)
+
+
+def _coerce_ptbr_number(series: pd.Series) -> pd.Series:
+    """
+    Converte string numérica PT-BR para float:
+      - '4.118,10' -> 4118.10
+      - '1.234' -> 1234
+      - '12,5' -> 12.5
+    """
+    v = series.astype("string").str.strip()
+    v = v.replace({"": pd.NA, "nan": pd.NA, "NaN": pd.NA})
+
+    # remove separador de milhar quando parece padrão pt-BR
+    mask_thou = v.str.match(r"^\d{1,3}(\.\d{3})+(,\d+)?$")
+    v = v.where(~mask_thou, v.str.replace(".", "", regex=False))
+
+    # troca vírgula por ponto (decimal)
+    v = v.str.replace(",", ".", regex=False)
+
+    return pd.to_numeric(v, errors="coerce").fillna(0.0)
 
 
 def calcular_aderencia(
@@ -73,18 +156,9 @@ def calcular_aderencia(
 ) -> pd.DataFrame:
     """Calcula **Aderência (REGULAR vs vagas)**.
 
-    Definição:
-      aderencia_pct = regulares_atuaram / vagas * 100
-
-    Onde:
-      - regulares_atuaram: entregadores únicos (anti-duplicidade) com tag == REGULAR e turno válido (>= min_seg)
-      - vagas: soma robusta de vagas. Se `group_cols` NÃO incluir praca/sub_praca e essas colunas existirem,
-              faz max por (grupo + praca/sub_praca) e soma no nível do grupo, evitando 133% e afins.
-
     Retorno:
       group_cols + ["vagas","vagas_inconsistente","regulares_atuaram","aderencia_pct"]
     """
-
     if df is None or df.empty:
         return pd.DataFrame(
             columns=list(group_cols)
@@ -93,15 +167,9 @@ def calcular_aderencia(
 
     dfx = df.copy()
 
-    # normaliza vagas para numérico (suporta pt-BR tipo "1.234" e "4.118,10")
-    if not pd.api.types.is_numeric_dtype(dfx[vagas_col]):
-        v = dfx[vagas_col].astype("string").str.strip()
-        v = v.replace({"": pd.NA, "nan": pd.NA, "NaN": pd.NA})
-        # remove separador de milhar apenas quando for padrão 1.234 ou 1.234,56
-        mask_thou = v.str.match(r"^\d{1,3}(\.\d{3})+(,\d+)?$")
-        v = v.where(~mask_thou, v.str.replace(".", "", regex=False))
-        v = v.str.replace(",", ".", regex=False)
-        dfx[vagas_col] = pd.to_numeric(v, errors="coerce").fillna(0.0)
+    # ✅ FIX: vagas pode vir como texto do Supabase RAW (ex: "4.118,10")
+    if vagas_col in dfx.columns and not pd.api.types.is_numeric_dtype(dfx[vagas_col]):
+        dfx[vagas_col] = _coerce_ptbr_number(dfx[vagas_col])
 
     # valida colunas mínimas
     for c in group_cols:
@@ -119,15 +187,11 @@ def calcular_aderencia(
 
     gcols = list(group_cols)
 
-    # -------------------------------------------------
     # REGULARES (turno válido)
-    # -------------------------------------------------
     base_reg = dfx[(dfx["_turno_valido"]) & (dfx["_tag"] == str(tag_regular).upper())].copy()
     regulares_atuaram = base_reg.groupby(gcols, dropna=False)["_key"].nunique()
 
-    # -------------------------------------------------
     # VAGAS (robusto)
-    # -------------------------------------------------
     extra_vaga_cols = []
     for c in ("praca", "sub_praca"):
         if (c in dfx.columns) and (c not in gcols):
@@ -145,7 +209,7 @@ def calcular_aderencia(
         else vagas_por_unidade
     )
 
-    # inconsistência: se dentro do MESMO grupo (considerando as extras) variar a vaga
+    # inconsistência: se dentro do MESMO grupo variar a vaga
     if extra_vaga_cols:
         vagas_nunique_unidade = dfx.groupby(gcols + extra_vaga_cols, dropna=False)[vagas_col].nunique()
         vagas_incons = vagas_nunique_unidade.groupby(gcols, dropna=False).max() > 1
@@ -170,13 +234,6 @@ def calcular_aderencia(
     return out.reset_index()[cols_keep]
 
 
-# ---------------------------------------------------------------------
-# Compat: nome antigo (sem "presença" — removido em jan/2026)
-# ---------------------------------------------------------------------
 def calcular_aderencia_presenca(*args, **kwargs) -> pd.DataFrame:
-    """Alias compatível.
-
-    Antes: calculava aderência + presença.
-    Agora: retorna **apenas aderência** (mesmas colunas do `calcular_aderencia`).
-    """
+    """Alias compatível."""
     return calcular_aderencia(*args, **kwargs)
