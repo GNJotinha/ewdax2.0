@@ -3,15 +3,15 @@ import io
 import re
 import csv
 import hashlib
-from datetime import datetime
 
 import streamlit as st
 import pandas as pd
 import psycopg
 
 
-RAW_TABLE_DEFAULT = "base_2025_raw"
-IMPORTS_TABLE_DEFAULT = "imports"
+# 🔒 TRAVADO: não dá pra editar no app
+RAW_TABLE = "base_2025_raw"
+IMPORTS_TABLE = "imports"
 
 
 def _get_dsn() -> str:
@@ -26,7 +26,7 @@ def _get_dsn() -> str:
 
     if not dsn:
         raise RuntimeError(
-            "SUPABASE_DB_DSN não encontrado. Coloca no Streamlit Secrets ou em variavel de ambiente."
+            "SUPABASE_DB_DSN não encontrado. Coloca no Streamlit Secrets ou em variável de ambiente."
         )
     return dsn
 
@@ -41,20 +41,15 @@ def _safe_ident(name: str) -> str:
 
 
 def _decode_csv_bytes(data: bytes) -> str:
-    # Remove BOM se tiver (utf-8-sig)
     try:
-        return data.decode("utf-8-sig")
+        return data.decode("utf-8-sig")  # remove BOM se tiver
     except Exception:
-        # fallback bem comum em csvs do Brasil
         return data.decode("latin1")
 
 
 def _sniff_delimiter(text: str) -> str:
-    # Pelo teu exemplo é ';', mas deixa robusto.
     first_line = text.splitlines()[0] if text else ""
-    if first_line.count(";") >= first_line.count(","):
-        return ";"
-    return ","
+    return ";" if first_line.count(";") >= first_line.count(",") else ","
 
 
 def _parse_header_and_count(text: str, delimiter: str) -> tuple[list[str], int]:
@@ -64,7 +59,6 @@ def _parse_header_and_count(text: str, delimiter: str) -> tuple[list[str], int]:
     if not rows:
         raise ValueError("CSV vazio.")
     header = [c.strip() for c in rows[0]]
-    # valida header (evita SQL injection em nome de coluna)
     for h in header:
         _safe_ident(h)
     return header, max(0, len(rows) - 1)
@@ -108,7 +102,6 @@ def _pick_first(cols: set[str], candidates: list[str]) -> str | None:
 
 
 def _ensure_imports_table(cur, table: str):
-    # Se já existe, não faz nada.
     if _table_exists(cur, table):
         return
 
@@ -134,6 +127,7 @@ def _imports_lookup(cur, table: str, filename: str, sha: str) -> dict | None:
     if not id_col:
         return None
 
+    # 1) tenta sha primeiro (mais seguro)
     if sha_col:
         cur.execute(
             f"select {_safe_ident(id_col)} from public.{_safe_ident(table)} where {_safe_ident(sha_col)}=%s limit 1",
@@ -143,6 +137,7 @@ def _imports_lookup(cur, table: str, filename: str, sha: str) -> dict | None:
         if r:
             return {"import_id": int(r[0]), "by": "sha256"}
 
+    # 2) depois filename
     if name_col:
         cur.execute(
             f"select {_safe_ident(id_col)} from public.{_safe_ident(table)} where {_safe_ident(name_col)}=%s limit 1",
@@ -166,24 +161,22 @@ def _imports_insert(cur, table: str, filename: str, sha: str, row_count: int) ->
     sha_col = _pick_first(cols, ["sha256", "hash"])
     rc_col = _pick_first(cols, ["row_count", "linhas", "qtd_linhas"])
 
-    fields = []
-    values = []
-    params = []
+    fields, params, values = [], [], []
 
     if name_col:
         fields.append(_safe_ident(name_col))
-        values.append(filename)
         params.append("%s")
+        values.append(filename)
 
     if sha_col:
         fields.append(_safe_ident(sha_col))
-        values.append(sha)
         params.append("%s")
+        values.append(sha)
 
     if rc_col:
         fields.append(_safe_ident(rc_col))
-        values.append(int(row_count))
         params.append("%s")
+        values.append(int(row_count))
 
     if fields:
         cur.execute(
@@ -196,7 +189,6 @@ def _imports_insert(cur, table: str, filename: str, sha: str, row_count: int) ->
         )
         return int(cur.fetchone()[0])
 
-    # fallback (se a tabela imports não tiver colunas úteis)
     cur.execute(
         f"""
         insert into public.{_safe_ident(table)} default values
@@ -206,18 +198,16 @@ def _imports_insert(cur, table: str, filename: str, sha: str, row_count: int) ->
     return int(cur.fetchone()[0])
 
 
-def _import_one_csv(conn, raw_table: str, imports_table: str, filename: str, data: bytes) -> dict:
+def _import_one_csv(conn, filename: str, data: bytes) -> dict:
     text = _decode_csv_bytes(data)
     delimiter = _sniff_delimiter(text)
     header, row_count_guess = _parse_header_and_count(text, delimiter)
     sha = _sha256(data)
 
     with conn.cursor() as cur:
-        # garante imports
-        _ensure_imports_table(cur, imports_table)
+        _ensure_imports_table(cur, IMPORTS_TABLE)
 
-        # checa duplicado
-        dup = _imports_lookup(cur, imports_table, filename, sha)
+        dup = _imports_lookup(cur, IMPORTS_TABLE, filename, sha)
         if dup:
             conn.rollback()
             return {
@@ -228,31 +218,27 @@ def _import_one_csv(conn, raw_table: str, imports_table: str, filename: str, dat
                 "rows": row_count_guess,
             }
 
-        # valida tabelas/colunas
-        if not _table_exists(cur, raw_table):
-            raise RuntimeError(f"Tabela public.{raw_table} não existe.")
+        if not _table_exists(cur, RAW_TABLE):
+            raise RuntimeError(f"Tabela public.{RAW_TABLE} não existe.")
 
-        raw_cols = [c for c, _ in _get_columns(cur, raw_table)]
+        raw_cols = [c for c, _ in _get_columns(cur, RAW_TABLE)]
         raw_set = set(raw_cols)
 
         missing = [h for h in header if h not in raw_set]
         if missing:
             raise RuntimeError(
-                "CSV tem colunas que não existem em public.%s: %s" % (raw_table, ", ".join(missing))
+                f"CSV tem colunas que não existem em public.{RAW_TABLE}: {', '.join(missing)}"
             )
 
         if "import_id" not in raw_set or "row_number" not in raw_set:
-            raise RuntimeError(f"Tabela public.{raw_table} precisa ter colunas import_id e row_number.")
+            raise RuntimeError(f"Tabela public.{RAW_TABLE} precisa ter colunas import_id e row_number.")
 
-        # cria registro na imports e pega id
-        import_id = _imports_insert(cur, imports_table, filename, sha, row_count_guess)
+        import_id = _imports_insert(cur, IMPORTS_TABLE, filename, sha, row_count_guess)
 
-        # staging temp
         tmp = f"tmp_csv_{import_id}"
         cols_def = ", ".join([f"{_safe_ident(h)} text" for h in header])
         cur.execute(f"create temp table {_safe_ident(tmp)} ({cols_def}) on commit drop")
 
-        # COPY pro temp (delimiter do CSV)
         copy_sql = (
             f"COPY {_safe_ident(tmp)} ({', '.join(header)}) FROM STDIN "
             f"WITH (FORMAT csv, HEADER true, DELIMITER '{delimiter}', QUOTE '\"')"
@@ -260,18 +246,16 @@ def _import_one_csv(conn, raw_table: str, imports_table: str, filename: str, dat
         with cur.copy(copy_sql) as cp:
             cp.write(text.encode("utf-8"))
 
-        # conta real
         cur.execute(f"select count(*) from {_safe_ident(tmp)}")
         real_rows = int(cur.fetchone()[0])
 
-        # insere no raw
         insert_cols = ["import_id", "row_number"] + header
         insert_cols_sql = ", ".join([_safe_ident(c) for c in insert_cols])
         select_cols_sql = ", ".join([_safe_ident(c) for c in header])
 
         cur.execute(
             f"""
-            insert into public.{_safe_ident(raw_table)} ({insert_cols_sql})
+            insert into public.{_safe_ident(RAW_TABLE)} ({insert_cols_sql})
             select %s as import_id,
                    row_number() over () as row_number,
                    {select_cols_sql}
@@ -280,13 +264,12 @@ def _import_one_csv(conn, raw_table: str, imports_table: str, filename: str, dat
             (import_id,),
         )
 
-        # atualiza row_count se existir
-        cols = {c for c, _ in _get_columns(cur, imports_table)}
+        cols = {c for c, _ in _get_columns(cur, IMPORTS_TABLE)}
         rc_col = _pick_first(cols, ["row_count", "linhas", "qtd_linhas"])
         id_col = _pick_first(cols, ["id", "import_id"])
         if rc_col and id_col:
             cur.execute(
-                f"update public.{_safe_ident(imports_table)} set {_safe_ident(rc_col)}=%s where {_safe_ident(id_col)}=%s",
+                f"update public.{_safe_ident(IMPORTS_TABLE)} set {_safe_ident(rc_col)}=%s where {_safe_ident(id_col)}=%s",
                 (real_rows, import_id),
             )
 
@@ -314,9 +297,6 @@ def render(df, USUARIOS: dict):
     except Exception:
         allowed = set()
 
-    # regra:
-    # - se IMPORTADORES existir: só quem estiver na lista
-    # - se não existir: libera pra admin/dev/operacional
     if allowed:
         pode = usuario in allowed
     else:
@@ -328,9 +308,7 @@ def render(df, USUARIOS: dict):
         return
 
     st.caption("Arrasta o CSV do dia aqui. O app sobe pro Supabase e evita duplicado automaticamente.")
-
-    raw_table = st.text_input("Tabela RAW", value=RAW_TABLE_DEFAULT)
-    imports_table = st.text_input("Tabela de imports", value=IMPORTS_TABLE_DEFAULT)
+    st.caption(f"Destino fixo: public.{RAW_TABLE}  |  Controle: public.{IMPORTS_TABLE}")
 
     files = st.file_uploader(
         "CSV(s)",
@@ -360,7 +338,6 @@ def render(df, USUARIOS: dict):
             st.error(str(e))
             return
 
-        st.write("Conectando no banco…")
         conn = psycopg.connect(dsn)
         conn.autocommit = False
 
@@ -375,7 +352,7 @@ def render(df, USUARIOS: dict):
 
                 st.write(f"📄 Importando: **{fname}**")
                 try:
-                    res = _import_one_csv(conn, raw_table.strip(), imports_table.strip(), fname, data)
+                    res = _import_one_csv(conn, fname, data)
                     results.append(res)
 
                     if res["status"] == "ok":
@@ -399,4 +376,4 @@ def render(df, USUARIOS: dict):
             st.session_state.force_refresh = True
             st.session_state.just_refreshed = True
             st.cache_data.clear()
-            st.success("Importação concluída.")
+            st.success("Importação concluída. Volta no Início — os dados já vão estar atualizados.")
