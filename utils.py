@@ -17,115 +17,50 @@ def normalizar(texto):
     )
 
 
-# ---------------------------------------------------------
-# Conversão de tempo (HH:MM:SS → segundos)
-# ---------------------------------------------------------
-def tempo_para_segundos(t):
+# ------------------------------
+# Conversão de tempo
+# ------------------------------
+def tempo_para_segundos(valor):
     """
-    Converte strings de tempo em segundos.
-    Aceita formatos: HH:MM:SS, HH:MM, H, ou números puros (segundos).
-    Preserva o sinal (ex: '-00:10:00' → -600).
+    Converte "HH:MM:SS" para segundos.
+    Se vier NaN/None/"" retorna 0.
     """
-    if pd.isna(t):
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
         return 0
-    s = str(t).strip()
-    sign = -1 if s.startswith("-") else 1
-    s = s.lstrip("+-")
+    s = str(valor).strip()
+    if not s:
+        return 0
     try:
         parts = s.split(":")
-        if len(parts) == 3:
-            h, m, s2 = map(int, parts)
-            total = h * 3600 + m * 60 + s2
-        elif len(parts) == 2:
-            h, m = map(int, parts)
-            total = h * 3600 + m * 60
-        else:
-            total = int(float(s))
-        return sign * total
-    except Exception:
-        try:
-            return sign * int(float(s))
-        except Exception:
+        if len(parts) != 3:
             return 0
+        h, m, sec = parts
+        return int(h) * 3600 + int(m) * 60 + int(sec)
+    except Exception:
+        return 0
 
 
-# ---------------------------------------------------------
-# Cálculo de tempo online (%)
-# ---------------------------------------------------------
-def calcular_tempo_online(df_filtrado: pd.DataFrame) -> float:
-    """
-    Tempo online = média de 'tempo_disponivel_escalado' em %.
-    Regras:
-      - Ignora apenas linhas com -10:00 (segundos_abs_raw == -600).
-      - Auto-escalona a origem:
-          * mediana <= 1   -> assume 0–1      (multiplica por 100)
-          * <= 100         -> assume 0–100    (usa como está)
-          * > 100          -> assume 0–10000  (divide por 100)
-      - Clip final em [0, 100] e retorna com 1 casa.
-    """
-    if df_filtrado is None or df_filtrado.empty:
-        return 0.0
-
-    d = df_filtrado.copy()
-
-    # ignora -10:00 no cálculo do online
-    if "segundos_abs_raw" in d.columns:
-        d = d[d["segundos_abs_raw"] != -600]
-
-    esc = pd.to_numeric(d.get("tempo_disponivel_escalado"), errors="coerce").dropna()
-    if esc.empty:
-        return 0.0
-
-    med = esc.median()
-    mean_val = float(esc.mean())
-
-    if med <= 1.0:
-        val = mean_val * 100.0       # origem 0–1
-    elif med <= 100.0:
-        val = mean_val               # origem 0–100
-    else:
-        val = mean_val / 100.0       # origem 0–10000 (basis points)
-
-    # saneamento final
-    val = max(0.0, min(100.0, val))
-    return round(val, 1)
-
-# ---------------------------------------------------------
-# Aderência (REGULAR vs vagas)
-# ---------------------------------------------------------
+# ------------------------------
+# Regras de turno válido
+# ------------------------------
+TURNO_VALIDO_MIN_SEG = 30 * 60  # 30min
 
 
-
-TURNO_VALIDO_MIN_SEG = 10 * 60  # 00:10:00
+def mask_turno_valido(df: pd.DataFrame, min_seg: int = TURNO_VALIDO_MIN_SEG) -> pd.Series:
+    """Turno válido se segundos_abs >= min_seg."""
+    s = pd.to_numeric(df.get("segundos_abs", 0), errors="coerce").fillna(0)
+    return s >= int(min_seg)
 
 
 def _entregador_key(df: pd.DataFrame) -> pd.Series:
     """
-    Chave única do entregador (anti-duplicidade).
-    Prioridade:
-      1) uuid
-      2) id_da_pessoa_entregadora
-      3) pessoa_entregadora_normalizado
-      4) pessoa_entregadora
+    Chave do entregador pra anti-duplicidade.
+    Preferência: uuid -> id_da_pessoa_entregadora -> pessoa_entregadora_normalizado -> pessoa_entregadora
     """
-    for col in ("uuid", "id_da_pessoa_entregadora"):
-        if col in df.columns:
-            s = df[col].astype(str).fillna("").str.strip()
-            if (s != "").any():
-                return s
-
-    if "pessoa_entregadora_normalizado" in df.columns:
-        return df["pessoa_entregadora_normalizado"].astype(str).fillna("").str.strip()
-
-    if "pessoa_entregadora" in df.columns:
-        return df["pessoa_entregadora"].astype(str).fillna("").str.strip()
-
-    return pd.Series([""] * len(df), index=df.index, dtype="string")
-
-
-def mask_turno_valido(df: pd.DataFrame, min_seg: int = TURNO_VALIDO_MIN_SEG) -> pd.Series:
-    secs = pd.to_numeric(df.get("segundos_abs", 0), errors="coerce").fillna(0)
-    return secs >= float(min_seg)
+    for c in ("uuid", "id_da_pessoa_entregadora", "pessoa_entregadora_normalizado", "pessoa_entregadora"):
+        if c in df.columns:
+            return df[c].astype(str).fillna("").str.strip()
+    return pd.Series([""] * len(df), index=df.index)
 
 
 def calcular_aderencia(
@@ -157,6 +92,16 @@ def calcular_aderencia(
         )
 
     dfx = df.copy()
+
+    # normaliza vagas para numérico (suporta pt-BR tipo "1.234" e "4.118,10")
+    if not pd.api.types.is_numeric_dtype(dfx[vagas_col]):
+        v = dfx[vagas_col].astype("string").str.strip()
+        v = v.replace({"": pd.NA, "nan": pd.NA, "NaN": pd.NA})
+        # remove separador de milhar apenas quando for padrão 1.234 ou 1.234,56
+        mask_thou = v.str.match(r"^\d{1,3}(\.\d{3})+(,\d+)?$")
+        v = v.where(~mask_thou, v.str.replace(".", "", regex=False))
+        v = v.str.replace(",", ".", regex=False)
+        dfx[vagas_col] = pd.to_numeric(v, errors="coerce").fillna(0.0)
 
     # valida colunas mínimas
     for c in group_cols:
