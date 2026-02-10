@@ -330,6 +330,9 @@ MENU = {
         "UTR": "views.utr",
         "Indicadores Gerais": "views.indicadores",
     },
+    "Dados": {
+        "Atualizar base": "views.upload",
+    }
 }
 
 with st.sidebar:
