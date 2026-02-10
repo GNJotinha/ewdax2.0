@@ -326,7 +326,6 @@ MENU = {
         "Simplificada (WhatsApp)": "views.simplificada",
         "Relatório Customizado": "views.relatorio_custom",
         "Perfil do Entregador": "views.perfil_entregador",
-        "Elite": "views.elite",
     },
     "Relatórios": {
         "Relatório de faltas": "views.faltas",
@@ -345,6 +344,7 @@ MENU = {
     },
 }
 
+
 def _sig_ok_now() -> bool:
     ok = bool(st.session_state.get("_sig_ok"))
     if not ok:
@@ -358,12 +358,19 @@ def _sig_ok_now() -> bool:
         return False
     return datetime.now(TZ) <= dt_until
 
+
 with st.sidebar:
     st.markdown("### Navegação")
 
     if st.button("Início", use_container_width=True):
         st.session_state.module = "views.home"
         st.session_state.open_cat = None
+        st.rerun()
+
+    # Atualiza cache da base (Supabase/Excel), sem depender da página
+    if st.button("🔄 Atualizar base", use_container_width=True):
+        st.session_state.force_refresh = True
+        st.session_state.just_refreshed = True
         st.rerun()
 
     admins_list = set(st.secrets.get("ADMINS", []))
@@ -400,8 +407,11 @@ if mod in ("views.auditoria_sigilosa", "views.auditoria_gate"):
     df = pd.DataFrame()
 else:
     df = get_df_once()
+    fonte = df.attrs.get("fonte", "?")
+    st.sidebar.caption(f"📦 Fonte de dados: {fonte}")
     if st.session_state.pop("just_refreshed", False):
-        st.success("✅ Base atualizada a partir do Google Drive.")
+        fonte = getattr(df, "attrs", {}).get("fonte", "dados")
+        st.success(f"✅ Base atualizada a partir do {fonte}.")
 
 # --------------- Roteador ---------------
 try:
