@@ -345,62 +345,6 @@ MENU = {
 }
 
 
-def _sig_ok_now() -> bool:
-    ok = bool(st.session_state.get("_sig_ok"))
-    if not ok:
-        return False
-    until = st.session_state.get("_sig_until")
-    if until is None:
-        return True
-    try:
-        dt_until = datetime.fromisoformat(until)
-    except Exception:
-        return False
-    return datetime.now(TZ) <= dt_until
-
-
-with st.sidebar:
-    st.markdown("### Navegação")
-
-    if st.button("Início", use_container_width=True):
-        st.session_state.module = "views.home"
-        st.session_state.open_cat = None
-        st.rerun()
-
-    # Atualiza cache da base (Supabase/Excel), sem depender da página
-    if st.button("🔄 Atualizar base", use_container_width=True):
-        st.session_state.force_refresh = True
-        st.session_state.just_refreshed = True
-        st.rerun()
-
-    admins_list = set(st.secrets.get("ADMINS", []))
-    user_entry = USUARIOS.get(st.session_state.usuario, {}) or {}
-    nivel = user_entry.get("nivel", "")
-    is_sigiloso = (nivel in ("admin", "dev")) or (st.session_state.usuario in admins_list)
-
-    if is_sigiloso:
-        with st.expander("Acesso restrito", expanded=False):
-            if st.button("Comparativo entregador", use_container_width=True):
-                st.session_state.sig_target = "by_entregador"
-                st.session_state.module = "views.auditoria_sigilosa" if st.session_state.get("_sig_ok") else "views.auditoria_gate"
-                st.session_state.open_cat = None
-                st.rerun()
-
-            if st.button("Comparativo geral", use_container_width=True):
-                st.session_state.sig_target = "geral"
-                st.session_state.module = "views.auditoria_sigilosa" if st.session_state.get("_sig_ok") else "views.auditoria_gate"
-                st.session_state.open_cat = None
-                st.rerun()
-
-    for cat, opts in MENU.items():
-        expanded = (st.session_state.open_cat == cat)
-        with st.expander(cat, expanded=expanded):
-            for label, module in opts.items():
-                if st.button(label, key=f"btn_{cat}_{label}", use_container_width=True):
-                    st.session_state.module = module
-                    st.session_state.open_cat = cat
-                    st.rerun()
-
 # --------------- Dados ---------------
 mod = st.session_state.module
 if mod in ("views.auditoria_sigilosa", "views.auditoria_gate"):
