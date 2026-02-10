@@ -4,3 +4,4 @@ gdown>=5.2
 openpyxl>=3.1
 plotly>=5.22
 supabase>=2.4
+psycopg[binary]
