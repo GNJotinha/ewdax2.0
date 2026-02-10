@@ -8,7 +8,8 @@ import bcrypt
 
 TZ = ZoneInfo("America/Sao_Paulo")
 
-LOGIN_RE = re.compile(r"^[a-z0-9._-]{3,32}$")  # sem espaço
+# login sem espaço: 3 a 32, só a-z 0-9 . _ -
+LOGIN_RE = re.compile(r"^[a-z0-9._-]{3,32}$")
 
 
 def canon_login(login: str) -> str:
@@ -19,6 +20,22 @@ def canon_login(login: str) -> str:
     if not LOGIN_RE.match(s):
         raise ValueError("Login inválido. Use 3–32 chars: a-z 0-9 . _ -")
     return s
+
+
+def hash_password(password: str) -> str:
+    """Gera hash bcrypt (string) pra salvar em app_users.password_hash."""
+    pw = (password or "").encode("utf-8")
+    if len(pw) < 6:
+        raise ValueError("Senha muito curta (mín. 6).")
+    return bcrypt.hashpw(pw, bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """Valida senha contra hash bcrypt (inclui hash vindo do Postgres crypt(...,'bf'))."""
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
+    except Exception:
+        return False
 
 
 def _get_dsn() -> str:
@@ -34,13 +51,6 @@ def _get_dsn() -> str:
     return dsn
 
 
-def _verify_password(password: str, stored_hash: str) -> bool:
-    try:
-        return bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
-    except Exception:
-        return False
-
-
 def _lock_policy(failed_attempts: int):
     # 5 erros = lock 10min
     if failed_attempts >= 5:
@@ -48,23 +58,24 @@ def _lock_policy(failed_attempts: int):
     return False, None
 
 
-def _get_app_users_columns(conn) -> set[str]:
+def _get_columns(conn, table: str) -> set[str]:
     with conn.cursor() as cur:
         cur.execute(
             """
             select column_name
             from information_schema.columns
-            where table_schema='public' and table_name='app_users'
-            """
+            where table_schema='public' and table_name=%s
+            """,
+            (table,),
         )
         return {r[0] for r in cur.fetchall()}
 
 
 def autenticar(login: str, senha: str):
     """
-    Retorna SEMPRE: (ok: bool, user: dict|None, msg: str)
+    SEMPRE retorna: (ok: bool, user: dict|None, msg: str)
 
-    user (quando ok):
+    user contém (quando ok):
       id, login, full_name, department, is_admin, must_change_password
     """
     try:
@@ -92,52 +103,45 @@ def autenticar(login: str, senha: str):
         )
 
     try:
-        cols = _get_app_users_columns(conn)
+        cols = _get_columns(conn, "app_users")
         if not cols:
-            return False, None, "Tabela public.app_users não existe ou sem colunas."
+            return False, None, "Tabela public.app_users não encontrada (ou sem colunas)."
 
-        # Colunas obrigatórias (com fallback de nomes possíveis)
         def pick(candidates):
             for c in candidates:
                 if c in cols:
                     return c
             return None
 
+        # obrigatórias
         id_col = pick(["id"])
         login_col = pick(["login"])
-        full_name_col = pick(["full_name", "nome", "name"])
-        dept_col = pick(["department", "setor", "departamento"])
+        full_name_col = pick(["full_name"])
+        dept_col = pick(["department"])
         is_admin_col = pick(["is_admin"])
-        is_active_col = pick(["is_active", "ativo"])
-        pw_col = pick(["password_hash", "senha_hash", "hash"])
+        is_active_col = pick(["is_active"])
+        pw_col = pick(["password_hash"])
 
+        missing = [name for name, col in [
+            ("id", id_col),
+            ("login", login_col),
+            ("full_name", full_name_col),
+            ("department", dept_col),
+            ("is_admin", is_admin_col),
+            ("is_active", is_active_col),
+            ("password_hash", pw_col),
+        ] if not col]
+        if missing:
+            return False, None, f"Tabela app_users sem colunas obrigatórias: {', '.join(missing)}"
+
+        # opcionais
         must_change_col = pick(["must_change_password"])
         failed_attempts_col = pick(["failed_attempts"])
         locked_until_col = pick(["locked_until"])
         last_login_col = pick(["last_login_at"])
         updated_at_col = pick(["updated_at"])
 
-        # valida mínimos
-        missing_min = []
-        for required, nm in [
-            (id_col, "id"),
-            (login_col, "login"),
-            (full_name_col, "full_name"),
-            (dept_col, "department"),
-            (is_admin_col, "is_admin"),
-            (is_active_col, "is_active"),
-            (pw_col, "password_hash"),
-        ]:
-            if not required:
-                missing_min.append(nm)
-
-        if missing_min:
-            return False, None, f"Tabela app_users sem colunas obrigatórias: {', '.join(missing_min)}"
-
-        select_cols = [
-            id_col, login_col, full_name_col, dept_col, is_admin_col, is_active_col, pw_col
-        ]
-        # opcionais
+        select_cols = [id_col, login_col, full_name_col, dept_col, is_admin_col, is_active_col, pw_col]
         if must_change_col:
             select_cols.append(must_change_col)
         if failed_attempts_col:
@@ -145,7 +149,8 @@ def autenticar(login: str, senha: str):
         if locked_until_col:
             select_cols.append(locked_until_col)
 
-        # Busca usuário (case-insensitive)
+        idx = {c: i for i, c in enumerate(select_cols)}
+
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -161,14 +166,12 @@ def autenticar(login: str, senha: str):
         if not row:
             return False, None, "Usuário não encontrado."
 
-        # Mapeia resultado pelo índice
-        idx = {col: i for i, col in enumerate(select_cols)}
         user_id = row[idx[id_col]]
         db_login = row[idx[login_col]]
         full_name = row[idx[full_name_col]]
         department = row[idx[dept_col]]
-        is_admin = row[idx[is_admin_col]]
-        is_active = row[idx[is_active_col]]
+        is_admin = bool(row[idx[is_admin_col]])
+        is_active = bool(row[idx[is_active_col]])
         password_hash_db = row[idx[pw_col]]
 
         must_change = bool(row[idx[must_change_col]]) if must_change_col else False
@@ -178,17 +181,17 @@ def autenticar(login: str, senha: str):
         if not is_active:
             return False, None, "Usuário desativado."
 
-        # lock (se existir no schema)
+        # lock (se existir)
         if locked_until is not None:
             try:
                 now = datetime.now(TZ)
                 if now < locked_until:
                     mins = int((locked_until - now).total_seconds() // 60) + 1
-                    return False, None, f"Usuário bloqueado. Tente novamente em ~{mins} min."
+                    return False, None, f"Usuário bloqueado. Tente em ~{mins} min."
             except Exception:
                 pass
 
-        ok = _verify_password(senha, password_hash_db)
+        ok = verify_password(senha, password_hash_db)
         if not ok:
             # se tiver colunas de lockout, atualiza
             if failed_attempts_col:
@@ -206,7 +209,6 @@ def autenticar(login: str, senha: str):
                         params.append(new_locked_until)
                     if updated_at_col:
                         sets.append(f"{updated_at_col}=now()")
-
                     cur.execute(
                         f"update public.app_users set {', '.join(sets)} where {id_col}=%s",
                         tuple(params + [user_id]),
