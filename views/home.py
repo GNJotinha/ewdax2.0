@@ -51,40 +51,47 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         else:
             df_mes = df.copy()
 
-    mes_txt = f"{mes_atual:02d}/{ano_atual}"
+    # =========================
+    # COLUNAS (auto)
+    # =========================
+    cols = set(df_mes.columns)
 
-    # data mais recente (topo)
-    data_col = _pick_col(df_mes.columns, ["data", "data_do_periodo", "data_do_periodo_de_referencia"])
-    data_str = "—"
-    if data_col:
-        dtmax = pd.to_datetime(df_mes[data_col], errors="coerce").max()
-        if pd.notna(dtmax):
-            data_str = pd.to_datetime(dtmax).strftime("%d/%m/%Y")
+    data_col = _pick_col(cols, ["data", "data_do_periodo", "Data", "DATA"])
+    turno_col = _pick_col(cols, ["turno", "periodo", "Turno", "PERIODO"])
+    vagas_col = _pick_col(cols, ["numero_minimo_de_entregadores_regulares_na_escala", "vagas", "VAGAS"])
+    tag_col = _pick_col(cols, ["tag", "TAG"])
 
     # =========================
-    # KPIs
+    # MÉTRICAS BÁSICAS
     # =========================
-    ofertadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
-    aceitas = int(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
-    rejeitadas = int(pd.to_numeric(df_mes.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
+    corr_of = float(pd.to_numeric(df_mes.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
+    corr_ac = float(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
+    corr_rej = float(pd.to_numeric(df_mes.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
 
-    entreg_uniq = int(df_mes["pessoa_entregadora"].dropna().nunique()) if "pessoa_entregadora" in df_mes.columns else 0
+    ativos = 0
+    if "uuid" in df_mes.columns:
+        ativos = int(df_mes["uuid"].nunique())
+    elif "id_da_pessoa_entregadora" in df_mes.columns:
+        ativos = int(df_mes["id_da_pessoa_entregadora"].nunique())
 
-    acc_pct = (aceitas / ofertadas * 100.0) if ofertadas > 0 else 0.0
-    rej_pct = (rejeitadas / ofertadas * 100.0) if ofertadas > 0 else 0.0
-
-    seg_total = pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0).sum()
-    horas_total = float(seg_total / 3600.0) if seg_total > 0 else 0.0
-    utr_abs = (ofertadas / horas_total) if horas_total > 0 else 0.0
-
-    # UTR média
-    utr_medias = 0.0
+    # =========================
+    # SUPPLY HOURS (SH)
+    # =========================
+    supply_hours = 0.0
     try:
-        base_home = utr_por_entregador_turno(df, mes_atual, ano_atual)
-        if not base_home.empty and "supply_hours" in base_home.columns and "corridas_ofertadas" in base_home.columns:
-            base_pos = base_home[base_home["supply_hours"] > 0].copy()
-            if not base_pos.empty:
-                utr_medias = float((base_pos["corridas_ofertadas"] / base_pos["supply_hours"]).mean())
+        supply_hours = float(pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0).sum()) / 3600.0
+    except Exception:
+        pass
+
+    # =========================
+    # UTR MÉDIA (simples)
+    # =========================
+    utr_media = 0.0
+    utr_abs = 0.0
+    try:
+        if supply_hours > 0:
+            utr_abs = float(corr_of / supply_hours)
+        utr_media = float((df_mes["numero_de_corridas_ofertadas"] / (df_mes["segundos_abs"] / 3600.0)).mean())
     except Exception:
         pass
 
@@ -96,11 +103,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     ader_vagas = 0.0
     vagas_incons = False
 
-    vagas_col = _pick_col(df_mes.columns, ["numero_minimo_de_entregadores_regulares_na_escala", "vagas"])
-    tag_col = _pick_col(df_mes.columns, ["tag"])
-    turno_col = _pick_col(df_mes.columns, ["turno", "tipo_turno", "periodo"])
-
-    if (not df_mes.empty) and vagas_col and tag_col and data_col and ("segundos_abs" in df_mes.columns):
+    if data_col and vagas_col and tag_col and ("segundos_abs" in df_mes.columns):
         group_cols = (data_col, turno_col) if turno_col else (data_col,)
         try:
             base_ap = calcular_aderencia(
@@ -126,17 +129,21 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     top3 = []
     if ("pessoa_entregadora" in df_mes.columns) and ("segundos_abs" in df_mes.columns):
         tmp_h = df_mes[["pessoa_entregadora", "segundos_abs"]].copy()
-        tmp_h["segundos_abs"] = pd.to_numeric(tmp_h["segundos_abs"], errors="coerce").fillna(0)
+        tmp_h["horas"] = pd.to_numeric(tmp_h["segundos_abs"], errors="coerce").fillna(0) / 3600.0
+        top = tmp_h.groupby("pessoa_entregadora", dropna=False)["horas"].sum().sort_values(ascending=False).head(3)
+        for nome, horas in top.items():
+            top3.append((str(nome), float(horas)))
 
-        top = (
-            tmp_h.groupby("pessoa_entregadora", as_index=False)["segundos_abs"]
-            .sum()
-            .sort_values("segundos_abs", ascending=False)
-            .head(3)
-        )
-
-        for _, r in top.iterrows():
-            top3.append((str(r["pessoa_entregadora"]), float(r["segundos_abs"]) / 3600.0))
+    # =========================
+    # DATA “atualizada”
+    # =========================
+    data_str = ""
+    try:
+        dtmax = pd.to_datetime(df_mes["data_do_periodo"], errors="coerce").max()
+        if pd.notna(dtmax):
+            data_str = dtmax.strftime("%d/%m/%Y")
+    except Exception:
+        pass
 
     # =========================
     # HEADER (SEM HTML)
@@ -146,7 +153,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
         st.title("Painel de Entregadores")
         st.caption(f"Dados atualizados • {data_str}")
     with hR:
-        if st.button("Atualizar dados", use_container_width=True, key="btn_refresh_home"):
+        if st.button("Atualizar base", use_container_width=True, key="btn_refresh_home"):
             st.session_state.force_refresh = True
             st.session_state.just_refreshed = True
             st.cache_data.clear()
@@ -155,118 +162,117 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     # =========================
     # CONTEÚDO
     # =========================
-    st.markdown(f'<div class="neo-section">Resumo do mês ({mes_txt})</div>', unsafe_allow_html=True)
+    st.markdown("#### Resumo do mês ({:02d}/{})".format(mes_atual, ano_atual))
 
-    aceitas_html = f"{_fmt_int(aceitas)}<span class='pct'>({_fmt_pct(acc_pct, 1)})</span>"
-    rejeitadas_html = f"{_fmt_int(rejeitadas)}<span class='pct'>({_fmt_pct(rej_pct, 1)})</span>"
-
-    st.markdown(
-        f"""
-        <div class="neo-grid-4">
-          <div class="neo-card">
-            <div class="neo-label">Ofertadas – UTR</div>
-            <div class="neo-value">{_fmt_int(ofertadas)}</div>
-            <div class="neo-subline">Absoluto {utr_abs:.2f} • Média {utr_medias:.2f}</div>
-          </div>
-
-          <div class="neo-card neo-success">
-            <div class="neo-label">Aceitas</div>
-            <div class="neo-value">{aceitas_html}</div>
-            <div class="neo-subline">&nbsp;</div>
-          </div>
-
-          <div class="neo-card neo-danger">
-            <div class="neo-label">Rejeitadas</div>
-            <div class="neo-value">{rejeitadas_html}</div>
-            <div class="neo-subline">&nbsp;</div>
-          </div>
-
-          <div class="neo-card">
-            <div class="neo-label">Entregadores ativos</div>
-            <div class="neo-value">{_fmt_int(entreg_uniq)}</div>
-            <div class="neo-subline">&nbsp;</div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="neo-section">Aderência (REGULAR)</div>', unsafe_allow_html=True)
-
-    incons_txt = "⚠️ Vagas inconsistentes." if vagas_incons else ""
-
-    st.markdown(
-        f"""
-        <div class="neo-grid-2">
-          <div class="neo-card">
-            <div class="neo-value">{ader_pct:.1f}%</div>
-            <div class="neo-subline">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
-            <div class="neo-subline" style="color:rgba(255,176,32,.95)">{incons_txt}</div>
-          </div>
-
-          <div class="neo-card">
-            <div class="neo-label">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
-            <div class="neo-progress-wrap">
-              <div class="neo-progress">
-                <div style="width:{pct_bar:.1f}%;"></div>
-              </div>
-              <div class="neo-scale">
-                <span>0%</span><span>50%</span><span>100%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown('<div class="neo-divider"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="neo-section">Supply & Ranking</div>', unsafe_allow_html=True)
-
-    # ✅ colunas 1:1 = SH e ranking com mesmo “peso”
-    c1, c2 = st.columns([1, 1])
-
-    # =========================
-    # SH (card) — SÓ MÉDIA POR ENTREGADOR
-    # =========================
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
-        media_por_entreg = (horas_total / entreg_uniq) if entreg_uniq else 0.0
-
         st.markdown(
-            f"""<div class="neo-card">
-  <div class="neo-label">Supply Hours (SH)</div>
-  <div class="neo-value">{horas_total:.1f}h</div>
-  <div class="neo-subline">Total no mês ({mes_txt})</div>
-
-  <div style="height:10px"></div>
-
-  <div class="toprow">
-    <div class="name">👤 Média por entregador</div>
-    <div class="hours">{media_por_entreg:.1f}h</div>
-  </div>
-
-  <div style="height:12px"></div>
-</div>""",
-            unsafe_allow_html=True
+            f"""
+            <div class="neo-card">
+              <div class="neo-label">Ofertadas – UTR</div>
+              <div class="neo-value">{_fmt_int(corr_of)}</div>
+              <div class="neo-subline">Absoluto {_fmt_int(utr_abs)} • Média {str(round(utr_media,2)).replace(".",",")}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-    # ✅ Ranking dentro do card (SEM INDENTAÇÃO NO HTML DINÂMICO)
     with c2:
-        medals = ["🥇", "🥈", "🥉"]
+        pct = (corr_ac / corr_of * 100.0) if corr_of > 0 else 0.0
+        st.markdown(
+            f"""
+            <div class="neo-card neo-success">
+              <div class="neo-label">Aceitas</div>
+              <div class="neo-value">{_fmt_int(corr_ac)}<span class="pct">({_fmt_pct(pct)})</span></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        if not top3:
-            rows = "<div class='neo-subline'>Sem dados suficientes.</div>"
-        else:
-            rows = ""
-            for i, (nome, horas) in enumerate(top3[:3]):
-                nome_safe = html.escape(str(nome))
-                rows += (
-                    f'<div class="toprow">'
-                    f'<div class="name">{medals[i]}&nbsp;{nome_safe}</div>'
-                    f'<div class="hours">{horas:.1f}h</div>'
-                    f'</div>'
-                )
+    with c3:
+        pct = (corr_rej / corr_of * 100.0) if corr_of > 0 else 0.0
+        st.markdown(
+            f"""
+            <div class="neo-card neo-danger">
+              <div class="neo-label">Rejeitadas</div>
+              <div class="neo-value">{_fmt_int(corr_rej)}<span class="pct">({_fmt_pct(pct)})</span></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with c4:
+        st.markdown(
+            f"""
+            <div class="neo-card">
+              <div class="neo-label">Entregadores ativos</div>
+              <div class="neo-value">{_fmt_int(ativos)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("#### Aderência (REGULAR)")
+    a1, a2 = st.columns([1, 2])
+    with a1:
+        st.markdown(
+            f"""
+            <div class="neo-card">
+              <div class="neo-label">Aderência</div>
+              <div class="neo-value">{str(ader_pct).replace(".",",")}%</div>
+              <div class="neo-subline">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if vagas_incons:
+            st.warning("⚠️ Vagas variando dentro do mesmo grupo (possível inconsistência).")
+
+    with a2:
+        st.markdown(
+            f"""
+            <div class="neo-card">
+              <div class="neo-label">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
+              <div class="neo-progress-wrap">
+                <div class="neo-progress"><div style="width:{pct_bar}%;"></div></div>
+                <div class="neo-scale"><span>0%</span><span>50%</span><span>100%</span></div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("#### Supply & Ranking")
+    s1, s2 = st.columns([1.3, 1.0])
+    with s1:
+        st.markdown(
+            f"""
+            <div class="neo-card">
+              <div class="neo-label">Supply Hours (SH)</div>
+              <div class="neo-value">{str(round(supply_hours,1)).replace(".",",")}h</div>
+              <div class="neo-subline">Total no mês ({mes_atual:02d}/{ano_atual})</div>
+              <div class="neo-divider"></div>
+              <div class="toprow">
+                <div class="name">👤 Média por entregador</div>
+                <div class="hours">{str(round((supply_hours / ativos) if ativos else 0,1)).replace(".",",")}h</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with s2:
+        rows = ""
+        medals = ["🥇", "🥈", "🥉"]
+        for i, (nome, horas) in enumerate(top3):
+            rows += f"""
+            <div class="toprow">
+              <div class="name">{medals[i]} {html.escape(nome)}</div>
+              <div class="hours">{str(round(horas,1)).replace(".",",")}h</div>
+            </div>
+            """
+        if not rows:
+            rows = "<div class='neo-subline'>Sem ranking disponível.</div>"
 
         st.markdown(
             f"""
@@ -275,5 +281,5 @@ def render(df: pd.DataFrame, USUARIOS: dict):
               {rows}
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
