@@ -1,7 +1,6 @@
 import html
 import streamlit as st
 import pandas as pd
-from relatorios import utr_por_entregador_turno
 from utils import calcular_aderencia
 
 
@@ -55,7 +54,6 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     # COLUNAS (auto)
     # =========================
     cols = set(df_mes.columns)
-
     data_col = _pick_col(cols, ["data", "data_do_periodo", "Data", "DATA"])
     turno_col = _pick_col(cols, ["turno", "periodo", "Turno", "PERIODO"])
     vagas_col = _pick_col(cols, ["numero_minimo_de_entregadores_regulares_na_escala", "vagas", "VAGAS"])
@@ -68,30 +66,32 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     corr_ac = float(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
     corr_rej = float(pd.to_numeric(df_mes.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
 
-    ativos = 0
     if "uuid" in df_mes.columns:
         ativos = int(df_mes["uuid"].nunique())
     elif "id_da_pessoa_entregadora" in df_mes.columns:
         ativos = int(df_mes["id_da_pessoa_entregadora"].nunique())
+    else:
+        ativos = 0
 
     # =========================
     # SUPPLY HOURS (SH)
     # =========================
-    supply_hours = 0.0
     try:
         supply_hours = float(pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0).sum()) / 3600.0
     except Exception:
-        pass
+        supply_hours = 0.0
 
     # =========================
-    # UTR MÉDIA (simples)
+    # UTR (absoluto e média)
     # =========================
+    utr_abs = (corr_of / supply_hours) if supply_hours > 0 else 0.0
+
     utr_media = 0.0
-    utr_abs = 0.0
     try:
-        if supply_hours > 0:
-            utr_abs = float(corr_of / supply_hours)
-        utr_media = float((df_mes["numero_de_corridas_ofertadas"] / (df_mes["segundos_abs"] / 3600.0)).mean())
+        secs = pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0)
+        ok = secs > 0
+        if ok.any():
+            utr_media = float((df_mes.loc[ok, "numero_de_corridas_ofertadas"] / (secs.loc[ok] / 3600.0)).mean())
     except Exception:
         pass
 
@@ -139,19 +139,28 @@ def render(df: pd.DataFrame, USUARIOS: dict):
     # =========================
     data_str = ""
     try:
-        dtmax = pd.to_datetime(df_mes["data_do_periodo"], errors="coerce").max()
+        dtmax = pd.to_datetime(df_mes.get("data_do_periodo"), errors="coerce").max()
         if pd.notna(dtmax):
             data_str = dtmax.strftime("%d/%m/%Y")
     except Exception:
         pass
 
     # =========================
-    # HEADER (SEM HTML)
+    # HEADER (alinhado)
     # =========================
-    hL, hR = st.columns([4, 1])
+    hL, hR = st.columns([4, 1], vertical_alignment="center")
     with hL:
-        st.title("Painel de Entregadores")
-        st.caption(f"Dados atualizados • {data_str}")
+        st.markdown(
+            f"""
+            <div style="margin-top:6px;">
+              <div style="font-size:3.0rem; font-weight:950; line-height:1.05;">Painel de Entregadores</div>
+              <div style="margin-top:10px; color: rgba(232,237,246,.70); font-weight:700;">
+                Dados atualizados • {data_str}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     with hR:
         if st.button("Atualizar base", use_container_width=True, key="btn_refresh_home"):
             st.session_state.force_refresh = True
@@ -160,9 +169,9 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             st.rerun()
 
     # =========================
-    # CONTEÚDO
+    # SEÇÕES (com visual consistente)
     # =========================
-    st.markdown("#### Resumo do mês ({:02d}/{})".format(mes_atual, ano_atual))
+    st.markdown(f"""<div class="neo-section">Resumo do mês ({mes_atual:02d}/{ano_atual})</div>""", unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -171,7 +180,7 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             <div class="neo-card">
               <div class="neo-label">Ofertadas – UTR</div>
               <div class="neo-value">{_fmt_int(corr_of)}</div>
-              <div class="neo-subline">Absoluto {_fmt_int(utr_abs)} • Média {str(round(utr_media,2)).replace(".",",")}</div>
+              <div class="neo-subline">Absoluto {str(round(utr_abs,2)).replace(".",",")} • Média {str(round(utr_media,2)).replace(".",",")}</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -212,7 +221,8 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             unsafe_allow_html=True,
         )
 
-    st.markdown("#### Aderência (REGULAR)")
+    st.markdown("""<div class="neo-section">Aderência (REGULAR)</div>""", unsafe_allow_html=True)
+
     a1, a2 = st.columns([1, 2])
     with a1:
         st.markdown(
@@ -242,7 +252,8 @@ def render(df: pd.DataFrame, USUARIOS: dict):
             unsafe_allow_html=True,
         )
 
-    st.markdown("#### Supply & Ranking")
+    st.markdown("""<div class="neo-section">Supply & Ranking</div>""", unsafe_allow_html=True)
+
     s1, s2 = st.columns([1.3, 1.0])
     with s1:
         st.markdown(
