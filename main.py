@@ -21,8 +21,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# (mantém teu CSS grandão aqui; não mexi pra não quebrar teu layout)
-# 👉 usa o mesmo CSS que você já tá usando hoje
+
+def inject_css(path="assets/style.css"):
+    with open(path, "r", encoding="utf-8") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+inject_css()
+
 
 # ---------------- Estado inicial ----------------
 if "logado" not in st.session_state:
