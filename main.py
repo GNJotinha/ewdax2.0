@@ -1,379 +1,370 @@
-import os
-import io
-import re
-import csv
-import hashlib
-
-import streamlit as st
+import importlib
 import pandas as pd
-import psycopg
+import streamlit as st
+from zoneinfo import ZoneInfo
+
+from auth import autenticar, USUARIOS
+from data_loader import carregar_dados
+
+TZ = ZoneInfo("America/Sao_Paulo")
 
 
-# 🔒 TRAVADO: não dá pra editar no app
-RAW_TABLE = "base_2025_raw"
-IMPORTS_TABLE = "imports"
+def get_df_once():
+    # Home seta force_refresh=True quando clica em "Atualizar base"
+    force = st.session_state.pop("force_refresh", False)
+    ts = pd.Timestamp.now().timestamp() if force else None
+    return carregar_dados(prefer_drive=False, _ts=ts)
 
 
-def _get_dsn() -> str:
-    dsn = None
-    try:
-        dsn = st.secrets.get("SUPABASE_DB_DSN")
-    except Exception:
-        dsn = None
+st.set_page_config(
+    page_title="Painel de Entregadores",
+    page_icon="📋",
+    initial_sidebar_state="expanded",
+)
 
-    if not dsn:
-        dsn = os.environ.get("SUPABASE_DB_DSN")
+# ✅ CSS COMPLETO (cards / barra / layout)
+st.markdown(
+    """
+    <style>
+    :root{
+      --bg: #0b0f14;
+      --text: #e8edf6;
+      --muted: rgba(232,237,246,.70);
 
-    if not dsn:
-        raise RuntimeError(
-            "SUPABASE_DB_DSN não encontrado. Coloca no Streamlit Secrets ou em variável de ambiente."
-        )
-    return dsn
+      --blue: #58a6ff;
+      --blue2: #3b82f6;
+      --cyan: #00d4ff;
+      --purple: #a78bfa;
 
-
-_ident_re = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-
-def _safe_ident(name: str) -> str:
-    if not _ident_re.match(name or ""):
-        raise ValueError(f"Identificador inseguro/ inválido: {name!r}")
-    return name
-
-
-def _decode_csv_bytes(data: bytes) -> str:
-    try:
-        return data.decode("utf-8-sig")  # remove BOM se tiver
-    except Exception:
-        return data.decode("latin1")
-
-
-def _sniff_delimiter(text: str) -> str:
-    first_line = text.splitlines()[0] if text else ""
-    return ";" if first_line.count(";") >= first_line.count(",") else ","
-
-
-def _parse_header_and_count(text: str, delimiter: str) -> tuple[list[str], int]:
-    f = io.StringIO(text)
-    reader = csv.reader(f, delimiter=delimiter, quotechar='"')
-    rows = list(reader)
-    if not rows:
-        raise ValueError("CSV vazio.")
-    header = [c.strip() for c in rows[0]]
-    for h in header:
-        _safe_ident(h)
-    return header, max(0, len(rows) - 1)
-
-
-def _sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def _table_exists(cur, table: str) -> bool:
-    cur.execute(
-        """
-        select 1
-        from information_schema.tables
-        where table_schema='public' and table_name=%s
-        limit 1
-        """,
-        (table,),
-    )
-    return cur.fetchone() is not None
-
-
-def _get_columns(cur, table: str) -> list[tuple[str, str]]:
-    cur.execute(
-        """
-        select column_name, data_type
-        from information_schema.columns
-        where table_schema='public' and table_name=%s
-        order by ordinal_position
-        """,
-        (table,),
-    )
-    return [(r[0], r[1]) for r in cur.fetchall()]
-
-
-def _pick_first(cols: set[str], candidates: list[str]) -> str | None:
-    for c in candidates:
-        if c in cols:
-            return c
-    return None
-
-
-def _ensure_imports_table(cur, table: str):
-    if _table_exists(cur, table):
-        return
-
-    cur.execute(
-        f"""
-        create table if not exists public.{_safe_ident(table)} (
-          id bigserial primary key,
-          source_name text unique,
-          sha256 text unique,
-          row_count integer,
-          imported_at timestamptz default now()
-        );
-        """
-    )
-
-
-def _imports_lookup(cur, table: str, filename: str, sha: str) -> dict | None:
-    cols = {c for c, _ in _get_columns(cur, table)}
-    id_col = _pick_first(cols, ["id", "import_id"])
-    sha_col = _pick_first(cols, ["sha256", "hash"])
-    name_col = _pick_first(cols, ["source_name", "file_name", "filename", "nome_arquivo"])
-
-    if not id_col:
-        return None
-
-    # 1) tenta sha primeiro (mais seguro)
-    if sha_col:
-        cur.execute(
-            f"select {_safe_ident(id_col)} from public.{_safe_ident(table)} where {_safe_ident(sha_col)}=%s limit 1",
-            (sha,),
-        )
-        r = cur.fetchone()
-        if r:
-            return {"import_id": int(r[0]), "by": "sha256"}
-
-    # 2) depois filename
-    if name_col:
-        cur.execute(
-            f"select {_safe_ident(id_col)} from public.{_safe_ident(table)} where {_safe_ident(name_col)}=%s limit 1",
-            (filename,),
-        )
-        r = cur.fetchone()
-        if r:
-            return {"import_id": int(r[0]), "by": "filename"}
-
-    return None
-
-
-def _imports_insert(cur, table: str, filename: str, sha: str, row_count: int) -> int:
-    cols = {c for c, _ in _get_columns(cur, table)}
-
-    id_col = _pick_first(cols, ["id", "import_id"])
-    if not id_col:
-        raise RuntimeError(f"Tabela public.{table} precisa ter coluna id (ou import_id).")
-
-    name_col = _pick_first(cols, ["source_name", "file_name", "filename", "nome_arquivo"])
-    sha_col = _pick_first(cols, ["sha256", "hash"])
-    rc_col = _pick_first(cols, ["row_count", "linhas", "qtd_linhas"])
-
-    fields, params, values = [], [], []
-
-    if name_col:
-        fields.append(_safe_ident(name_col))
-        params.append("%s")
-        values.append(filename)
-
-    if sha_col:
-        fields.append(_safe_ident(sha_col))
-        params.append("%s")
-        values.append(sha)
-
-    if rc_col:
-        fields.append(_safe_ident(rc_col))
-        params.append("%s")
-        values.append(int(row_count))
-
-    if fields:
-        cur.execute(
-            f"""
-            insert into public.{_safe_ident(table)} ({", ".join(fields)})
-            values ({", ".join(params)})
-            returning {_safe_ident(id_col)}
-            """,
-            tuple(values),
-        )
-        return int(cur.fetchone()[0])
-
-    cur.execute(
-        f"""
-        insert into public.{_safe_ident(table)} default values
-        returning {_safe_ident(id_col)}
-        """
-    )
-    return int(cur.fetchone()[0])
-
-
-def _import_one_csv(conn, filename: str, data: bytes) -> dict:
-    text = _decode_csv_bytes(data)
-    delimiter = _sniff_delimiter(text)
-    header, row_count_guess = _parse_header_and_count(text, delimiter)
-    sha = _sha256(data)
-
-    with conn.cursor() as cur:
-        _ensure_imports_table(cur, IMPORTS_TABLE)
-
-        dup = _imports_lookup(cur, IMPORTS_TABLE, filename, sha)
-        if dup:
-            conn.rollback()
-            return {
-                "status": "skip",
-                "filename": filename,
-                "reason": f"já importado ({dup['by']})",
-                "import_id": dup["import_id"],
-                "rows": row_count_guess,
-            }
-
-        if not _table_exists(cur, RAW_TABLE):
-            raise RuntimeError(f"Tabela public.{RAW_TABLE} não existe.")
-
-        raw_cols = [c for c, _ in _get_columns(cur, RAW_TABLE)]
-        raw_set = set(raw_cols)
-
-        missing = [h for h in header if h not in raw_set]
-        if missing:
-            raise RuntimeError(
-                f"CSV tem colunas que não existem em public.{RAW_TABLE}: {', '.join(missing)}"
-            )
-
-        if "import_id" not in raw_set or "row_number" not in raw_set:
-            raise RuntimeError(f"Tabela public.{RAW_TABLE} precisa ter colunas import_id e row_number.")
-
-        import_id = _imports_insert(cur, IMPORTS_TABLE, filename, sha, row_count_guess)
-
-        tmp = f"tmp_csv_{import_id}"
-        cols_def = ", ".join([f"{_safe_ident(h)} text" for h in header])
-        cur.execute(f"create temp table {_safe_ident(tmp)} ({cols_def}) on commit drop")
-
-        copy_sql = (
-            f"COPY {_safe_ident(tmp)} ({', '.join(header)}) FROM STDIN "
-            f"WITH (FORMAT csv, HEADER true, DELIMITER '{delimiter}', QUOTE '\"')"
-        )
-        with cur.copy(copy_sql) as cp:
-            cp.write(text.encode("utf-8"))
-
-        cur.execute(f"select count(*) from {_safe_ident(tmp)}")
-        real_rows = int(cur.fetchone()[0])
-
-        insert_cols = ["import_id", "row_number"] + header
-        insert_cols_sql = ", ".join([_safe_ident(c) for c in insert_cols])
-        select_cols_sql = ", ".join([_safe_ident(c) for c in header])
-
-        cur.execute(
-            f"""
-            insert into public.{_safe_ident(RAW_TABLE)} ({insert_cols_sql})
-            select %s as import_id,
-                   row_number() over () as row_number,
-                   {select_cols_sql}
-            from {_safe_ident(tmp)}
-            """,
-            (import_id,),
-        )
-
-        cols = {c for c, _ in _get_columns(cur, IMPORTS_TABLE)}
-        rc_col = _pick_first(cols, ["row_count", "linhas", "qtd_linhas"])
-        id_col = _pick_first(cols, ["id", "import_id"])
-        if rc_col and id_col:
-            cur.execute(
-                f"update public.{_safe_ident(IMPORTS_TABLE)} set {_safe_ident(rc_col)}=%s where {_safe_ident(id_col)}=%s",
-                (real_rows, import_id),
-            )
-
-    conn.commit()
-
-    return {
-        "status": "ok",
-        "filename": filename,
-        "rows": real_rows,
-        "sha256": sha,
-        "import_id": import_id,
+      --red: #ff4d4d;
+      --orange: #ffb020;
+      --green: #37d67a;
     }
 
+    header[data-testid="stHeader"]{
+      background: transparent !important;
+      box-shadow: none !important;
+      border: 0 !important;
+    }
+    header [data-testid="stToolbar"]{
+      visibility: hidden !important;
+    }
 
-def render(df, USUARIOS: dict):
-    st.markdown("# 📥 Importar CSV")
+    /* mata o botão << do sidebar */
+    div[data-testid="stSidebarHeader"] button[data-testid="baseButton-header"],
+    div[data-testid="stSidebarHeader"] button[kind="headerNoPadding"]{
+      display: none !important;
+    }
+    /* fallback por aria/title */
+    div[data-testid="stSidebarHeader"] button[aria-label*="collapse" i],
+    div[data-testid="stSidebarHeader"] button[aria-label*="close" i],
+    div[data-testid="stSidebarHeader"] button[aria-label*="recolher" i],
+    div[data-testid="stSidebarHeader"] button[aria-label*="fechar" i],
+    div[data-testid="stSidebarHeader"] button[title*="collapse" i],
+    div[data-testid="stSidebarHeader"] button[title*="close" i],
+    div[data-testid="stSidebarHeader"] button[title*="recolher" i],
+    div[data-testid="stSidebarHeader"] button[title*="fechar" i]{
+      display: none !important;
+    }
 
-    usuario = st.session_state.get("usuario")
-    user_entry = (USUARIOS or {}).get(usuario, {}) or {}
-    nivel = user_entry.get("nivel", "")
+    [data-testid="collapsedControl"]{
+      visibility: visible !important;
+      z-index: 999999 !important;
+    }
 
-    allowed = set()
-    try:
-        allowed = set(st.secrets.get("IMPORTADORES", []))
-    except Exception:
-        allowed = set()
+    footer{ display:none !important; }
+    #MainMenu{ visibility:hidden !important; }
+    [data-testid="stAppViewContainer"]{ padding-top: 0rem !important; }
+    div[data-testid="stDecoration"]{ display:none !important; }
 
-    if allowed:
-        pode = usuario in allowed
-    else:
-        pode = nivel in ("admin", "dev", "operacional")
+    body{
+      background:
+        radial-gradient(900px 500px at 15% 10%, rgba(88,166,255,.15), transparent 60%),
+        radial-gradient(700px 420px at 85% 0%, rgba(167,139,250,.14), transparent 55%),
+        radial-gradient(700px 420px at 70% 95%, rgba(0,212,255,.08), transparent 55%),
+        linear-gradient(180deg, #070a0f 0%, #0b0f14 45%, #0b0f14 100%);
+      color: var(--text);
+    }
 
-    if not pode:
-        st.error("Você não tem permissão pra importar CSV aqui.")
-        st.info("Peça pro admin colocar teu usuário em IMPORTADORES (secrets).")
-        return
+    .block-container{
+      max-width: 1180px !important;
+      padding-top: 1.2rem !important;
+      padding-bottom: 2.0rem !important;
+    }
+    [data-testid="stVerticalBlock"]{ gap: 0.65rem; }
 
-    st.caption("Arrasta o CSV do dia aqui. O app sobe pro Supabase e evita duplicado automaticamente.")
-    st.caption(f"Destino fixo: public.{RAW_TABLE}  |  Controle: public.{IMPORTS_TABLE}")
+    section[data-testid="stSidebar"]{
+      background: rgba(18,22,30,.92);
+      border-right: 1px solid rgba(255,255,255,.07);
+    }
 
-    files = st.file_uploader(
-        "CSV(s)",
-        type=["csv"],
-        accept_multiple_files=True,
-        help="Nome recomendado: YYYY-MM-DD.csv",
-    )
+    .stButton>button{
+      background: linear-gradient(135deg, rgba(88,166,255,.92), rgba(59,130,246,.92));
+      color: white;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 14px;
+      padding: .70rem 1.20rem;
+      font-weight: 800;
+      box-shadow: 0 12px 26px rgba(0,0,0,.45);
+    }
+    .stButton>button:hover{
+      filter: brightness(1.08);
+      border-color: rgba(255,255,255,.18);
+    }
 
-    if not files:
-        st.info("Envie um ou mais CSVs para importar.")
-        return
+    /* =========================
+       COMPONENTES DA HOME (neo)
+       ========================= */
+    .neo-shell{
+      position: relative;
+      border-radius: 22px;
+      padding: 18px 18px 22px 18px;
+      background: rgba(255,255,255,.03) !important;
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow:
+        0 28px 70px rgba(0,0,0,.60) !important,
+        inset 0 1px 0 rgba(255,255,255,.05);
+      overflow: hidden;
+    }
 
-    with st.expander("👀 Preview do primeiro arquivo", expanded=False):
-        try:
-            b0 = files[0].getvalue()
-            txt0 = _decode_csv_bytes(b0)
-            delim0 = _sniff_delimiter(txt0)
-            preview = pd.read_csv(io.StringIO(txt0), sep=delim0, dtype=str, nrows=20)
-            st.dataframe(preview, use_container_width=True)
-        except Exception as e:
-            st.warning(f"Não consegui gerar preview: {e}")
+    .neo-divider{
+      height: 1px;
+      background: rgba(255,255,255,.08);
+      margin: 14px 0;
+    }
 
-    if st.button("🚀 Importar agora", use_container_width=True):
-        try:
-            dsn = _get_dsn()
-        except Exception as e:
-            st.error(str(e))
-            return
+    .neo-section{
+      font-size: 1.2rem;
+      font-weight: 900;
+      margin: 6px 2px 12px 2px;
+      color: rgba(232,237,246,.92);
+    }
 
-        conn = psycopg.connect(dsn)
-        conn.autocommit = False
+    .neo-grid-4{
+      display:grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .neo-grid-2{
+      display:grid;
+      grid-template-columns: 340px 1fr;
+      gap: 14px;
+      align-items: stretch;
+    }
 
-        prog = st.progress(0)
-        results = []
+    .neo-card{
+      position: relative;
+      border-radius: 16px;
+      padding: 16px 16px 14px 16px;
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+      border: 1px solid rgba(255,255,255,.09);
+      box-shadow:
+        0 16px 34px rgba(0,0,0,.40),
+        inset 0 1px 0 rgba(255,255,255,.05);
+      overflow:hidden;
+      min-height: 120px;
+    }
+    .neo-card:after{
+      content:"";
+      position:absolute;
+      inset:-1px;
+      border-radius: 16px;
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(88,166,255,.22), rgba(167,139,250,.12), rgba(0,212,255,.12));
+      -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events:none;
+      opacity:.65;
+    }
 
-        try:
-            total = len(files)
-            for i, f in enumerate(files, start=1):
-                fname = f.name
-                data = f.getvalue()
+    .neo-label{
+      font-size: .92rem;
+      font-weight: 800;
+      letter-spacing: .02em;
+      color: rgba(232,237,246,.85);
+      margin-bottom: 10px;
+    }
 
-                st.write(f"📄 Importando: **{fname}**")
-                try:
-                    res = _import_one_csv(conn, fname, data)
-                    results.append(res)
+    .neo-value{
+      font-size: 2.3rem;
+      font-weight: 950;
+      letter-spacing: .4px;
+      line-height: 1.05;
+      color: rgba(255,255,255,.96);
+    }
 
-                    if res["status"] == "ok":
-                        st.success(f"✅ {fname}: {res['rows']} linhas (import_id={res['import_id']})")
-                    else:
-                        st.info(f"⏭️ {fname}: {res['reason']}")
+    .neo-value .pct{
+      display:block;
+      margin-top: 6px;
+      font-size: 1.65rem;
+      font-weight: 900;
+      letter-spacing: .2px;
+      color: rgba(232,237,246,.92);
+      opacity: .95;
+    }
 
-                except Exception as e:
-                    conn.rollback()
-                    st.error(f"❌ {fname}: {e}")
+    .neo-subline{
+      margin-top: 10px;
+      font-size: .90rem;
+      color: rgba(232,237,246,.70);
+      font-weight: 650;
+    }
 
-                prog.progress(int(i / total * 100))
+    .neo-success{ border-color: rgba(55,214,122,.22); }
+    .neo-success .neo-value{ color: rgba(160,255,205,.98); }
 
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
+    .neo-danger{ border-color: rgba(255,77,77,.22); }
+    .neo-danger .neo-value{ color: rgba(255,110,110,.98); }
 
-        if any(r.get("status") == "ok" for r in results):
-            st.session_state.force_refresh = True
-            st.session_state.just_refreshed = True
-            st.cache_data.clear()
-            st.success("Importação concluída. Volta no Início — os dados já vão estar atualizados.")
+    .neo-progress-wrap{ margin-top: 14px; }
+    .neo-progress{
+      width:100%;
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.10);
+      overflow:hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+    }
+    .neo-progress > div{
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg,
+        rgba(255,77,77,.95),
+        rgba(255,176,32,.95),
+        rgba(55,214,122,.95),
+        rgba(0,212,255,.80)
+      );
+      filter: drop-shadow(0 6px 14px rgba(0,0,0,.35));
+    }
+    .neo-scale{
+      display:flex;
+      justify-content:space-between;
+      margin-top: 8px;
+      font-size: .88rem;
+      color: rgba(232,237,246,.60);
+      font-weight: 700;
+    }
+
+    .toprow{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin: 10px 0;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    .toprow .name{
+      font-weight: 800;
+      color: rgba(232,237,246,.92);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .toprow .hours{
+      font-weight: 900;
+      color: rgba(232,237,246,.70);
+      flex-shrink: 0;
+    }
+
+    @media (max-width: 1100px){
+      .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .neo-grid-2{ grid-template-columns: 1fr; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# ---------------- Estado inicial ----------------
+if "logado" not in st.session_state:
+    st.session_state.logado = False
+    st.session_state.usuario = ""
+
+if "module" not in st.session_state:
+    st.session_state.module = "views.home"
+
+if "open_cat" not in st.session_state:
+    st.session_state.open_cat = None
+
+# ---------------- Login ----------------
+if not st.session_state.logado:
+    st.title("🔐 Login do Painel")
+    usuario = st.text_input("Usuário")
+    senha = st.text_input("Senha", type="password")
+    if st.button("Entrar", use_container_width=True):
+        if autenticar(usuario, senha):
+            st.session_state.logado = True
+            st.session_state.usuario = usuario
+            st.rerun()
+        else:
+            st.error("Usuário ou senha incorretos")
+    st.stop()
+
+# ---------------- Menu ----------------
+MENU = {
+    "Desempenho do Entregador": {
+        "Ver geral": "views.ver_geral",
+        "Simplificada (WhatsApp)": "views.simplificada",
+        "Relatório Customizado": "views.relatorio_custom",
+        "Perfil do Entregador": "views.perfil_entregador",
+    },
+    "Relatórios": {
+        "Relatório de faltas": "views.faltas",
+        "Relatório de faltas 2": "views.comparar",
+        "Ativos": "views.ativos",
+        "Comparação de datas": "views.resumos",
+        "Saídas": "views.saidas",
+        "Adicional por Hora (Turno)": "views.adicional_turno",
+        "Lista adicional": "views.lista_adicional",
+        "Elegibilidade": "views.elegibilidade_prioridade",
+        "Confirmação de Turno (Mensagens)": "views.confirmacao_turno",
+    },
+    "Dashboards": {
+        "UTR": "views.utr",
+        "Indicadores Gerais": "views.indicadores",
+    },
+    "Dados": {
+        "Atualizar base": "views.upload",
+    }
+}
+
+with st.sidebar:
+    st.success(f"Bem-vindo, {st.session_state.usuario}!")
+    st.markdown("### Navegação")
+
+    if st.button("Início", use_container_width=True):
+        st.session_state.module = "views.home"
+        st.session_state.open_cat = None
+        st.rerun()
+
+    for cat, opts in MENU.items():
+        expanded = (st.session_state.open_cat == cat)
+        with st.expander(cat, expanded=expanded):
+            for label, module in opts.items():
+                if st.button(label, key=f"btn_{cat}_{label}", use_container_width=True):
+                    st.session_state.module = module
+                    st.session_state.open_cat = cat
+                    st.rerun()
+
+# --------------- Dados ---------------
+df = get_df_once()
+fonte = df.attrs.get("fonte", "?")
+st.sidebar.caption(f"📦 Fonte de dados: {fonte}")
+
+if st.session_state.pop("just_refreshed", False):
+    st.success(f"✅ Base atualizada a partir do {fonte}.")
+
+# --------------- Roteador ---------------
+try:
+    page = importlib.import_module(st.session_state.module)
+except Exception as e:
+    st.error(f"Erro ao carregar módulo **{st.session_state.module}**: {e}")
+else:
+    page.render(df, USUARIOS)
