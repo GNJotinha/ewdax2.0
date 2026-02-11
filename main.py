@@ -114,7 +114,7 @@ MENU = {
         "Indicadores Gerais": "views.indicadores",
     },
     "Dados": {
-        "Importar CSV": "views.importar_csv",
+        "Importar CSV": "views.upload",
     },
 }
 
