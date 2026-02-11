@@ -1,5 +1,6 @@
+import json
 import secrets
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -21,7 +22,7 @@ K_DEPT = "adm_users_dept"
 K_STATUS = "adm_users_status"
 K_ADMINF = "adm_users_adminf"
 
-K_SEL_LABEL = "adm_users_selected_label"
+K_EDIT_USER_ID = "adm_edit_user_id"
 K_GENPW = "adm_users_gen_pw"
 
 # create form keys
@@ -49,7 +50,6 @@ def _fmt_dt(x):
         if pd.isna(dt):
             return str(x)
         if dt.tzinfo is None:
-            # assume que já é local/naive
             return dt.strftime("%d/%m/%Y %H:%M:%S")
         return dt.tz_convert(TZ_LOCAL).tz_localize(None).strftime("%d/%m/%Y %H:%M:%S")
     except Exception:
@@ -108,14 +108,9 @@ def _fetch_page(q: str, dept: str, status: str, adminf: str, page: int):
 
     with db_conn() as conn:
         with conn.cursor() as cur:
-            # total
-            cur.execute(
-                f"select count(*) from public.app_users {where_sql}",
-                tuple(params),
-            )
+            cur.execute(f"select count(*) from public.app_users {where_sql}", tuple(params))
             total = int(cur.fetchone()[0] or 0)
 
-            # page
             cur.execute(
                 f"""
                 select id, login, full_name, department, is_admin, is_active,
@@ -134,18 +129,73 @@ def _fetch_page(q: str, dept: str, status: str, adminf: str, page: int):
     return total, has_next, rows
 
 
-def render(_df, _USUARIOS):
-    require_admin()
-    st.markdown("# 🛠️ Admin • Usuários")
+@st.cache_data(ttl=120)
+def _user_choices():
+    """Lista pra selectbox de edição (independente de filtro/página)."""
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select id, login, full_name, is_active, is_admin
+                from public.app_users
+                order by lower(login)
+                """
+            )
+            rows = cur.fetchall()
 
-    # defaults
+    choices = []
+    for (uid, login, full_name, is_active, is_admin) in rows:
+        flags = []
+        if is_admin:
+            flags.append("admin")
+        if not is_active:
+            flags.append("inativo")
+        tag = f" ({', '.join(flags)})" if flags else ""
+        label = f"{login} — {full_name}{tag}"
+        choices.append((str(uid), label))
+    return choices
+
+
+def _get_user_by_id(user_id: str):
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select id, login, full_name, department, is_admin, is_active, must_change_password,
+                       last_login_at, created_at
+                from public.app_users
+                where id = %s
+                limit 1
+                """,
+                (user_id,),
+            )
+            return cur.fetchone()
+
+
+def _init_defaults():
     st.session_state.setdefault(K_PAGE, 0)
     st.session_state.setdefault(K_Q, "")
     st.session_state.setdefault(K_DEPT, "Todos")
     st.session_state.setdefault(K_STATUS, "Ativos")
     st.session_state.setdefault(K_ADMINF, "Todos")
 
-    # stats cards
+    # create tab defaults
+    st.session_state.setdefault(K_C_NAME, "")
+    st.session_state.setdefault(K_C_LOGIN, "")
+    st.session_state.setdefault(K_C_DEPT, "Operacional")
+    st.session_state.setdefault(K_C_ADMIN, False)
+    st.session_state.setdefault(K_C_ACTIVE, True)
+    st.session_state.setdefault(K_C_PW, "")
+    st.session_state.setdefault(K_C_MUST, True)
+
+
+def render(_df, _USUARIOS):
+    require_admin()
+    _init_defaults()
+
+    st.markdown("# 🛠️ Admin • Usuários")
+
+    # Cards
     total_u, ativos_u, admins_u, must_u = _stats_users()
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -193,10 +243,10 @@ def render(_df, _USUARIOS):
             unsafe_allow_html=True,
         )
 
-    tabs = st.tabs(["👥 Usuários", "➕ Criar usuário"])
+    tabs = st.tabs(["👥 Usuários", "✏️ Editar usuário", "➕ Criar usuário"])
 
     # =========================================================
-    # TAB: USUÁRIOS
+    # TAB 1: USUÁRIOS (LISTA + FILTROS + PAGINAÇÃO)
     # =========================================================
     with tabs[0]:
         st.markdown("""<div class="neo-section">Lista</div>""", unsafe_allow_html=True)
@@ -211,16 +261,15 @@ def render(_df, _USUARIOS):
         with f4:
             st.selectbox("Admin", ["Todos", "Só admin", "Só não-admin"], key=K_ADMINF)
 
-        # Quando mexer em filtros, volta página 0 (pra não cair em página vazia)
-        # (streamlit não tem evento fácil, então faz na mão quando clicar no botão)
-        colA, colB = st.columns([1, 1])
-        with colA:
-            if st.button("🔄 Aplicar / Atualizar", use_container_width=True):
+        # Botões menores (sem ocupar a tela inteira)
+        b1, b2, _sp = st.columns([1, 1, 3])
+        with b1:
+            if st.button("🔄 Aplicar", key="btn_users_apply"):
                 st.session_state[K_PAGE] = 0
                 st.cache_data.clear()
                 st.rerun()
-        with colB:
-            if st.button("🧹 Limpar", use_container_width=True):
+        with b2:
+            if st.button("🧹 Limpar", key="btn_users_clear"):
                 st.session_state[K_Q] = ""
                 st.session_state[K_DEPT] = "Todos"
                 st.session_state[K_STATUS] = "Ativos"
@@ -257,7 +306,6 @@ def render(_df, _USUARIOS):
             ],
         )
 
-        # format datas (só pra exibição)
         df["last_login_at"] = df["last_login_at"].apply(_fmt_dt)
         df["created_at"] = df["created_at"].apply(_fmt_dt)
 
@@ -277,9 +325,9 @@ def render(_df, _USUARIOS):
             },
         )
 
-        # paginação (setinhas embaixo, 30 por página)
+        # Paginação com setinhas pequenas
         st.divider()
-        left, mid, right = st.columns([1, 2, 1])
+        left, mid, right = st.columns([1, 6, 1])
 
         offset = page * PAGE_SIZE
         start_n = offset + 1
@@ -287,7 +335,7 @@ def render(_df, _USUARIOS):
         max_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
 
         with left:
-            if st.button("⬅️", use_container_width=True, disabled=(page == 0)):
+            if st.button("⬅️", disabled=(page == 0), key="btn_users_prev"):
                 st.session_state[K_PAGE] = page - 1
                 st.rerun()
         with mid:
@@ -296,41 +344,54 @@ def render(_df, _USUARIOS):
                 unsafe_allow_html=True,
             )
         with right:
-            if st.button("➡️", use_container_width=True, disabled=(not has_next)):
+            if st.button("➡️", disabled=(not has_next), key="btn_users_next"):
                 st.session_state[K_PAGE] = page + 1
                 st.rerun()
 
-        # seleção pra editar (baseado na página atual)
+        st.caption("Pra editar: vai na aba **Editar usuário** ali em cima.")
+
+    # =========================================================
+    # TAB 2: EDITAR USUÁRIO
+    # =========================================================
+    with tabs[1]:
         st.markdown("""<div class="neo-section">Editar</div>""", unsafe_allow_html=True)
-        opts = {}
-        for _, r in df.iterrows():
-            label = f"{r['login']} — {r['full_name']}"
-            opts[label] = str(r["id"])
 
-        # garante seleção válida
-        if K_SEL_LABEL not in st.session_state or st.session_state[K_SEL_LABEL] not in opts:
-            st.session_state[K_SEL_LABEL] = list(opts.keys())[0]
+        choices = _user_choices()
+        if not choices:
+            st.info("Sem usuários cadastrados.")
+            return
 
-        selected_label = st.selectbox("Selecione um usuário", options=list(opts.keys()), key=K_SEL_LABEL)
-        selected_id = opts[selected_label]
+        # default selection
+        if K_EDIT_USER_ID not in st.session_state:
+            st.session_state[K_EDIT_USER_ID] = choices[0][0]
 
-        # carrega dados completos do usuário selecionado (sem depender do df da página)
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    select id, login, full_name, department, is_admin, is_active, must_change_password,
-                           last_login_at, created_at
-                    from public.app_users
-                    where id = %s
-                    limit 1
-                    """,
-                    (selected_id,),
-                )
-                row = cur.fetchone()
+        # selectbox (id como value)
+        id_to_label = {uid: label for uid, label in choices}
+        labels = [label for _, label in choices]
+        current_id = st.session_state[K_EDIT_USER_ID]
+        current_label = id_to_label.get(current_id, labels[0])
 
+        selected_label = st.selectbox(
+            "Selecione um usuário",
+            options=labels,
+            index=labels.index(current_label) if current_label in labels else 0,
+            key="edit_user_select_label",
+        )
+
+        # converte label -> id
+        selected_id = None
+        for uid, label in choices:
+            if label == selected_label:
+                selected_id = uid
+                break
+        if not selected_id:
+            selected_id = choices[0][0]
+
+        st.session_state[K_EDIT_USER_ID] = selected_id
+
+        row = _get_user_by_id(selected_id)
         if not row:
-            st.error("Usuário não encontrado (??).")
+            st.error("Usuário não encontrado.")
             return
 
         (
@@ -348,7 +409,7 @@ def render(_df, _USUARIOS):
         actor_id = str(st.session_state.get("user_id") or "")
         is_self = (str(user_id) == actor_id)
 
-        tedit, treset = st.tabs(["✏️ Editar dados", "🔁 Resetar senha"])
+        tedit, treset = st.tabs(["✏️ Dados", "🔁 Resetar senha"])
 
         with tedit:
             with st.form("edit_user_form"):
@@ -375,15 +436,14 @@ def render(_df, _USUARIOS):
                 st.caption(f"ID: {user_id}")
                 st.caption(f"Criado em: {_fmt_dt(created_at)} | Último login: {_fmt_dt(last_login_at)}")
 
-                save = st.form_submit_button("💾 Salvar alterações", use_container_width=True)
+                save = st.form_submit_button("💾 Salvar")
 
             if save:
-                # proteção: não se auto-desativar / auto-remover admin sem querer
                 if is_self and (not e_is_active):
-                    st.error("Você tá tentando se desativar. Não vou deixar (pra você não se trancar fora).")
+                    st.error("Você tá tentando se desativar. Não vou deixar pra você não se trancar fora.")
                     st.stop()
                 if is_self and (not e_is_admin):
-                    st.error("Você tá tentando tirar seu próprio admin. Não vou deixar (pra não se foder depois).")
+                    st.error("Você tá tentando tirar seu admin. Não vou deixar pra você não se ferrar depois.")
                     st.stop()
 
                 try:
@@ -408,7 +468,16 @@ def render(_df, _USUARIOS):
                                     updated_by=%s
                                 where id=%s
                                 """,
-                                (e_login2, e_full_name.strip(), e_dept, e_is_admin, e_is_active, e_must_change, actor_id or None, user_id),
+                                (
+                                    e_login2,
+                                    e_full_name.strip(),
+                                    e_dept,
+                                    e_is_admin,
+                                    e_is_active,
+                                    e_must_change,
+                                    actor_id or None,
+                                    user_id,
+                                ),
                             )
                         conn.commit()
                     except Exception as e:
@@ -433,18 +502,20 @@ def render(_df, _USUARIOS):
                 st.rerun()
 
         with treset:
-            # gerador
-            if st.button("🎲 Gerar senha forte", use_container_width=True, key="btn_reset_genpw"):
-                st.session_state[K_GENPW] = _gen_temp_password()
-
+            # gera senha
+            gen_cols = st.columns([1, 3])
+            with gen_cols[0]:
+                if st.button("🎲 Gerar", key="btn_reset_genpw"):
+                    st.session_state[K_GENPW] = _gen_temp_password()
             gen = st.session_state.get(K_GENPW)
+
             if gen:
                 st.info(f"Senha gerada: `{gen}` (copia e manda pro usuário)")
 
             new_pw = st.text_input("Nova senha", type="password", value=gen or "", key="reset_pw_input")
             force_change = st.checkbox("Forçar trocar senha no próximo login?", value=True, key="reset_force_change")
 
-            if st.button("🔁 Resetar senha", use_container_width=True, key="btn_reset_pw"):
+            if st.button("🔁 Resetar senha", key="btn_reset_pw"):
                 if not new_pw or len(new_pw) < 6:
                     st.error("Informe uma senha (mín. 6).")
                     st.stop()
@@ -473,26 +544,18 @@ def render(_df, _USUARIOS):
                 st.rerun()
 
     # =========================================================
-    # TAB: CRIAR
+    # TAB 3: CRIAR USUÁRIO
     # =========================================================
-    with tabs[1]:
+    with tabs[2]:
         st.markdown("""<div class="neo-section">Criar novo usuário</div>""", unsafe_allow_html=True)
 
-        # defaults do form
-        st.session_state.setdefault(K_C_NAME, "")
-        st.session_state.setdefault(K_C_LOGIN, "")
-        st.session_state.setdefault(K_C_DEPT, "Operacional")
-        st.session_state.setdefault(K_C_ADMIN, False)
-        st.session_state.setdefault(K_C_ACTIVE, True)
-        st.session_state.setdefault(K_C_PW, "")
-        st.session_state.setdefault(K_C_MUST, True)
-
-        g1, g2 = st.columns([1, 1])
+        # botões pequenos no topo
+        g1, g2, _sp = st.columns([1, 1, 4])
         with g1:
-            if st.button("🎲 Gerar senha inicial", use_container_width=True, key="btn_create_genpw"):
+            if st.button("🎲 Gerar senha", key="btn_create_genpw"):
                 st.session_state[K_C_PW] = _gen_temp_password()
         with g2:
-            if st.button("🧹 Limpar campos", use_container_width=True, key="btn_create_clear"):
+            if st.button("🧹 Limpar campos", key="btn_create_clear"):
                 st.session_state[K_C_NAME] = ""
                 st.session_state[K_C_LOGIN] = ""
                 st.session_state[K_C_DEPT] = "Operacional"
@@ -514,7 +577,8 @@ def render(_df, _USUARIOS):
 
             c3, c4, c5 = st.columns([1.2, 1.0, 1.0])
             with c3:
-                st.selectbox("Departamento", DEPARTAMENTOS, key=K_C_DEPT, index=DEPARTAMENTOS.index("Operacional"))
+                # IMPORTANTE: sem `index=` aqui, porque a key já tá no session_state (evita o warning)
+                st.selectbox("Departamento", DEPARTAMENTOS, key=K_C_DEPT)
             with c4:
                 st.checkbox("É admin?", key=K_C_ADMIN)
             with c5:
@@ -523,7 +587,7 @@ def render(_df, _USUARIOS):
             st.text_input("Senha inicial", type="password", key=K_C_PW)
             st.checkbox("Forçar trocar senha no 1º login?", key=K_C_MUST)
 
-            submit = st.form_submit_button("➕ Criar usuário", use_container_width=True)
+            submit = st.form_submit_button("➕ Criar usuário")
 
         if submit:
             full_name = (st.session_state[K_C_NAME] or "").strip()
@@ -573,7 +637,7 @@ def render(_df, _USUARIOS):
             audit_log("user_created", "app_users", str(new_id), {"login": login2, "department": dept, "is_admin": is_admin})
             st.success("Usuário criado!")
 
-            # limpa campo de senha pra não ficar exposto
+            # tira a senha da tela depois de criar (segurança e estética)
             st.session_state[K_C_PW] = ""
             st.cache_data.clear()
             st.rerun()
