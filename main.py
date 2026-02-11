@@ -1,13 +1,9 @@
 import importlib
-import time
 import pandas as pd
 import streamlit as st
-from zoneinfo import ZoneInfo
 
 from auth import autenticar
 from data_loader import carregar_dados
-
-TZ = ZoneInfo("America/Sao_Paulo")
 
 
 def get_df_once():
@@ -18,7 +14,6 @@ def get_df_once():
 
 st.set_page_config(
     page_title="Painel de Entregadores",
-    page_icon="📋",
     initial_sidebar_state="expanded",
 )
 
@@ -27,26 +22,21 @@ def inject_css(path="assets/style.css"):
     with open(path, "r", encoding="utf-8") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
+
 inject_css()
 
 
 # ---------------- Estado inicial ----------------
-if "logado" not in st.session_state:
-    st.session_state.logado = False
+st.session_state.setdefault("logado", False)
+st.session_state.setdefault("usuario", "")
+st.session_state.setdefault("module", "views.home")
+st.session_state.setdefault("open_cat", None)
 
-if "usuario" not in st.session_state:
-    st.session_state.usuario = ""
-
-if "module" not in st.session_state:
-    st.session_state.module = "views.home"
-
-if "open_cat" not in st.session_state:
-    st.session_state.open_cat = None
 
 # ---------------- Login ----------------
 if not st.session_state.logado:
-    st.title("🔐 Login do Painel")
-    login = st.text_input("Login (apelido, sem espaço)").strip().lower()
+    st.title("Login")
+    login = st.text_input("Login").strip().lower()
     senha = st.text_input("Senha", type="password")
 
     if st.button("Entrar", use_container_width=True):
@@ -60,10 +50,8 @@ if not st.session_state.logado:
             st.session_state.is_admin = user["is_admin"]
             st.session_state.must_change_password = user["must_change_password"]
 
-            # balão de boas-vindas (some)
-            st.session_state.show_welcome_toast = True
+            st.session_state.show_welcome = True
 
-            # se for primeiro acesso / reset: já manda pro perfil trocar senha
             if st.session_state.must_change_password:
                 st.session_state.module = "views.perfil"
             else:
@@ -75,29 +63,8 @@ if not st.session_state.logado:
 
     st.stop()
 
-# ---------------- Sidebar (só navegação) ----------------
-with st.sidebar:
-    # botão simples pra voltar pra home (perfil/sair/admin ficam na home)
-    if st.button("🏠 Início", use_container_width=True, key="sb_home", type="secondary"):
-        st.session_state.module = "views.home"
-        st.session_state.open_cat = None
-        st.rerun()
 
-# ---------------- Toast de boas-vindas (some) ----------------
-if st.session_state.pop("show_welcome_toast", False):
-    msg = f"Bem-vindo, {st.session_state.get('usuario','')}!"
-    if hasattr(st, "toast"):
-        try:
-            st.toast(msg, icon="👋")
-        except Exception:
-            st.info(msg)
-            time.sleep(2)
-    else:
-        ph = st.empty()
-        ph.info(msg)
-        time.sleep(2)
-        ph.empty()
-
+# ---------------- MENU ----------------
 MENU = {
     "Desempenho do Entregador": {
         "Ver geral": "views.ver_geral",
@@ -125,7 +92,17 @@ MENU = {
     },
 }
 
+# deixa acessível na Home
+st.session_state["MENU"] = MENU
+
+
+# ---------------- Sidebar (só navegação) ----------------
 with st.sidebar:
+    if st.button("Início", use_container_width=True, type="secondary", key="sb_home"):
+        st.session_state.module = "views.home"
+        st.session_state.open_cat = None
+        st.rerun()
+
     st.markdown("### Navegação")
 
     for cat, opts in MENU.items():
@@ -137,21 +114,33 @@ with st.sidebar:
                     st.session_state.open_cat = cat
                     st.rerun()
 
-    # Admin (Usuários/Auditoria) agora fica na Home
 
-# --------------- Dados ---------------
+# ---------------- Toast de boas-vindas ----------------
+if st.session_state.pop("show_welcome", False):
+    msg = f"Bem-vindo, {st.session_state.usuario}!"
+    if hasattr(st, "toast"):
+        try:
+            st.toast(msg)
+        except Exception:
+            st.info(msg)
+    else:
+        st.info(msg)
+
+
+# ---------------- Dados ----------------
 df = get_df_once()
 
 fonte = getattr(df, "attrs", {}).get("fonte", "base")
-st.sidebar.caption(f"📦 Fonte de dados: {fonte}")
+st.sidebar.caption(f"Fonte de dados: {fonte}")
 
 if st.session_state.pop("just_refreshed", False):
-    st.success(f"✅ Base atualizada ({fonte}).")
+    st.success(f"Base atualizada ({fonte}).")
 
-# --------------- Roteador ---------------
+
+# ---------------- Roteador ----------------
 try:
     page = importlib.import_module(st.session_state.module)
 except Exception as e:
     st.error(f"Erro ao carregar módulo **{st.session_state.module}**: {e}")
 else:
-    page.render(df, {})  # USUARIOS não é mais necessário
+    page.render(df, {})
