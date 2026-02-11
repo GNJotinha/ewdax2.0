@@ -5,21 +5,15 @@ import streamlit as st
 from auth import autenticar
 from data_loader import carregar_dados
 
-try:
-    from db import db_conn
-except Exception:
-    db_conn = None
-
 
 # ---------------- Config ----------------
 st.set_page_config(
     page_title="Painel de Entregadores",
-    initial_sidebar_state="collapsed",  # deixa limpo; navegação vai pro topo
+    initial_sidebar_state="expanded",  # sidebar fixo (e a gente mata o botão de recolher via CSS)
 )
 
 
 def inject_css(path="assets/style.css"):
-    # se teu arquivo estiver na raiz, troca pra "style.css"
     with open(path, "r", encoding="utf-8") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
@@ -27,7 +21,6 @@ def inject_css(path="assets/style.css"):
 inject_css()
 
 
-# ---------------- Helpers ----------------
 def get_df_once():
     force = st.session_state.pop("force_refresh", False)
     ts = pd.Timestamp.now().timestamp() if force else None
@@ -67,50 +60,12 @@ def _goto(module: str, cat=None):
     st.rerun()
 
 
-@st.cache_data(ttl=60)
-def _get_last_import_label():
-    """
-    Puxa último arquivo importado (quando existir).
-    Cache curto pra não ficar batendo no banco toda hora.
-    """
-    if db_conn is None:
-        return ""
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    select file_name, uploaded_at
-                    from public.imports
-                    where uploaded_at is not null
-                    order by uploaded_at desc
-                    limit 1
-                    """
-                )
-                r = cur.fetchone()
-
-        if not r:
-            return ""
-
-        fname, ts = r
-        try:
-            ts_fmt = pd.to_datetime(ts, utc=True, errors="coerce")
-            if pd.notna(ts_fmt):
-                ts_fmt = ts_fmt.tz_convert("America/Sao_Paulo").tz_localize(None)
-                return f"Último upload: {str(fname)} • {ts_fmt.strftime('%d/%m %H:%M')}"
-        except Exception:
-            pass
-
-        return f"Último upload: {str(fname)}"
-    except Exception:
-        return ""
-
-
-def _render_topbar(df: pd.DataFrame, fonte: str):
+def _render_topbar(df: pd.DataFrame):
     last_day = _last_date_str(df)
-    last_import = _get_last_import_label()
 
-    left, right = st.columns([3.6, 1.9], vertical_alignment="center")
+    st.markdown("<div class='app-topbar'>", unsafe_allow_html=True)
+
+    left, right = st.columns([3.4, 2.2], vertical_alignment="center")
 
     with left:
         st.markdown(
@@ -119,8 +74,6 @@ def _render_topbar(df: pd.DataFrame, fonte: str):
               <div class="tb-title">Painel de Entregadores</div>
               <div class="tb-meta">
                 Último dia na base: <b>{last_day or "—"}</b>
-                {f'<span class="tb-chip">{fonte}</span>' if fonte else ""}
-                {f'<span class="tb-chip tb-chip-muted">{last_import}</span>' if last_import else ""}
               </div>
             </div>
             """,
@@ -128,47 +81,56 @@ def _render_topbar(df: pd.DataFrame, fonte: str):
         )
 
     with right:
-        b1, b2, b3, b4 = st.columns([1.25, 0.9, 0.9, 0.55])
+        c1, c2, c3, c4 = st.columns([0.65, 1.05, 1.05, 0.65])
 
-        with b1:
-            if st.button("Atualizar base", use_container_width=True, key="tb_refresh"):
-                st.session_state.force_refresh = True
-                st.session_state.just_refreshed = True
-                try:
-                    st.cache_data.clear()
-                except Exception:
-                    pass
-                st.rerun()
+        # HOME (ícone, não emoji)
+        with c1:
+            if st.button("⌂", type="secondary", use_container_width=True, key="tb_home"):
+                _goto("views.home", None)
 
-        with b2:
+        with c2:
             if st.button("Perfil", type="secondary", use_container_width=True, key="tb_profile"):
                 _goto("views.perfil", None)
 
-        with b3:
+        with c3:
             if st.button("Sair", type="secondary", use_container_width=True, key="tb_logout"):
                 _logout()
                 st.rerun()
 
-        with b4:
+        with c4:
             with st.popover("≡", use_container_width=True):
-                st.markdown("### Navegação")
+                # ✅ sem título "Navegação"
 
-                q = st.text_input(
-                    "Buscar",
-                    key="tb_menu_q",
-                    label_visibility="collapsed",
-                    placeholder="Buscar tela…",
-                ).strip().lower()
-
-                if st.button("Início", use_container_width=True, key="tb_go_home"):
-                    _goto("views.home", None)
-
+                # ✅ Admin: Usuários + Auditoria no menu
                 if st.session_state.get("is_admin"):
-                    with st.expander("Admin", expanded=False):
+                    a1, a2 = st.columns(2)
+                    with a1:
                         if st.button("Usuários", use_container_width=True, key="tb_admin_users"):
                             _goto("views.admin_usuarios", None)
+                    with a2:
                         if st.button("Auditoria", use_container_width=True, key="tb_admin_audit"):
                             _goto("views.auditoria", None)
+
+                    st.divider()
+
+                # ✅ Atualizar base fica aqui dentro
+                if st.button("Atualizar base", use_container_width=True, key="tb_refresh_pop"):
+                    st.session_state.force_refresh = True
+                    st.session_state.just_refreshed = True
+                    try:
+                        st.cache_data.clear()
+                    except Exception:
+                        pass
+                    st.rerun()
+
+                st.divider()
+
+                q = st.text_input(
+                    "",
+                    key="tb_menu_q",
+                    placeholder="Buscar tela…",
+                    label_visibility="collapsed",
+                ).strip().lower()
 
                 for cat, opts in st.session_state.get("MENU", {}).items():
                     if q:
@@ -184,10 +146,7 @@ def _render_topbar(df: pd.DataFrame, fonte: str):
                             if st.button(label, use_container_width=True, key=f"tb_{cat}_{label}"):
                                 _goto(module, cat)
 
-                st.divider()
-                st.caption(f"Login: {st.session_state.get('usuario', '-')}")
-                st.caption(f"Departamento: {st.session_state.get('department', '-')}")
-
+    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<div class='tb-divider'></div>", unsafe_allow_html=True)
 
 
@@ -281,20 +240,19 @@ if st.session_state.pop("show_welcome", False):
 
 # ---------------- Dados ----------------
 df = get_df_once()
-fonte = getattr(df, "attrs", {}).get("fonte", "base")
 
 if st.session_state.pop("just_refreshed", False):
-    st.success(f"Base atualizada ({fonte}).")
+    st.success("Base atualizada.")
 
 
-# ---------------- Topbar global ----------------
-_render_topbar(df, fonte)
+# ---------------- Topbar ----------------
+_render_topbar(df)
 
 
 # ---------------- Roteador ----------------
 try:
     page = importlib.import_module(st.session_state.module)
 except Exception as e:
-    st.error(f"Erro ao carregar módulo {st.session_state.module}: {e}")
+    st.error(f"Erro ao carregar módulo **{st.session_state.module}**: {e}")
 else:
     page.render(df, {})
