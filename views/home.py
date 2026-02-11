@@ -1,21 +1,5 @@
-import html
 import streamlit as st
 import pandas as pd
-from utils import calcular_aderencia
-
-
-def _fmt_int(x):
-    try:
-        return f"{int(round(float(x))):,}".replace(",", ".")
-    except Exception:
-        return "0"
-
-
-def _fmt_pct(x, nd=1):
-    try:
-        return f"{float(x):.{nd}f}%".replace(".", ",")
-    except Exception:
-        return "0,0%"
 
 
 def _pick_col(cols, candidates):
@@ -25,272 +9,81 @@ def _pick_col(cols, candidates):
     return None
 
 
-def render(df: pd.DataFrame, USUARIOS: dict):
+def _last_date_str(df: pd.DataFrame) -> str:
+    """Tenta descobrir o último dia registrado na base."""
     if df is None or df.empty:
-        st.info("Sem dados carregados.")
-        return
+        return ""
 
-    # =========================
-    # MÊS ATUAL
-    # =========================
-    hoje = pd.Timestamp.today()
-    mes_atual, ano_atual = int(hoje.month), int(hoje.year)
+    cols = list(df.columns)
+    cand = [
+        "data_do_periodo",
+        "data",
+        "Data",
+        "DATA",
+        "dt",
+        "timestamp",
+        "ts",
+    ]
+    col = _pick_col(cols, cand)
+    if not col:
+        return ""
 
-    if ("mes" in df.columns) and ("ano" in df.columns):
-        df_mes = df[(df["mes"] == mes_atual) & (df["ano"] == ano_atual)].copy()
-    else:
-        if "mes_ano" in df.columns:
-            ultimo_mes = df["mes_ano"].max()
-            df_mes = df[df["mes_ano"] == ultimo_mes].copy()
-            try:
-                mes_atual = int(pd.to_datetime(ultimo_mes).month)
-                ano_atual = int(pd.to_datetime(ultimo_mes).year)
-            except Exception:
-                pass
-        else:
-            df_mes = df.copy()
-
-    # =========================
-    # COLUNAS (auto)
-    # =========================
-    cols = set(df_mes.columns)
-    data_col = _pick_col(cols, ["data", "data_do_periodo", "Data", "DATA"])
-    turno_col = _pick_col(cols, ["turno", "periodo", "Turno", "PERIODO"])
-    vagas_col = _pick_col(cols, ["numero_minimo_de_entregadores_regulares_na_escala", "vagas", "VAGAS"])
-    tag_col = _pick_col(cols, ["tag", "TAG"])
-
-    # =========================
-    # MÉTRICAS BÁSICAS
-    # =========================
-    corr_of = float(pd.to_numeric(df_mes.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum())
-    corr_ac = float(pd.to_numeric(df_mes.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum())
-    corr_rej = float(pd.to_numeric(df_mes.get("numero_de_corridas_rejeitadas", 0), errors="coerce").fillna(0).sum())
-
-    if "uuid" in df_mes.columns:
-        ativos = int(df_mes["uuid"].nunique())
-    elif "id_da_pessoa_entregadora" in df_mes.columns:
-        ativos = int(df_mes["id_da_pessoa_entregadora"].nunique())
-    else:
-        ativos = 0
-
-    # =========================
-    # SUPPLY HOURS (SH)
-    # =========================
     try:
-        supply_hours = float(pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0).sum()) / 3600.0
-    except Exception:
-        supply_hours = 0.0
-
-    # =========================
-    # UTR (absoluto e média)
-    # =========================
-    utr_abs = (corr_of / supply_hours) if supply_hours > 0 else 0.0
-
-    utr_media = 0.0
-    try:
-        secs = pd.to_numeric(df_mes.get("segundos_abs", 0), errors="coerce").fillna(0)
-        ok = secs > 0
-        if ok.any():
-            utr_media = float((df_mes.loc[ok, "numero_de_corridas_ofertadas"] / (secs.loc[ok] / 3600.0)).mean())
-    except Exception:
-        pass
-
-    # =========================
-    # ADERÊNCIA
-    # =========================
-    ader_pct = 0.0
-    ader_reg = 0
-    ader_vagas = 0.0
-    vagas_incons = False
-
-    if data_col and vagas_col and tag_col and ("segundos_abs" in df_mes.columns):
-        group_cols = (data_col, turno_col) if turno_col else (data_col,)
-        try:
-            base_ap = calcular_aderencia(
-                df_mes,
-                group_cols=group_cols,
-                vagas_col=vagas_col,
-                tag_col=tag_col,
-                tag_regular="REGULAR",
-            )
-            ader_reg = int(pd.to_numeric(base_ap.get("regulares_atuaram", 0), errors="coerce").fillna(0).sum())
-            ader_vagas = float(pd.to_numeric(base_ap.get("vagas", 0), errors="coerce").fillna(0).sum())
-            if ader_vagas > 0:
-                ader_pct = round((ader_reg / ader_vagas) * 100.0, 1)
-            vagas_incons = bool(base_ap.get("vagas_inconsistente", False).fillna(False).any())
-        except Exception:
-            pass
-
-    pct_bar = max(0.0, min(float(ader_pct), 100.0))
-
-    # =========================
-    # TOP 3 POR HORAS
-    # =========================
-    top3 = []
-    if ("pessoa_entregadora" in df_mes.columns) and ("segundos_abs" in df_mes.columns):
-        tmp_h = df_mes[["pessoa_entregadora", "segundos_abs"]].copy()
-        tmp_h["horas"] = pd.to_numeric(tmp_h["segundos_abs"], errors="coerce").fillna(0) / 3600.0
-        top = tmp_h.groupby("pessoa_entregadora", dropna=False)["horas"].sum().sort_values(ascending=False).head(3)
-        for nome, horas in top.items():
-            top3.append((str(nome), float(horas)))
-
-    # =========================
-    # DATA “atualizada”
-    # =========================
-    data_str = ""
-    try:
-        dtmax = pd.to_datetime(df_mes.get("data_do_periodo"), errors="coerce").max()
+        dtmax = pd.to_datetime(df[col], errors="coerce").max()
         if pd.notna(dtmax):
-            data_str = dtmax.strftime("%d/%m/%Y")
+            return dtmax.strftime("%d/%m/%Y")
     except Exception:
         pass
+    return ""
 
-    # =========================
-    # HEADER (alinhado)
-    # =========================
-    hL, hR = st.columns([4, 1], vertical_alignment="center")
+
+def _logout():
+    for k in list(st.session_state.keys()):
+        del st.session_state[k]
+
+
+def render(df: pd.DataFrame, _USUARIOS: dict):
+    last_day = _last_date_str(df)
+    fonte = getattr(df, "attrs", {}).get("fonte", "") if df is not None else ""
+
+    hL, hR = st.columns([4, 1.6], vertical_alignment="center")
     with hL:
         st.markdown(
             f"""
             <div style="margin-top:6px;">
               <div style="font-size:3.0rem; font-weight:950; line-height:1.05;">Painel de Entregadores</div>
               <div style="margin-top:10px; color: rgba(232,237,246,.70); font-weight:700;">
-                Dados atualizados • {data_str}
+                Último dia na base: <b>{last_day or '—'}</b>{(' • ' + fonte) if fonte else ''}
               </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
+
     with hR:
-        if st.button("Atualizar base", use_container_width=True, key="btn_refresh_home"):
-            st.session_state.force_refresh = True
-            st.session_state.just_refreshed = True
-            st.cache_data.clear()
-            st.rerun()
+        b1, b2 = st.columns([1, 1])
+        with b1:
+            if st.button("👤 Perfil", key="home_profile", type="secondary"):
+                st.session_state.module = "views.perfil"
+                st.session_state.open_cat = None
+                st.rerun()
+        with b2:
+            if st.button("🚪 Sair", key="home_logout", type="secondary"):
+                _logout()
+                st.rerun()
 
-    # =========================
-    # SEÇÕES (com visual consistente)
-    # =========================
-    st.markdown(f"""<div class="neo-section">Resumo do mês ({mes_atual:02d}/{ano_atual})</div>""", unsafe_allow_html=True)
+    st.markdown("<div class='neo-divider'></div>", unsafe_allow_html=True)
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.markdown(
-            f"""
-            <div class="neo-card">
-              <div class="neo-label">Ofertadas – UTR</div>
-              <div class="neo-value">{_fmt_int(corr_of)}</div>
-              <div class="neo-subline">Absoluto {str(round(utr_abs,2)).replace(".",",")} • Média {str(round(utr_media,2)).replace(".",",")}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with c2:
-        pct = (corr_ac / corr_of * 100.0) if corr_of > 0 else 0.0
-        st.markdown(
-            f"""
-            <div class="neo-card neo-success">
-              <div class="neo-label">Aceitas</div>
-              <div class="neo-value">{_fmt_int(corr_ac)}<span class="pct">({_fmt_pct(pct)})</span></div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with c3:
-        pct = (corr_rej / corr_of * 100.0) if corr_of > 0 else 0.0
-        st.markdown(
-            f"""
-            <div class="neo-card neo-danger">
-              <div class="neo-label">Rejeitadas</div>
-              <div class="neo-value">{_fmt_int(corr_rej)}<span class="pct">({_fmt_pct(pct)})</span></div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with c4:
-        st.markdown(
-            f"""
-            <div class="neo-card">
-              <div class="neo-label">Entregadores ativos</div>
-              <div class="neo-value">{_fmt_int(ativos)}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("""<div class="neo-section">Aderência (REGULAR)</div>""", unsafe_allow_html=True)
-
-    a1, a2 = st.columns([1, 2])
-    with a1:
-        st.markdown(
-            f"""
-            <div class="neo-card">
-              <div class="neo-label">Aderência</div>
-              <div class="neo-value">{str(ader_pct).replace(".",",")}%</div>
-              <div class="neo-subline">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        if vagas_incons:
-            st.warning("⚠️ Vagas variando dentro do mesmo grupo (possível inconsistência).")
-
-    with a2:
-        st.markdown(
-            f"""
-            <div class="neo-card">
-              <div class="neo-label">Regulares: {_fmt_int(ader_reg)} / Vagas: {_fmt_int(ader_vagas)}</div>
-              <div class="neo-progress-wrap">
-                <div class="neo-progress"><div style="width:{pct_bar}%;"></div></div>
-                <div class="neo-scale"><span>0%</span><span>50%</span><span>100%</span></div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("""<div class="neo-section">Supply & Ranking</div>""", unsafe_allow_html=True)
-
-    s1, s2 = st.columns([1.3, 1.0])
-    with s1:
-        st.markdown(
-            f"""
-            <div class="neo-card">
-              <div class="neo-label">Supply Hours (SH)</div>
-              <div class="neo-value">{str(round(supply_hours,1)).replace(".",",")}h</div>
-              <div class="neo-subline">Total no mês ({mes_atual:02d}/{ano_atual})</div>
-              <div class="neo-divider"></div>
-              <div class="toprow">
-                <div class="name">👤 Média por entregador</div>
-                <div class="hours">{str(round((supply_hours / ativos) if ativos else 0,1)).replace(".",",")}h</div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with s2:
-        rows = ""
-        medals = ["🥇", "🥈", "🥉"]
-        for i, (nome, horas) in enumerate(top3):
-            rows += f"""
-            <div class="toprow">
-              <div class="name">{medals[i]} {html.escape(nome)}</div>
-              <div class="hours">{str(round(horas,1)).replace(".",",")}h</div>
-            </div>
-            """
-        if not rows:
-            rows = "<div class='neo-subline'>Sem ranking disponível.</div>"
-
-        st.markdown(
-            f"""
-            <div class="neo-card">
-              <div class="neo-label">Top 3 entregadores (horas)</div>
-              {rows}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    if st.session_state.get("is_admin"):
+        st.markdown("""<div class="neo-section">Admin</div>""", unsafe_allow_html=True)
+        a1, a2 = st.columns([1, 1])
+        with a1:
+            if st.button("🛠️ Usuários", key="home_admin_users"):
+                st.session_state.module = "views.admin_usuarios"
+                st.session_state.open_cat = None
+                st.rerun()
+        with a2:
+            if st.button("🧾 Auditoria", key="home_admin_audit"):
+                st.session_state.module = "views.auditoria"
+                st.session_state.open_cat = None
+                st.rerun()
