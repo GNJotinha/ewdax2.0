@@ -1,89 +1,83 @@
-import streamlit as st
-import pandas as pd
+/* ===== HOME: mais vida ===== */
+.home-hero{
+  position: relative;
+  border-radius: 22px;
+  padding: 18px 18px 16px 18px;
+  background:
+    radial-gradient(420px 140px at 18% 30%, rgba(88,166,255,.22), transparent 60%),
+    radial-gradient(520px 200px at 90% 20%, rgba(167,139,250,.18), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  border: 1px solid rgba(255,255,255,.10);
+  box-shadow:
+    0 26px 70px rgba(0,0,0,.55),
+    inset 0 1px 0 rgba(255,255,255,.06);
+  overflow: hidden;
+}
 
+.home-hero:after{
+  content:"";
+  position:absolute;
+  inset:-1px;
+  border-radius: 22px;
+  padding:1px;
+  background: linear-gradient(135deg, rgba(88,166,255,.28), rgba(167,139,250,.18), rgba(0,212,255,.14));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events:none;
+  opacity:.70;
+}
 
-def _pick_col(cols, candidates):
-    for c in candidates:
-        if c in cols:
-            return c
-    return None
+.home-title{
+  font-size: 3.0rem;
+  font-weight: 950;
+  line-height: 1.05;
+  color: rgba(255,255,255,.96);
+  letter-spacing: .3px;
+}
 
+.home-sub{
+  margin-top: 10px;
+  font-weight: 800;
+  color: rgba(232,237,246,.78);
+}
 
-def _last_date_str(df: pd.DataFrame) -> str:
-    """Tenta descobrir o último dia registrado na base."""
-    if df is None or df.empty:
-        return ""
+.pill{
+  display: inline-block;
+  margin-left: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+  color: rgba(232,237,246,.86);
+  font-weight: 850;
+  font-size: .85rem;
+}
 
-    cols = list(df.columns)
-    cand = [
-        "data_do_periodo",
-        "data",
-        "Data",
-        "DATA",
-        "dt",
-        "timestamp",
-        "ts",
-    ]
-    col = _pick_col(cols, cand)
-    if not col:
-        return ""
+.action-tile{
+  border-radius: 16px;
+  padding: 14px 14px 12px 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  border: 1px solid rgba(55,214,122,.20);
+  box-shadow: 0 16px 34px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,255,255,.05);
+  margin-bottom: 10px;
+}
 
-    try:
-        dtmax = pd.to_datetime(df[col], errors="coerce").max()
-        if pd.notna(dtmax):
-            return dtmax.strftime("%d/%m/%Y")
-    except Exception:
-        pass
-    return ""
+.action-tile-blue{
+  border-color: rgba(88,166,255,.22);
+}
 
+.action-title{
+  font-weight: 950;
+  font-size: 1.05rem;
+  color: rgba(232,237,246,.95);
+}
 
-def _logout():
-    for k in list(st.session_state.keys()):
-        del st.session_state[k]
-
-
-def render(df: pd.DataFrame, _USUARIOS: dict):
-    last_day = _last_date_str(df)
-    fonte = getattr(df, "attrs", {}).get("fonte", "") if df is not None else ""
-
-    hL, hR = st.columns([4, 1.6], vertical_alignment="center")
-    with hL:
-        st.markdown(
-            f"""
-            <div style="margin-top:6px;">
-              <div style="font-size:3.0rem; font-weight:950; line-height:1.05;">Painel de Entregadores</div>
-              <div style="margin-top:10px; color: rgba(232,237,246,.70); font-weight:700;">
-                Último dia na base: <b>{last_day or '—'}</b>{(' • ' + fonte) if fonte else ''}
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with hR:
-        b1, b2 = st.columns([1, 1])
-        with b1:
-            if st.button("👤 Perfil", key="home_profile", type="secondary"):
-                st.session_state.module = "views.perfil"
-                st.session_state.open_cat = None
-                st.rerun()
-        with b2:
-            if st.button("🚪 Sair", key="home_logout", type="secondary"):
-                _logout()
-                st.rerun()
-
-    st.markdown("<div class='neo-divider'></div>", unsafe_allow_html=True)
-
-    if st.session_state.get("is_admin"):
-        st.markdown("""<div class="neo-section">Admin</div>""", unsafe_allow_html=True)
-        a1, a2 = st.columns([1, 1])
-        with a1:
-            if st.button("🛠️ Usuários", key="home_admin_users"):
-                st.session_state.module = "views.admin_usuarios"
-                st.session_state.open_cat = None
-                st.rerun()
-        with a2:
-            if st.button("🧾 Auditoria", key="home_admin_audit"):
-                st.session_state.module = "views.auditoria"
-                st.session_state.open_cat = None
-                st.rerun()
+.action-desc{
+  margin-top: 6px;
+  font-weight: 700;
+  color: rgba(232,237,246,.68);
+  font-size: .90rem;
+}
