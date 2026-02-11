@@ -82,6 +82,9 @@ section[data-testid="stSidebar"]{
   border-right: 1px solid rgba(255,255,255,.07);
 }
 
+/* =============================
+   BOTÕES (padrão = primário)
+   ============================= */
 .stButton>button{
   background: linear-gradient(135deg, rgba(88,166,255,.92), rgba(59,130,246,.92));
   color: white;
@@ -97,6 +100,29 @@ section[data-testid="stSidebar"]{
   border-color: rgba(255,255,255,.18);
 }
 
+/* =============================
+   BOTÃO SECUNDÁRIO (discreto)
+   - usado no Perfil / Sair etc
+   ============================= */
+.stButton>button[kind="secondary"],
+.stButton>button[data-testid="baseButton-secondary"]{
+  background: rgba(255,255,255,.04) !important;
+  color: rgba(232,237,246,.92) !important;
+  border: 1px solid rgba(255,255,255,.14) !important;
+  box-shadow: none !important;
+  padding: .55rem .95rem !important;
+  font-weight: 800 !important;
+}
+
+.stButton>button[kind="secondary"]:hover,
+.stButton>button[data-testid="baseButton-secondary"]:hover{
+  filter: brightness(1.12);
+  border-color: rgba(255,255,255,.22) !important;
+}
+
+/* =============================
+   COMPONENTES "NEO"
+   ============================= */
 .neo-shell{
   position: relative;
   border-radius: 22px;
@@ -242,11 +268,13 @@ section[data-testid="stSidebar"]{
   font-weight: 700;
 }
 
+/* Responsivo */
 @media (max-width: 1100px){
   .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .neo-grid-2{ grid-template-columns: 1fr; }
 }
 
+/* Top 3 entregadores (ranking list) */
 .toprow{
   display:flex;
   align-items:center;
