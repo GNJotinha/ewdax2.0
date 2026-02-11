@@ -1,98 +1,143 @@
+/* =========================================================
+   MOVEE • Painel de Entregadores — style.css (revisado)
+   - Dark / Neo / Glass
+   - Menos gambiarra, mais previsível
+   - Pronto pra Topbar + menu ≡ (popover) + cards + tabelas
+   ========================================================= */
+
+/* -----------------------------
+   TOKENS
+------------------------------ */
 :root{
   --bg: #0b0f14;
+  --bg2:#070a0f;
+
   --text: #e8edf6;
   --muted: rgba(232,237,246,.70);
+  --muted2: rgba(232,237,246,.55);
 
-  --blue: #58a6ff;
+  --white: rgba(255,255,255,.96);
+
+  --blue:  #58a6ff;
   --blue2: #3b82f6;
-  --cyan: #00d4ff;
-  --purple: #a78bfa;
+  --cyan:  #00d4ff;
+  --purple:#a78bfa;
 
-  --red: #ff4d4d;
-  --orange: #ffb020;
+  --red:   #ff4d4d;
+  --orange:#ffb020;
   --green: #37d67a;
+
+  --stroke: rgba(255,255,255,.10);
+  --stroke2: rgba(255,255,255,.07);
+
+  --card-bg: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  --card-shadow: 0 16px 34px rgba(0,0,0,.40);
+
+  --radius-xl: 22px;
+  --radius-lg: 16px;
+  --radius-md: 14px;
+  --radius-sm: 12px;
 }
 
-/* =============================
-   FIX DO SIDEBAR (Cloud)
-   - NÃO esconder o header
-   ============================= */
+/* -----------------------------
+   BASE / LAYOUT
+------------------------------ */
+html, body{ height: 100%; }
+body{
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(900px 500px at 15% 10%, rgba(88,166,255,.15), transparent 60%),
+    radial-gradient(700px 420px at 85% 0%, rgba(167,139,250,.14), transparent 55%),
+    radial-gradient(700px 420px at 70% 95%, rgba(0,212,255,.08), transparent 55%),
+    linear-gradient(180deg, var(--bg2) 0%, var(--bg) 45%, var(--bg) 100%);
+}
+
+/* some Streamlit chrome */
+footer{ display:none !important; }
+#MainMenu{ visibility:hidden !important; }
+div[data-testid="stDecoration"]{ display:none !important; }
+
+/* header sem “barra branca” */
 header[data-testid="stHeader"]{
   background: transparent !important;
   box-shadow: none !important;
   border: 0 !important;
 }
 
+/* Se quiser mostrar toolbar do Streamlit, comenta isso aqui */
 header [data-testid="stToolbar"]{
   visibility: hidden !important;
 }
 
-/* =============================
-   ✅ MATA O BOTÃO SAFADO "<<" (recolher)
-   Ele fica no header do sidebar.
-   Isso deixa o sidebar fixo aberto.
-   ============================= */
-div[data-testid="stSidebarHeader"] button[data-testid="baseButton-header"],
-div[data-testid="stSidebarHeader"] button[kind="headerNoPadding"]{
-  display: none !important;
+/* padding do topo */
+[data-testid="stAppViewContainer"]{
+  padding-top: 0rem !important;
 }
 
-/* Fallback: algumas versões usam aria-label/title */
-div[data-testid="stSidebarHeader"] button[aria-label*="collapse" i],
-div[data-testid="stSidebarHeader"] button[aria-label*="close" i],
-div[data-testid="stSidebarHeader"] button[aria-label*="recolher" i],
-div[data-testid="stSidebarHeader"] button[aria-label*="fechar" i],
-div[data-testid="stSidebarHeader"] button[title*="collapse" i],
-div[data-testid="stSidebarHeader"] button[title*="close" i],
-div[data-testid="stSidebarHeader"] button[title*="recolher" i],
-div[data-testid="stSidebarHeader"] button[title*="fechar" i]{
-  display: none !important;
-}
-
-/* mantém o botão de ABRIR caso o Cloud inicie fechado (não mexe nisso) */
-[data-testid="collapsedControl"]{
-  visibility: visible !important;
-  z-index: 999999 !important;
-}
-
-footer{ display:none !important; }
-#MainMenu{ visibility:hidden !important; }
-[data-testid="stAppViewContainer"]{ padding-top: 0rem !important; }
-div[data-testid="stDecoration"]{ display:none !important; }
-
-body{
-  background:
-    radial-gradient(900px 500px at 15% 10%, rgba(88,166,255,.15), transparent 60%),
-    radial-gradient(700px 420px at 85% 0%, rgba(167,139,250,.14), transparent 55%),
-    radial-gradient(700px 420px at 70% 95%, rgba(0,212,255,.08), transparent 55%),
-    linear-gradient(180deg, #070a0f 0%, #0b0f14 45%, #0b0f14 100%);
-  color: var(--text);
-}
-
+/* container principal */
 .block-container{
   max-width: 1180px !important;
   padding-top: 1.2rem !important;
   padding-bottom: 2.0rem !important;
 }
 
+/* espaçamento interno do Streamlit */
 [data-testid="stVerticalBlock"]{ gap: 0.65rem; }
 
-section[data-testid="stSidebar"]{
-  background: rgba(18,22,30,.92);
-  border-right: 1px solid rgba(255,255,255,.07);
+/* títulos mais “premium” */
+h1, h2, h3{
+  color: rgba(255,255,255,.96);
+  letter-spacing: .2px;
 }
 
-/* =============================
-   BOTÕES (padrão = primário)
-   ============================= */
+/* divisores */
+hr{
+  border: 0;
+  height: 1px;
+  background: rgba(255,255,255,.08);
+}
+
+/* -----------------------------
+   SIDEBAR
+------------------------------ */
+section[data-testid="stSidebar"]{
+  background: rgba(18,22,30,.92);
+  border-right: 1px solid var(--stroke2);
+}
+
+/* botão de abrir sidebar (quando colapsado) */
+[data-testid="collapsedControl"]{
+  visibility: visible !important;
+  z-index: 999 !important;
+  opacity: .45 !important;
+}
+[data-testid="collapsedControl"]:hover{
+  opacity: .95 !important;
+}
+
+/* ✅ antes você MATAVA o botão de recolher/fechar.
+   Isso é bonito até o dia que alguém abre o sidebar e não consegue fechar.
+   Agora a gente só deixa discreto (sem travar). */
+div[data-testid="stSidebarHeader"] button{
+  opacity: .55 !important;
+}
+div[data-testid="stSidebarHeader"] button:hover{
+  opacity: .95 !important;
+}
+
+/* -----------------------------
+   BOTÕES
+------------------------------ */
 .stButton>button{
   background: linear-gradient(135deg, rgba(88,166,255,.92), rgba(59,130,246,.92));
   color: white;
   border: 1px solid rgba(255,255,255,.12);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   padding: .70rem 1.20rem;
   font-weight: 800;
   box-shadow: 0 12px 26px rgba(0,0,0,.45);
+  white-space: nowrap !important; /* resolve “Per / fil” */
 }
 
 .stButton>button:hover{
@@ -100,10 +145,13 @@ section[data-testid="stSidebar"]{
   border-color: rgba(255,255,255,.18);
 }
 
-/* =============================
-   BOTÃO SECUNDÁRIO (discreto)
-   - usado no Perfil / Sair etc
-   ============================= */
+.stButton>button:disabled{
+  opacity: .55 !important;
+  cursor: not-allowed !important;
+  filter: none !important;
+}
+
+/* secundário */
 .stButton>button[kind="secondary"],
 .stButton>button[data-testid="baseButton-secondary"]{
   background: rgba(255,255,255,.04) !important;
@@ -113,34 +161,130 @@ section[data-testid="stSidebar"]{
   padding: .55rem .95rem !important;
   font-weight: 800 !important;
 }
-
 .stButton>button[kind="secondary"]:hover,
 .stButton>button[data-testid="baseButton-secondary"]:hover{
   filter: brightness(1.12);
   border-color: rgba(255,255,255,.22) !important;
 }
 
-/* =============================
-   COMPONENTES "NEO"
-   ============================= */
-.neo-shell{
-  position: relative;
-  border-radius: 22px;
-  padding: 18px 18px 22px 18px;
+/* Popover do menu ≡ ficar com cara de ícone */
+div[data-testid="stPopover"] > button{
+  padding: .55rem .10rem !important;
+  font-weight: 950 !important;
+  border-radius: var(--radius-md) !important;
+}
+
+/* -----------------------------
+   INPUTS (leve, sem quebrar)
+------------------------------ */
+div[data-baseweb="input"] input,
+div[data-baseweb="textarea"] textarea{
   background: rgba(255,255,255,.03) !important;
+  color: rgba(232,237,246,.92) !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
+  border-radius: 12px !important;
+}
+
+div[data-baseweb="select"] > div{
+  background: rgba(255,255,255,.03) !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
+  border-radius: 12px !important;
+}
+
+label, .stMarkdown, .stCaption{
+  color: rgba(232,237,246,.78);
+}
+
+/* -----------------------------
+   EXPANDER (melhor acabamento)
+------------------------------ */
+div[data-testid="stExpander"] details{
+  background: rgba(255,255,255,.03) !important;
+  border: 1px solid rgba(255,255,255,.08) !important;
+  border-radius: 14px !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+}
+div[data-testid="stExpander"] summary{
+  padding: .55rem .75rem !important;
+  font-weight: 850 !important;
+  color: rgba(232,237,246,.92) !important;
+}
+
+/* -----------------------------
+   MÉTRICAS (st.metric)
+------------------------------ */
+div[data-testid="metric-container"]{
+  background: var(--card-bg) !important;
+  border: 1px solid rgba(255,255,255,.09) !important;
+  border-radius: 16px !important;
+  padding: 14px 14px 12px 14px !important;
+  box-shadow: var(--card-shadow);
+}
+div[data-testid="metric-container"] label{
+  color: rgba(232,237,246,.78) !important;
+  font-weight: 850 !important;
+}
+div[data-testid="metric-container"] [data-testid="stMetricValue"]{
+  color: rgba(255,255,255,.96) !important;
+  font-weight: 950 !important;
+}
+
+/* -----------------------------
+   TABELAS / DATAFRAME (container)
+------------------------------ */
+div[data-testid="stDataFrame"],
+div[data-testid="stTable"]{
+  background: rgba(255,255,255,.02);
   border: 1px solid rgba(255,255,255,.08);
-  box-shadow:
-    0 28px 70px rgba(0,0,0,.60) !important,
-    inset 0 1px 0 rgba(255,255,255,.05);
+  border-radius: 16px;
+  padding: 8px;
+  box-shadow: 0 18px 44px rgba(0,0,0,.35);
   overflow: hidden;
 }
 
-.neo-shell::before,
-.neo-shell::after{
-  display:none !important;
-  content:none !important;
+/* -----------------------------
+   TOPBAR (praquele visual do teu sonho)
+   usa no HTML: tb-left / tb-title / tb-meta / tb-chip
+------------------------------ */
+.tb-left{ margin-top: 2px; }
+
+.tb-title{
+  font-size: 2.25rem;
+  font-weight: 950;
+  line-height: 1.05;
+  letter-spacing: .2px;
+  color: rgba(255,255,255,.96);
 }
 
+.tb-meta{
+  margin-top: 10px;
+  color: rgba(232,237,246,.72);
+  font-weight: 750;
+  font-size: .98rem;
+}
+
+.tb-chip{
+  display:inline-block;
+  margin-left:10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.12);
+  color: rgba(232,237,246,.85);
+  font-weight: 800;
+  font-size: .83rem;
+}
+.tb-chip-muted{ opacity:.85; }
+
+.tb-divider{
+  height: 1px;
+  background: rgba(255,255,255,.08);
+  margin: 10px 0 14px 0;
+}
+
+/* -----------------------------
+   COMPONENTES “NEO” (usados no admin_usuarios + home)
+------------------------------ */
 .neo-divider{
   height: 1px;
   background: rgba(255,255,255,.08);
@@ -171,7 +315,7 @@ section[data-testid="stSidebar"]{
   position: relative;
   border-radius: 16px;
   padding: 16px 16px 14px 16px;
-  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  background: var(--card-bg);
   border: 1px solid rgba(255,255,255,.09);
   box-shadow:
     0 16px 34px rgba(0,0,0,.40),
@@ -212,16 +356,6 @@ section[data-testid="stSidebar"]{
   color: rgba(255,255,255,.96);
 }
 
-.neo-value .pct{
-  display:block;
-  margin-top: 6px;
-  font-size: 1.65rem;
-  font-weight: 900;
-  letter-spacing: .2px;
-  color: rgba(232,237,246,.92);
-  opacity: .95;
-}
-
 .neo-subline{
   margin-top: 10px;
   font-size: .90rem;
@@ -235,8 +369,8 @@ section[data-testid="stSidebar"]{
 .neo-danger{ border-color: rgba(255,77,77,.22); }
 .neo-danger .neo-value{ color: rgba(255,110,110,.98); }
 
+/* Progress (quando você quiser usar) */
 .neo-progress-wrap{ margin-top: 14px; }
-
 .neo-progress{
   width:100%;
   height: 12px;
@@ -246,7 +380,6 @@ section[data-testid="stSidebar"]{
   overflow:hidden;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
 }
-
 .neo-progress > div{
   height: 100%;
   border-radius: 999px;
@@ -258,7 +391,6 @@ section[data-testid="stSidebar"]{
   );
   filter: drop-shadow(0 6px 14px rgba(0,0,0,.35));
 }
-
 .neo-scale{
   display:flex;
   justify-content:space-between;
@@ -268,130 +400,16 @@ section[data-testid="stSidebar"]{
   font-weight: 700;
 }
 
-/* Responsivo */
+/* responsivo */
 @media (max-width: 1100px){
   .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .neo-grid-2{ grid-template-columns: 1fr; }
 }
 
-/* Top 3 entregadores (ranking list) */
-.toprow{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  margin: 10px 0;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: rgba(255,255,255,.03);
-  border: 1px solid rgba(255,255,255,.06);
-}
-
-.toprow .name{
-  font-weight: 800;
-  color: rgba(232,237,246,.92);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.toprow .hours{
-  font-weight: 900;
-  color: rgba(232,237,246,.70);
-  flex-shrink: 0;
-}
-
-/* ===== HOME: mais vida ===== */
-.home-hero{
-  position: relative;
-  border-radius: 22px;
-  padding: 18px 18px 16px 18px;
-  background:
-    radial-gradient(420px 140px at 18% 30%, rgba(88,166,255,.22), transparent 60%),
-    radial-gradient(520px 200px at 90% 20%, rgba(167,139,250,.18), transparent 60%),
-    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
-  border: 1px solid rgba(255,255,255,.10);
-  box-shadow:
-    0 26px 70px rgba(0,0,0,.55),
-    inset 0 1px 0 rgba(255,255,255,.06);
-  overflow: hidden;
-}
-
-.home-hero:after{
-  content:"";
-  position:absolute;
-  inset:-1px;
-  border-radius: 22px;
-  padding:1px;
-  background: linear-gradient(135deg, rgba(88,166,255,.28), rgba(167,139,250,.18), rgba(0,212,255,.14));
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events:none;
-  opacity:.70;
-}
-
-.home-title{
-  font-size: 3.0rem;
-  font-weight: 950;
-  line-height: 1.05;
-  color: rgba(255,255,255,.96);
-  letter-spacing: .3px;
-}
-
-.home-sub{
-  margin-top: 10px;
-  font-weight: 800;
-  color: rgba(232,237,246,.78);
-}
-
-.pill{
-  display: inline-block;
-  margin-left: 10px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.06);
-  border: 1px solid rgba(255,255,255,.12);
-  color: rgba(232,237,246,.86);
-  font-weight: 850;
-  font-size: .85rem;
-}
-
-.action-tile{
-  border-radius: 16px;
-  padding: 14px 14px 12px 14px;
-  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
-  border: 1px solid rgba(55,214,122,.20);
-  box-shadow: 0 16px 34px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,255,255,.05);
-  margin-bottom: 10px;
-}
-
-.action-tile-blue{
-  border-color: rgba(88,166,255,.22);
-}
-
-.action-title{
-  font-weight: 950;
-  font-size: 1.05rem;
-  color: rgba(232,237,246,.95);
-}
-
-.action-desc{
-  margin-top: 6px;
-  font-weight: 700;
-  color: rgba(232,237,246,.68);
-  font-size: .90rem;
-}
-
-/* não quebrar texto dos botões (resolve "Per / fil") */
-.stButton>button{ white-space: nowrap !important; }
-
-/* Home clean */
-.home-head{
-  margin-top: 6px;
-}
+/* -----------------------------
+   HOME (usado em home.py)
+------------------------------ */
+.home-wrap{ margin-top: 6px; }
 
 .home-title{
   font-size: 3.0rem;
@@ -419,3 +437,37 @@ section[data-testid="stSidebar"]{
   font-size: .85rem;
 }
 
+/* utilitários que você vai querer quando começar a “prototipar bonito” */
+.pill{
+  display: inline-block;
+  margin-left: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+  color: rgba(232,237,246,.86);
+  font-weight: 850;
+  font-size: .85rem;
+}
+
+.action-tile{
+  border-radius: 16px;
+  padding: 14px 14px 12px 14px;
+  background: var(--card-bg);
+  border: 1px solid rgba(55,214,122,.20);
+  box-shadow: 0 16px 34px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,255,255,.05);
+  margin-bottom: 10px;
+}
+.action-tile-blue{ border-color: rgba(88,166,255,.22); }
+
+.action-title{
+  font-weight: 950;
+  font-size: 1.05rem;
+  color: rgba(232,237,246,.95);
+}
+.action-desc{
+  margin-top: 6px;
+  font-weight: 700;
+  color: rgba(232,237,246,.68);
+  font-size: .90rem;
+}
