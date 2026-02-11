@@ -1,8 +1,9 @@
+import os
 import io
 import re
 import csv
 import hashlib
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone
 
 import streamlit as st
 import pandas as pd
@@ -77,7 +78,11 @@ def _get_columns(cur, table: str) -> list[str]:
     return [r[0] for r in cur.fetchall()]
 
 
-def _parse_file_date(filename: str) -> date | None:
+def _parse_file_date(filename: str):
+    """
+    Tenta extrair YYYY-MM-DD do nome do arquivo (ex: 2026-02-10.csv).
+    Retorna date ou None.
+    """
     m = _date_in_name.search(filename or "")
     if not m:
         return None
@@ -87,10 +92,20 @@ def _parse_file_date(filename: str) -> date | None:
         return None
 
 
-def _imports_lookup(cur, filename: str) -> tuple[int | None, str | None]:
+def _imports_lookup(cur, filename: str, sha: str):
     cols = set(_get_columns(cur, IMPORTS_TABLE))
 
-    # tua tabela tem file_name
+    # se tiver hash no schema, usa ele (mantém o comportamento antigo)
+    if "sha256" in cols:
+        cur.execute(
+            f"select id from public.{_safe_ident(IMPORTS_TABLE)} where sha256=%s limit 1",
+            (sha,),
+        )
+        r = cur.fetchone()
+        if r:
+            return int(r[0]), "sha256"
+
+    # no teu schema REAL tem file_name (e é o que vale)
     if "file_name" in cols:
         cur.execute(
             f"select id from public.{_safe_ident(IMPORTS_TABLE)} where file_name=%s limit 1",
@@ -100,28 +115,42 @@ def _imports_lookup(cur, filename: str) -> tuple[int | None, str | None]:
         if r:
             return int(r[0]), "file_name"
 
+    # compat antigo
+    if "source_name" in cols:
+        cur.execute(
+            f"select id from public.{_safe_ident(IMPORTS_TABLE)} where source_name=%s limit 1",
+            (filename,),
+        )
+        r = cur.fetchone()
+        if r:
+            return int(r[0]), "source_name"
+
     return None, None
 
 
-def _imports_insert(cur, filename: str, file_dt: date | None):
+def _imports_insert(cur, filename: str, sha: str, row_count_guess: int):
     cols = set(_get_columns(cur, IMPORTS_TABLE))
+    fields, params, values = [], [], []
 
-    fields: list[str] = []
-    params: list[str] = []
-    values: list[object] = []
+    # ✅ FIX PRINCIPAL: teu schema exige file_name NOT NULL
+    if "file_name" in cols:
+        fields.append("file_name"); params.append("%s"); values.append(filename)
 
-    # OBRIGATÓRIO no teu schema
-    if "file_name" not in cols:
-        raise RuntimeError("Tabela imports não tem coluna file_name (mas deveria).")
-    fields.append("file_name"); params.append("%s"); values.append(filename)
-
-    # opcional
+    # file_date opcional (tira do nome se der)
     if "file_date" in cols:
-        fields.append("file_date"); params.append("%s"); values.append(file_dt)
+        fields.append("file_date"); params.append("%s"); values.append(_parse_file_date(filename))
 
-    # OBRIGATÓRIO (vamos setar sempre pra não depender de default)
+    # ✅ geralmente NOT NULL: uploaded_at
     if "uploaded_at" in cols:
         fields.append("uploaded_at"); params.append("%s"); values.append(datetime.now(timezone.utc))
+
+    # compat antigo (se um dia existir)
+    if "source_name" in cols:
+        fields.append("source_name"); params.append("%s"); values.append(filename)
+    if "sha256" in cols:
+        fields.append("sha256"); params.append("%s"); values.append(sha)
+    if "row_count" in cols:
+        fields.append("row_count"); params.append("%s"); values.append(int(row_count_guess))
 
     # quem importou (se existir coluna)
     actor_id = st.session_state.get("user_id")
@@ -132,9 +161,14 @@ def _imports_insert(cur, filename: str, file_dt: date | None):
     if "imported_by_login" in cols:
         fields.append("imported_by_login"); params.append("%s"); values.append(actor_login)
 
+    if not fields:
+        raise RuntimeError(
+            f"Tabela {IMPORTS_TABLE} não tem colunas esperadas. Colunas atuais: {sorted(cols)}"
+        )
+
     cur.execute(
         f"""
-        insert into public.{_safe_ident(IMPORTS_TABLE)} ({", ".join(map(_safe_ident, fields))})
+        insert into public.{_safe_ident(IMPORTS_TABLE)} ({", ".join(fields)})
         values ({", ".join(params)})
         returning id
         """,
@@ -151,8 +185,6 @@ def render(_df, _USUARIOS):
     if not files:
         st.info("Arraste um ou mais CSVs aqui.")
         return
-
-    force = st.checkbox("Forçar import (ignora duplicados pelo nome do arquivo)")
 
     with st.expander("👀 Preview do primeiro arquivo", expanded=False):
         try:
@@ -172,6 +204,7 @@ def render(_df, _USUARIOS):
     conn.autocommit = False
 
     try:
+        # garante colunas de importador
         ensure_import_columns(conn)
 
         prog = st.progress(0)
@@ -183,9 +216,7 @@ def render(_df, _USUARIOS):
             txt = _decode_csv_bytes(data)
             delim = _sniff_delimiter(txt)
             header = _parse_header(txt, delim)
-            _ = _sha256(data)  # hoje não salva no imports (tua tabela não tem coluna), mas fica pronto p/ futuro
-
-            file_dt = _parse_file_date(fname)
+            sha = _sha256(data)
 
             try:
                 with conn.cursor() as cur:
@@ -202,22 +233,18 @@ def render(_df, _USUARIOS):
                     if "import_id" not in raw_cols or "row_number" not in raw_cols:
                         raise RuntimeError("RAW precisa ter colunas import_id e row_number.")
 
-                    dup_id, dup_by = _imports_lookup(cur, fname)
-                    if dup_id and not force:
+                    dup_id, dup_by = _imports_lookup(cur, fname, sha)
+                    if dup_id:
                         conn.rollback()
                         st.info(f"{fname}: já importado ({dup_by})")
                         audit_log("import_csv_skipped", "imports", str(dup_id), {"filename": fname, "by": dup_by})
                         prog.progress(int(i / total * 100))
                         continue
 
-                    # se forçar, dá um nome “único” p/ não bater em constraint UNIQUE (se existir)
-                    if dup_id and force:
-                        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-                        original = fname
-                        fname = f"{fname}__reimport_{ts}"
-                        audit_log("import_csv_force_rename", "imports", str(dup_id), {"original": original, "new": fname})
+                    # row_count_guess
+                    row_count_guess = max(0, len(txt.splitlines()) - 1)
 
-                    import_id = _imports_insert(cur, fname, file_dt)
+                    import_id = _imports_insert(cur, fname, sha, row_count_guess)
 
                     tmp = f"tmp_csv_{import_id}"
                     cols_def = ", ".join([f"{_safe_ident(h)} text" for h in header])
@@ -262,6 +289,7 @@ def render(_df, _USUARIOS):
         except Exception:
             pass
 
+    # refresh geral
     st.session_state.force_refresh = True
     st.session_state.just_refreshed = True
     st.cache_data.clear()
