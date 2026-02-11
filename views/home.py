@@ -12,8 +12,7 @@ def _pick_col(cols, candidates):
 def _last_date_str(df: pd.DataFrame) -> str:
     if df is None or df.empty:
         return ""
-    cols = list(df.columns)
-    col = _pick_col(cols, ["data_do_periodo", "data", "Data", "DATA", "dt", "timestamp", "ts"])
+    col = _pick_col(list(df.columns), ["data_do_periodo", "data", "Data", "DATA", "dt", "timestamp", "ts"])
     if not col:
         return ""
     try:
@@ -30,20 +29,25 @@ def _logout():
         del st.session_state[k]
 
 
+def _goto(module: str, cat: str | None = None):
+    st.session_state.module = module
+    st.session_state.open_cat = cat
+    st.rerun()
+
+
 def render(df: pd.DataFrame, _USUARIOS: dict):
     last_day = _last_date_str(df)
     fonte = getattr(df, "attrs", {}).get("fonte", "") if df is not None else ""
 
-    # centraliza o conteúdo pra não ficar tudo espalhado
-    _, mid, _ = st.columns([1, 2.3, 1], vertical_alignment="top")
-
+    # centraliza o conteúdo pra parecer "home"
+    _, mid, _ = st.columns([1, 2.6, 1], vertical_alignment="top")
     with mid:
-        topL, topR = st.columns([3.2, 1.2], vertical_alignment="center")
-
-        with topL:
+        # topo
+        L, R = st.columns([3.4, 1.2], vertical_alignment="center")
+        with L:
             st.markdown(
                 f"""
-                <div class="home-head">
+                <div class="home-wrap">
                   <div class="home-title">Painel de Entregadores</div>
                   <div class="home-meta">
                     Último dia na base: <b>{last_day or "—"}</b>
@@ -54,64 +58,50 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 unsafe_allow_html=True,
             )
 
-        with topR:
-            a, b = st.columns(2)
-            with a:
+        with R:
+            b1, b2 = st.columns(2)
+            with b1:
                 if st.button("Perfil", type="secondary", use_container_width=True, key="home_profile"):
-                    st.session_state.module = "views.perfil"
-                    st.session_state.open_cat = None
-                    st.rerun()
-            with b:
+                    _goto("views.perfil", None)
+            with b2:
                 if st.button("Sair", type="secondary", use_container_width=True, key="home_logout"):
                     _logout()
                     st.rerun()
 
         st.markdown("<div class='neo-divider'></div>", unsafe_allow_html=True)
 
-        st.markdown("""<div class="neo-section">Acessos rápidos</div>""", unsafe_allow_html=True)
+        # Corpo: 2 colunas (Navegação / Admin)
+        left, right = st.columns([2.2, 1.2], vertical_alignment="top")
 
         menu = st.session_state.get("MENU", {})
-        options = []
-        map_opt = {}
 
-        for cat, opts in menu.items():
-            for label, module in opts.items():
-                key = f"{cat} • {label}"
-                options.append(key)
-                map_opt[key] = (module, cat)
+        with left:
+            st.markdown("""<div class="neo-section">Navegação</div>""", unsafe_allow_html=True)
 
-        # admin também entra no "Ir para…" (mas sem ficar poluindo sidebar)
-        if st.session_state.get("is_admin"):
-            key_u = "Admin • Usuários"
-            key_a = "Admin • Auditoria"
-            options.extend([key_u, key_a])
-            map_opt[key_u] = ("views.admin_usuarios", None)
-            map_opt[key_a] = ("views.auditoria", None)
+            # launcher por seção (sem dropdown)
+            for cat, opts in menu.items():
+                with st.expander(cat, expanded=(cat == "Desempenho do Entregador")):
+                    # botões em grid 2 colunas pra ficar com cara de painel
+                    keys = list(opts.keys())
+                    cols = st.columns(2)
+                    for i, label in enumerate(keys):
+                        c = cols[i % 2]
+                        with c:
+                            if st.button(label, use_container_width=True, key=f"home_nav_{cat}_{label}"):
+                                _goto(opts[label], cat)
 
-        # ir para
-        row1, row2 = st.columns([3.2, 1])
-        with row1:
-            choice = st.selectbox("Ir para", options=options, label_visibility="collapsed")
-        with row2:
-            if st.button("Abrir", use_container_width=True, key="home_go"):
-                module, cat = map_opt[choice]
-                st.session_state.module = module
-                st.session_state.open_cat = cat
-                st.rerun()
-
-        # admin (botões simples, sem card)
-        if st.session_state.get("is_admin"):
-            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+        with right:
             st.markdown("""<div class="neo-section">Admin</div>""", unsafe_allow_html=True)
 
-            c1, c2, _sp = st.columns([1, 1, 2.6])
-            with c1:
+            if st.session_state.get("is_admin"):
                 if st.button("Usuários", use_container_width=True, key="home_admin_users"):
-                    st.session_state.module = "views.admin_usuarios"
-                    st.session_state.open_cat = None
-                    st.rerun()
-            with c2:
+                    _goto("views.admin_usuarios", None)
                 if st.button("Auditoria", use_container_width=True, key="home_admin_audit"):
-                    st.session_state.module = "views.auditoria"
-                    st.session_state.open_cat = None
-                    st.rerun()
+                    _goto("views.auditoria", None)
+            else:
+                st.caption("Sem acesso admin.")
+
+            st.markdown("<div class='neo-divider'></div>", unsafe_allow_html=True)
+            st.markdown("""<div class="neo-section">Conta</div>""", unsafe_allow_html=True)
+            st.caption(f"Login: {st.session_state.get('usuario','-')}")
+            st.caption(f"Departamento: {st.session_state.get('department','-')}")
