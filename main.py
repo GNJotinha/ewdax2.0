@@ -1,4 +1,5 @@
 import importlib
+import time
 import pandas as pd
 import streamlit as st
 from zoneinfo import ZoneInfo
@@ -59,6 +60,9 @@ if not st.session_state.logado:
             st.session_state.is_admin = user["is_admin"]
             st.session_state.must_change_password = user["must_change_password"]
 
+            # balão de boas-vindas (some)
+            st.session_state.show_welcome_toast = True
+
             # se for primeiro acesso / reset: já manda pro perfil trocar senha
             if st.session_state.must_change_password:
                 st.session_state.module = "views.perfil"
@@ -71,25 +75,28 @@ if not st.session_state.logado:
 
     st.stop()
 
-# ---------------- Sidebar ----------------
+# ---------------- Sidebar (só navegação) ----------------
 with st.sidebar:
-    st.success(f"Bem-vindo, {st.session_state.usuario}!")
-    st.caption(f"{st.session_state.get('department','')} {'• ADMIN' if st.session_state.get('is_admin') else ''}")
-
-    if st.button("👤 Meu Perfil", use_container_width=True):
-        st.session_state.module = "views.perfil"
-        st.session_state.open_cat = None
-        st.rerun()
-
-    if st.button("Início", use_container_width=True):
+    # botão simples pra voltar pra home (perfil/sair/admin ficam na home)
+    if st.button("🏠 Início", use_container_width=True, key="sb_home", type="secondary"):
         st.session_state.module = "views.home"
         st.session_state.open_cat = None
         st.rerun()
 
-    if st.button("Sair", use_container_width=True):
-        for k in list(st.session_state.keys()):
-            del st.session_state[k]
-        st.rerun()
+# ---------------- Toast de boas-vindas (some) ----------------
+if st.session_state.pop("show_welcome_toast", False):
+    msg = f"Bem-vindo, {st.session_state.get('usuario','')}!"
+    if hasattr(st, "toast"):
+        try:
+            st.toast(msg, icon="👋")
+        except Exception:
+            st.info(msg)
+            time.sleep(2)
+    else:
+        ph = st.empty()
+        ph.info(msg)
+        time.sleep(2)
+        ph.empty()
 
 MENU = {
     "Desempenho do Entregador": {
@@ -130,24 +137,11 @@ with st.sidebar:
                     st.session_state.open_cat = cat
                     st.rerun()
 
-    # Admin-only
-    if st.session_state.get("is_admin"):
-        st.markdown("---")
-        st.markdown("### Admin")
-        if st.button("🛠️ Usuários", use_container_width=True):
-            st.session_state.module = "views.admin_usuarios"
-            st.session_state.open_cat = None
-            st.rerun()
-
-        if st.button("🧾 Auditoria", use_container_width=True):
-            st.session_state.module = "views.auditoria"
-            st.session_state.open_cat = None
-            st.rerun()
+    # Admin (Usuários/Auditoria) agora fica na Home
 
 # --------------- Dados ---------------
 df = get_df_once()
 
-# se teu loader colocar df.attrs["fonte"], mostra aqui
 fonte = getattr(df, "attrs", {}).get("fonte", "base")
 st.sidebar.caption(f"📦 Fonte de dados: {fonte}")
 
