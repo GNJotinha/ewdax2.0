@@ -385,3 +385,37 @@ section[data-testid="stSidebar"]{
   font-size: .90rem;
 }
 
+/* não quebrar texto dos botões (resolve "Per / fil") */
+.stButton>button{ white-space: nowrap !important; }
+
+/* Home clean */
+.home-head{
+  margin-top: 6px;
+}
+
+.home-title{
+  font-size: 3.0rem;
+  font-weight: 950;
+  line-height: 1.05;
+  letter-spacing: .2px;
+  color: rgba(255,255,255,.96);
+}
+
+.home-meta{
+  margin-top: 10px;
+  color: rgba(232,237,246,.72);
+  font-weight: 750;
+}
+
+.home-chip{
+  display:inline-block;
+  margin-left:10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.12);
+  color: rgba(232,237,246,.85);
+  font-weight: 800;
+  font-size: .85rem;
+}
+
