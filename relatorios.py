@@ -13,24 +13,27 @@ def get_entregadores(df):
     return [""] + sorted(df["pessoa_entregadora"].dropna().unique().tolist())
 
 
-def gerar_texto(nome, periodo, dias_esperados, presencas, faltas, tempo_pct,
-                turnos, ofertadas, aceitas, rejeitadas, completas,
-                tx_aceitas, tx_rejeitadas, tx_completas):
-    return f"""📋 {nome} – {periodo}
+def gerar_texto(
+    nome, periodo, dias_esperados, presencas, faltas, tempo_pct,
+    turnos, ofertadas, aceitas, rejeitadas, completas,
+    tx_aceitas, tx_rejeitadas, tx_completas
+):
+    # ✅ Sem emoji + texto pronto limpo
+    return f"""{nome} – {periodo}
 
-📆 Dias esperados: {dias_esperados}
-✅ Presenças: {presencas}
-❌ Faltas: {faltas}
+Dias esperados: {dias_esperados}
+Presenças: {presencas}
+Faltas: {faltas}
 
-⏱️ Tempo online: {tempo_pct}%
+Tempo online: {tempo_pct}%
 
-🧾 Turnos realizados: {turnos}
+Turnos realizados: {turnos}
 
-🚗 Corridas:
-• 📦 Ofertadas: {ofertadas}
-• 👍 Aceitas: {aceitas} ({tx_aceitas}%)
-• 👎 Rejeitadas: {rejeitadas} ({tx_rejeitadas}%)
-• 🏁 Completas: {completas} ({tx_completas}%)
+Corridas:
+- Ofertadas: {ofertadas}
+- Aceitas: {aceitas} ({tx_aceitas}%)
+- Rejeitadas: {rejeitadas} ({tx_rejeitadas}%)
+- Completas: {completas} ({tx_completas}%)
 """
 
 
@@ -38,7 +41,7 @@ def gerar_dados(nome, mes, ano, df):
     nome_norm = normalizar(nome)
     dados = df[(df["pessoa_entregadora_normalizado"] == nome_norm)]
     if mes and ano:
-            dados = dados[(dados["mes"] == mes) & (dados["ano"] == ano)]
+        dados = dados[(dados["mes"] == mes) & (dados["ano"] == ano)]
     if dados.empty:
         return None
 
@@ -75,29 +78,16 @@ def gerar_dados(nome, mes, ano, df):
         max_data = dados["data"].max().strftime("%d/%m/%Y")
         periodo = f"{min_data} a {max_data}"
 
-    return gerar_texto(nome, periodo, dias_esperados, presencas, faltas, tempo_pct,
-                       turnos, ofertadas, aceitas, rejeitadas, completas,
-                       tx_aceitas, tx_rejeitadas, tx_completas)
+    return gerar_texto(
+        nome, periodo, dias_esperados, presencas, faltas, tempo_pct,
+        turnos, ofertadas, aceitas, rejeitadas, completas,
+        tx_aceitas, tx_rejeitadas, tx_completas
+    )
 
 
 def gerar_simplicado(nome, mes, ano, df):
     """
-    Gera bloco simplificado para WhatsApp, SOMENTE com:
-      * título do mês
-      * tempo online
-      * turnos
-      * corridas (ofertadas/aceitas/rejeitadas/completas)
-
-    Sem repetir o nome do entregador aqui (o nome vem antes, na tela).
-    Formato de saída (exemplo):
-
-    *Agosto*
-    Tempo online: 88.8%
-    Turnos realizados: 117
-    * Ofertadas: 426
-    * Aceitas: 425 (99.8%)
-    * Rejeitadas: 1 (0.2%)
-    * Completas: 415 (97.6%)
+    Gera bloco simplificado para WhatsApp, sem emoji.
     """
     nome_norm = normalizar(nome)
     dados = df[
@@ -106,7 +96,6 @@ def gerar_simplicado(nome, mes, ano, df):
         & (df["ano"] == ano)
     ]
 
-    # nomes dos meses
     meses_pt = [
         "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
         "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
@@ -114,7 +103,6 @@ def gerar_simplicado(nome, mes, ano, df):
     mes_nome = meses_pt[mes - 1] if 1 <= mes <= 12 else f"{mes:02d}/{ano}"
 
     if dados.empty:
-        # Ainda assim devolve o título do mês pra não quebrar o layout
         return f"*{mes_nome}*\nSem dados disponíveis para esse período."
 
     tempo_pct = calcular_tempo_online(dados)
@@ -129,7 +117,6 @@ def gerar_simplicado(nome, mes, ano, df):
     tx_rejeitadas = round(rejeitadas / ofertadas * 100, 1) if ofertadas else 0.0
     tx_completas  = round(completas  / aceitas   * 100, 1) if aceitas   else 0.0
 
-    # Aqui NÃO tem linha em branco no meio: só quebras simples (\n)
     bloco = (
         f"*{mes_nome}*\n"
         f"Tempo online: {tempo_pct}%\n"
@@ -139,9 +126,7 @@ def gerar_simplicado(nome, mes, ano, df):
         f"* Rejeitadas: {rejeitadas} ({tx_rejeitadas}%)\n"
         f"* Completas: {completas} ({tx_completas}%)"
     )
-
     return bloco
-
 
 
 def gerar_alertas_de_faltas(df):
@@ -186,8 +171,7 @@ def gerar_por_praca_data_turno(df, nome=None, praca=None, data_inicio=None, data
         df = df[df["turno"] == turno]
 
     if df.empty:
-        return "❌ Nenhum dado encontrado com os filtros aplicados."
-    # (Esta função é um rascunho de filtro; adapte conforme for usar.)
+        return "Nenhum dado encontrado com os filtros aplicados."
     return df
 
 
@@ -196,7 +180,6 @@ def gerar_por_praca_data_turno(df, nome=None, praca=None, data_inicio=None, data
 # =========================
 
 def _sh_mensal(dados: pd.DataFrame) -> float:
-    """Soma 'tempo_disponivel_absoluto' (HH:MM:SS) e converte para horas."""
     if "tempo_disponivel_absoluto" not in dados.columns:
         return 0.0
     segundos = dados["tempo_disponivel_absoluto"].apply(tempo_para_segundos).sum()
@@ -223,13 +206,6 @@ def _metricas_mensais(dados: pd.DataFrame) -> dict:
 
 
 def _categoria(sh: float, comp_pct: float, acc_pct: float) -> tuple[str, int, str]:
-    """
-    Regras:
-      Premium     = 3/3:  SH>=120, comp>=95, acc>=65
-      Conectado   = >=2/3: SH>=60,  comp>=80, acc>=45
-      Casual      = >=1/3: SH>=20,  comp>=60, acc>=30
-      Flutuante   = 0/3
-    """
     def hits(th):
         return [
             sh       >= th["sh"],
@@ -264,10 +240,6 @@ def _categoria(sh: float, comp_pct: float, acc_pct: float) -> tuple[str, int, st
 
 
 def classificar_entregadores(df: pd.DataFrame, mes: int | None = None, ano: int | None = None) -> pd.DataFrame:
-    """
-    Retorna, por entregador, SH (horas), % aceitação, % conclusão, categoria e critérios atingidos.
-    Se mes/ano informados, calcula no recorte mensal; senão, usa todo o período carregado.
-    """
     dados = df.copy()
     if mes is not None and ano is not None:
         dados = dados[(dados["mes"] == mes) & (dados["ano"] == ano)]
@@ -309,7 +281,6 @@ def classificar_entregadores(df: pd.DataFrame, mes: int | None = None, ano: int 
 # =========================
 
 def _horas_from_abs(df_chunk):
-    """Converte 'tempo_disponivel_absoluto' (HH:MM:SS) para horas somadas."""
     if "tempo_disponivel_absoluto" not in df_chunk.columns:
         return 0.0
     seg = df_chunk["tempo_disponivel_absoluto"].apply(tempo_para_segundos).sum()
@@ -317,7 +288,6 @@ def _horas_from_abs(df_chunk):
 
 
 def _horas_para_hms(horas_float):
-    """Converte horas (float) para string HH:MM:SS (legível)."""
     try:
         return str(timedelta(seconds=int(round(horas_float * 3600))))
     except Exception:
@@ -325,11 +295,6 @@ def _horas_para_hms(horas_float):
 
 
 def utr_por_entregador_turno(df, mes=None, ano=None):
-    """
-    UTR DIÁRIO por (pessoa_entregadora, periodo, data) — versão vetorizada.
-    Retorna colunas:
-      ['data','pessoa_entregadora','periodo','tempo_hms','supply_hours','corridas_ofertadas','UTR']
-    """
     dados = df
     if mes is not None and ano is not None:
         dados = dados[(dados["mes"] == mes) & (dados["ano"] == ano)]
@@ -342,7 +307,6 @@ def utr_por_entregador_turno(df, mes=None, ano=None):
     if "periodo" not in dados.columns:
         dados = dados.assign(periodo="(sem turno)")
 
-    # Agrupamento vetorizado — evita loops Python
     g = (
         dados
         .groupby(["pessoa_entregadora", "periodo", "data"], dropna=False)
@@ -355,7 +319,6 @@ def utr_por_entregador_turno(df, mes=None, ano=None):
     )
 
     g["supply_hours"] = g["segundos"] / 3600.0
-    # UTR = ofertadas / horas (com proteção)
     g["UTR"] = 0.0
     mask = g["supply_hours"] > 0
     g.loc[mask, "UTR"] = g.loc[mask, "corridas_ofertadas"] / g.loc[mask, "supply_hours"]
@@ -370,9 +333,6 @@ def utr_por_entregador_turno(df, mes=None, ano=None):
 
 
 def utr_pivot_por_entregador(df, mes=None, ano=None):
-    """
-    Tabela dinâmica: linhas = entregadores, colunas = turnos, valores = UTR (média).
-    """
     base = utr_por_entregador_turno(df, mes, ano)
     if base.empty:
         return base
@@ -384,7 +344,6 @@ def utr_pivot_por_entregador(df, mes=None, ano=None):
         aggfunc="mean"
     ).fillna(0.0)
 
-    # ordenar por média geral desc
     piv["__media__"] = piv.mean(axis=1)
     piv = piv.sort_values("__media__", ascending=False).drop(columns="__media__")
 
