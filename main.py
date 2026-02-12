@@ -6,112 +6,24 @@ from auth import autenticar
 from data_loader import carregar_dados
 
 
-# ---------------- Config ----------------
-st.set_page_config(
-    page_title="Painel de Entregadores",
-    initial_sidebar_state="expanded",  # menu lateral ON
-)
-
-
-def inject_css():
-    for path in ("assets/style.css", "style.css"):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-            return
-        except FileNotFoundError:
-            continue
-
-
-inject_css()
-
-
 def get_df_once():
     force = st.session_state.pop("force_refresh", False)
     ts = pd.Timestamp.now().timestamp() if force else None
     return carregar_dados(prefer_drive=False, _ts=ts)
 
 
-def _pick_col(cols, candidates):
-    for c in candidates:
-        if c in cols:
-            return c
-    return None
+st.set_page_config(
+    page_title="Painel de Entregadores",
+    initial_sidebar_state="expanded",
+)
 
 
-def _last_date_str(df: pd.DataFrame) -> str:
-    if df is None or df.empty:
-        return ""
-    col = _pick_col(list(df.columns), ["data_do_periodo", "data", "Data", "DATA", "dt", "timestamp", "ts"])
-    if not col:
-        return ""
-    dtmax = pd.to_datetime(df[col], errors="coerce").max()
-    if pd.notna(dtmax):
-        return dtmax.strftime("%d/%m/%Y")
-    return ""
+def inject_css(path="assets/style.css"):
+    with open(path, "r", encoding="utf-8") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 
-def _logout():
-    for k in list(st.session_state.keys()):
-        del st.session_state[k]
-
-
-def _goto(module: str, cat=None):
-    st.session_state.module = module
-    st.session_state.open_cat = cat
-    st.rerun()
-
-
-def _render_topbar(df: pd.DataFrame):
-    last_day = _last_date_str(df)
-
-    st.markdown("<div class='app-topbar'>", unsafe_allow_html=True)
-
-    left, right = st.columns([3.4, 2.0], vertical_alignment="center")
-
-    with left:
-        st.markdown(
-            f"""
-            <div class="tb-left">
-              <div class="tb-title">Painel de Entregadores</div>
-              <div class="tb-meta">Último dia na base: <b>{last_day or "—"}</b></div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with right:
-        c1, c2, c3, c4 = st.columns([0.65, 1.05, 1.05, 0.65])
-
-        with c1:
-            if st.button("⌂", type="secondary", use_container_width=True, key="tb_home"):
-                _goto("views.home", None)
-
-        with c2:
-            if st.button("Perfil", type="secondary", use_container_width=True, key="tb_profile"):
-                _goto("views.perfil", None)
-
-        with c3:
-            if st.button("Sair", type="secondary", use_container_width=True, key="tb_logout"):
-                _logout()
-                st.rerun()
-
-        # ✅ bagulho da direita: só admin
-        with c4:
-            with st.popover("≡", use_container_width=True):
-                if st.session_state.get("is_admin"):
-                    a1, a2 = st.columns(2)
-                    with a1:
-                        if st.button("Usuários", use_container_width=True, key="pop_admin_users"):
-                            _goto("views.admin_usuarios", None)
-                    with a2:
-                        if st.button("Auditoria", use_container_width=True, key="pop_admin_audit"):
-                            _goto("views.auditoria", None)
-                else:
-                    st.caption("Sem opções de admin.")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("<div class='tb-divider'></div>", unsafe_allow_html=True)
+inject_css()
 
 
 # ---------------- Estado inicial ----------------
@@ -139,7 +51,12 @@ if not st.session_state.logado:
             st.session_state.must_change_password = user["must_change_password"]
 
             st.session_state.show_welcome = True
-            st.session_state.module = "views.perfil" if st.session_state.must_change_password else "views.home"
+
+            if st.session_state.must_change_password:
+                st.session_state.module = "views.perfil"
+            else:
+                st.session_state.module = "views.home"
+
             st.rerun()
         else:
             st.error(msg)
@@ -174,27 +91,31 @@ MENU = {
         "Importar CSV": "views.upload",
     },
 }
+
+# deixa acessível na Home
 st.session_state["MENU"] = MENU
 
 
-# ---------------- Sidebar (UMA vez só) ----------------
+# ---------------- Sidebar (só navegação) ----------------
 with st.sidebar:
     if st.button("Início", use_container_width=True, type="secondary", key="sb_home"):
         st.session_state.module = "views.home"
         st.session_state.open_cat = None
         st.rerun()
 
+    st.markdown("### Navegação")
+
     for cat, opts in MENU.items():
         expanded = (st.session_state.open_cat == cat)
         with st.expander(cat, expanded=expanded):
             for label, module in opts.items():
-                if st.button(label, key=f"sb_{cat}_{label}", use_container_width=True):
+                if st.button(label, key=f"btn_{cat}_{label}", use_container_width=True):
                     st.session_state.module = module
                     st.session_state.open_cat = cat
                     st.rerun()
 
 
-# ---------------- Toast ----------------
+# ---------------- Toast de boas-vindas ----------------
 if st.session_state.pop("show_welcome", False):
     msg = f"Bem-vindo, {st.session_state.usuario}!"
     if hasattr(st, "toast"):
@@ -209,9 +130,11 @@ if st.session_state.pop("show_welcome", False):
 # ---------------- Dados ----------------
 df = get_df_once()
 
+fonte = getattr(df, "attrs", {}).get("fonte", "base")
+st.sidebar.caption(f"Fonte de dados: {fonte}")
 
-# ---------------- Topbar ----------------
-_render_topbar(df)
+if st.session_state.pop("just_refreshed", False):
+    st.success(f"Base atualizada ({fonte}).")
 
 
 # ---------------- Roteador ----------------
