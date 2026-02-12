@@ -14,7 +14,6 @@ st.set_page_config(
 
 
 def inject_css():
-    # tenta os 2 caminhos (porque teu projeto já usou assets/ e também raiz)
     for path in ("assets/style.css", "style.css"):
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -97,7 +96,7 @@ def _render_topbar(df: pd.DataFrame):
                 _logout()
                 st.rerun()
 
-        # ✅ bagulho da direita = Admin
+        # ✅ bagulho da direita: só admin
         with c4:
             with st.popover("≡", use_container_width=True):
                 if st.session_state.get("is_admin"):
@@ -178,10 +177,8 @@ MENU = {
 st.session_state["MENU"] = MENU
 
 
-# ---------------- Sidebar (menu lateral de volta) ----------------
+# ---------------- Sidebar (UMA vez só) ----------------
 with st.sidebar:
-    st.caption("Navegação")
-
     if st.button("Início", use_container_width=True, type="secondary", key="sb_home"):
         st.session_state.module = "views.home"
         st.session_state.open_cat = None
@@ -211,9 +208,6 @@ if st.session_state.pop("show_welcome", False):
 
 # ---------------- Dados ----------------
 df = get_df_once()
-
-if st.session_state.pop("just_refreshed", False):
-    st.success("Base atualizada.")
 
 
 # ---------------- Topbar ----------------
