@@ -9,7 +9,7 @@ from auth import require_admin, canon_login, hash_password
 
 
 TZ_LOCAL = ZoneInfo("America/Sao_Paulo")
-DEPARTAMENTOS = ["Administrador", "Operacional", "Financeiro","Desenvolvedor"]
+DEPARTAMENTOS = ["Administrador", "Operacional", "Financeiro"]
 PAGE_SIZE = 40
 
 # views
