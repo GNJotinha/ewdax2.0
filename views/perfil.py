@@ -97,7 +97,7 @@ def render(_df, _USUARIOS):
     login, full_name, department, is_admin_db, is_active, must_change_password, last_login_at = row
 
     # --- layout 2 colunas (igual teu desenho) ---
-    left, right = st.columns([1.05, 2.0], vertical_alignment="start")
+    left, right = st.columns([1.05, 2.0], vertical_alignment="top")
 
     # =========================
     # ESQUERDA: bonequinho + botões
