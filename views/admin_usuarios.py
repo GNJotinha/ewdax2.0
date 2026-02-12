@@ -8,22 +8,14 @@ from db import db_conn, audit_log
 from auth import canon_login, hash_password, require_admin
 
 TZ_LOCAL = ZoneInfo("America/Sao_Paulo")
-
 DEPARTAMENTOS = ["Administrador", "Operacional", "Financeiro"]
 
-PAGE_SIZE = 30
+PAGE_SIZE = 40
 
-# sessão
-K_NAV = "adm_users_nav"
+# sessão (lista)
 K_PAGE = "adm_users_page"
-
-K_Q = "adm_users_q"
 K_DEPT = "adm_users_dept"
 K_STATUS = "adm_users_status"
-K_ADMINF = "adm_users_adminf"
-
-K_EDIT_USER_ID = "adm_edit_user_id"
-K_GENPW = "adm_users_gen_pw"
 
 # criar usuário
 K_C_NAME = "adm_create_full_name"
@@ -35,35 +27,10 @@ K_C_PW = "adm_create_password"
 K_C_MUST = "adm_create_must_change"
 
 
-def _gen_temp_password() -> str:
-    alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%&*"
-    return "".join(secrets.choice(alphabet) for _ in range(12))
-
-
-def _fmt_dt(x):
-    if not x:
-        return ""
-    try:
-        dt = pd.to_datetime(x, utc=True, errors="coerce")
-        if pd.isna(dt):
-            dt = pd.to_datetime(x, errors="coerce")
-        if pd.isna(dt):
-            return str(x)
-        if dt.tzinfo is None:
-            return dt.strftime("%d/%m/%Y %H:%M:%S")
-        return dt.tz_convert(TZ_LOCAL).tz_localize(None).strftime("%d/%m/%Y %H:%M:%S")
-    except Exception:
-        return str(x)
-
-
 def _init_defaults():
-    st.session_state.setdefault(K_NAV, "👥 Usuários")
     st.session_state.setdefault(K_PAGE, 0)
-
-    st.session_state.setdefault(K_Q, "")
     st.session_state.setdefault(K_DEPT, "Todos")
     st.session_state.setdefault(K_STATUS, "Ativos")
-    st.session_state.setdefault(K_ADMINF, "Todos")
 
     st.session_state.setdefault(K_C_NAME, "")
     st.session_state.setdefault(K_C_LOGIN, "")
@@ -74,14 +41,31 @@ def _init_defaults():
     st.session_state.setdefault(K_C_MUST, True)
 
 
-def _build_where(q: str, dept: str, status: str, adminf: str):
+def _gen_temp_password() -> str:
+    alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%&*"
+    return "".join(secrets.choice(alphabet) for _ in range(12))
+
+
+def _fmt_dt(x):
+    if not x:
+        return "—"
+    try:
+        dt = pd.to_datetime(x, utc=True, errors="coerce")
+        if pd.isna(dt):
+            dt = pd.to_datetime(x, errors="coerce")
+        if pd.isna(dt):
+            return str(x)
+        if dt.tzinfo is None:
+            # se vier naive, assume UTC
+            dt = dt.tz_localize("UTC")
+        return dt.tz_convert(TZ_LOCAL).tz_localize(None).strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return str(x)
+
+
+def _build_where(dept: str, status: str):
     where = []
     params = []
-
-    q = (q or "").strip()
-    if q:
-        where.append("(login ilike %s or full_name ilike %s)")
-        params.extend([f"%{q}%", f"%{q}%"])
 
     if dept and dept != "Todos":
         where.append("department = %s")
@@ -92,24 +76,20 @@ def _build_where(q: str, dept: str, status: str, adminf: str):
     elif status == "Inativos":
         where.append("is_active = false")
 
-    if adminf == "Só admin":
-        where.append("is_admin = true")
-    elif adminf == "Só não-admin":
-        where.append("is_admin = false")
-
     where_sql = ("where " + " and ".join(where)) if where else ""
     return where_sql, params
 
 
 def _stats_users(conn):
+    reminder = "sum(case when must_change_password then 1 else 0 end)"
     with conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             select
               count(*) as total,
               sum(case when is_active then 1 else 0 end) as ativos,
               sum(case when is_admin then 1 else 0 end) as admins,
-              sum(case when must_change_password then 1 else 0 end) as must_change
+              {reminder} as must_change
             from public.app_users
             """
         )
@@ -118,19 +98,17 @@ def _stats_users(conn):
     return total, ativos, admins, must_change
 
 
-def _fetch_users_page(conn, q: str, dept: str, status: str, adminf: str, page: int):
-    where_sql, params = _build_where(q, dept, status, adminf)
+def _fetch_users_page(conn, dept: str, status: str, page: int):
+    where_sql, params = _build_where(dept, status)
     offset = page * PAGE_SIZE
 
-    # 1 query só: traz total com window function
     sql = f"""
     select
-      id, login, full_name, department, is_admin, is_active,
-      must_change_password, last_login_at, created_at,
+      id, login, full_name, department, is_admin, is_active, last_login_at,
       count(*) over() as total_count
     from public.app_users
     {where_sql}
-    order by lower(login)
+    order by lower(full_name), lower(login)
     limit %s offset %s
     """
 
@@ -143,488 +121,97 @@ def _fetch_users_page(conn, q: str, dept: str, status: str, adminf: str, page: i
 
     total = int(rows[0][-1] or 0)
     has_next = len(rows) > PAGE_SIZE
-
-    # remove coluna total_count
     rows = [r[:-1] for r in rows[:PAGE_SIZE]]
     return total, has_next, rows
 
 
-def _user_choices(conn):
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            select id, login, full_name, is_active, is_admin
-            from public.app_users
-            order by lower(login)
-            """
-        )
-        rows = cur.fetchall()
-
-    choices = []
-    for (uid, login, full_name, is_active, is_admin) in rows:
-        flags = []
-        if is_admin:
-            flags.append("admin")
-        if not is_active:
-            flags.append("inativo")
-        tag = f" ({', '.join(flags)})" if flags else ""
-        label = f"{login} — {full_name}{tag}"
-        choices.append((str(uid), label))
-    return choices
+def _goto_profile(user_id: str):
+    # abre perfil no modo admin (alvo)
+    st.session_state["profile_target_user_id"] = str(user_id)
+    st.session_state["profile_back_module"] = "views.admin_usuarios"
+    st.session_state.module = "views.perfil"
+    st.session_state.open_cat = None
+    st.rerun()
 
 
-def _get_user_by_id(conn, user_id: str):
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            select id, login, full_name, department, is_admin, is_active, must_change_password,
-                   last_login_at, created_at
-            from public.app_users
-            where id = %s
-            limit 1
-            """,
-            (user_id,),
-        )
-        return cur.fetchone()
+def _toggle(label: str, value: bool, key: str):
+    if hasattr(st, "toggle"):
+        return st.toggle(label, value=value, key=key)
+    return st.checkbox(label, value=value, key=key)
 
 
-def render(_df, _USUARIOS):
-    require_admin()
-    _init_defaults()
-
-    st.markdown("# 🛠️ Admin • Usuários")
-
-    # “tabs” que não executam tudo
-    st.radio(
-        "Navegação",
-        ["👥 Usuários", "✏️ Editar usuário", "➕ Criar usuário"],
-        horizontal=True,
-        key=K_NAV,
-        label_visibility="collapsed",
-    )
-    nav = st.session_state[K_NAV]
-
-    # Uma conexão só por render (bem mais rápido)
-    with db_conn() as conn:
-        # cards (sempre)
-        total_u, ativos_u, admins_u, must_u = _stats_users(conn)
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.markdown(
-                f"""
-                <div class="neo-card">
-                  <div class="neo-label">Usuários</div>
-                  <div class="neo-value">{total_u}</div>
-                  <div class="neo-subline">Total cadastrados</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        with c2:
-            st.markdown(
-                f"""
-                <div class="neo-card neo-success">
-                  <div class="neo-label">Ativos</div>
-                  <div class="neo-value">{ativos_u}</div>
-                  <div class="neo-subline">Podem logar</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        with c3:
-            st.markdown(
-                f"""
-                <div class="neo-card">
-                  <div class="neo-label">Admins</div>
-                  <div class="neo-value">{admins_u}</div>
-                  <div class="neo-subline">Acesso total</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        with c4:
-            st.markdown(
-                f"""
-                <div class="neo-card neo-danger">
-                  <div class="neo-label">Trocar senha</div>
-                  <div class="neo-value">{must_u}</div>
-                  <div class="neo-subline">Forçado no próximo login</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        st.divider()
-
-        # =====================================================
-        # USUÁRIOS
-        # =====================================================
-        if nav == "👥 Usuários":
-            st.markdown("""<div class="neo-section">Lista</div>""", unsafe_allow_html=True)
-
-            # filtros em FORM => não consulta enquanto digita
-            with st.form("users_filters_form"):
-                f1, f2, f3, f4 = st.columns([1.7, 1.0, 1.0, 1.0])
-                with f1:
-                    st.text_input("Buscar (login ou nome)", key=K_Q)
-                with f2:
-                    st.selectbox("Departamento", ["Todos"] + DEPARTAMENTOS, key=K_DEPT)
-                with f3:
-                    st.selectbox("Status", ["Ativos", "Inativos", "Todos"], key=K_STATUS)
-                with f4:
-                    st.selectbox("Admin", ["Todos", "Só admin", "Só não-admin"], key=K_ADMINF)
-
-                b1, b2, _sp = st.columns([1, 1, 3])
-                with b1:
-                    apply = st.form_submit_button("🔄 Aplicar")
-                with b2:
-                    clear = st.form_submit_button("🧹 Limpar")
-
-            if clear:
-                st.session_state[K_Q] = ""
-                st.session_state[K_DEPT] = "Todos"
-                st.session_state[K_STATUS] = "Ativos"
-                st.session_state[K_ADMINF] = "Todos"
-                st.session_state[K_PAGE] = 0
+def _render_create_user_popover():
+    with st.popover("➕ Criar usuário", use_container_width=True):
+        # gerar senha rápido
+        g1, g2 = st.columns([1, 1])
+        with g1:
+            if st.button("🎲 Gerar senha", use_container_width=True, key="btn_create_genpw_pop"):
+                st.session_state[K_C_PW] = _gen_temp_password()
+        with g2:
+            if st.button("🧹 Limpar", use_container_width=True, key="btn_create_clear_pop"):
+                st.session_state[K_C_NAME] = ""
+                st.session_state[K_C_LOGIN] = ""
+                st.session_state[K_C_DEPT] = "Operacional"
+                st.session_state[K_C_ADMIN] = False
+                st.session_state[K_C_ACTIVE] = True
+                st.session_state[K_C_PW] = ""
+                st.session_state[K_C_MUST] = True
                 st.rerun()
 
-            if apply:
-                st.session_state[K_PAGE] = 0
-                st.rerun()
+        if st.session_state.get(K_C_PW):
+            st.info(f"Senha atual: `{st.session_state[K_C_PW]}`")
 
-            page = max(0, int(st.session_state[K_PAGE]))
+        with st.form("create_user_form_pop"):
+            st.text_input("Nome completo", key=K_C_NAME)
+            st.text_input("Login", key=K_C_LOGIN, help="3–32 chars: a-z 0-9 . _ -")
 
-            with st.spinner("Carregando usuários…"):
-                total, has_next, rows = _fetch_users_page(
-                    conn,
-                    st.session_state[K_Q],
-                    st.session_state[K_DEPT],
-                    st.session_state[K_STATUS],
-                    st.session_state[K_ADMINF],
-                    page,
-                )
+            c1, c2, c3 = st.columns([1.2, 1.0, 1.0])
+            with c1:
+                st.selectbox("Departamento", DEPARTAMENTOS, key=K_C_DEPT)
+            with c2:
+                _toggle("Admin?", bool(st.session_state[K_C_ADMIN]), key=K_C_ADMIN)
+            with c3:
+                _toggle("Ativo?", bool(st.session_state[K_C_ACTIVE]), key=K_C_ACTIVE)
 
-            if total == 0:
-                st.info("Nada encontrado.")
-                return
+            st.text_input("Senha inicial", type="password", key=K_C_PW)
+            _toggle("Forçar trocar senha no 1º login?", bool(st.session_state[K_C_MUST]), key=K_C_MUST)
 
-            df = pd.DataFrame(
-                rows,
-                columns=[
-                    "id",
-                    "login",
-                    "full_name",
-                    "department",
-                    "is_admin",
-                    "is_active",
-                    "must_change_password",
-                    "last_login_at",
-                    "created_at",
-                ],
-            )
-            df["last_login_at"] = df["last_login_at"].apply(_fmt_dt)
-            df["created_at"] = df["created_at"].apply(_fmt_dt)
+            submit = st.form_submit_button("➕ Criar", use_container_width=True)
 
-            st.dataframe(
-                df.drop(columns=["id"]),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "login": st.column_config.TextColumn("Login"),
-                    "full_name": st.column_config.TextColumn("Nome"),
-                    "department": st.column_config.TextColumn("Departamento"),
-                    "is_admin": st.column_config.CheckboxColumn("Admin"),
-                    "is_active": st.column_config.CheckboxColumn("Ativo"),
-                    "must_change_password": st.column_config.CheckboxColumn("Trocar senha"),
-                    "last_login_at": st.column_config.TextColumn("Último login"),
-                    "created_at": st.column_config.TextColumn("Criado em"),
-                },
-            )
+        if submit:
+            full_name = (st.session_state[K_C_NAME] or "").strip()
+            login_in = (st.session_state[K_C_LOGIN] or "").strip().lower()
+            dept = st.session_state[K_C_DEPT]
+            is_admin = bool(st.session_state[K_C_ADMIN])
+            is_active = bool(st.session_state[K_C_ACTIVE])
+            temp_pw = st.session_state[K_C_PW] or ""
+            must_change = bool(st.session_state[K_C_MUST])
+            actor_id = st.session_state.get("user_id")
 
-            # paginação
-            st.divider()
-            left, mid, right = st.columns([1, 6, 1])
+            if not full_name:
+                st.error("Nome obrigatório.")
+                st.stop()
 
-            offset = page * PAGE_SIZE
-            start_n = offset + 1
-            end_n = offset + len(df)
-            max_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+            try:
+                login2 = canon_login(login_in)
+            except Exception as e:
+                st.error(str(e))
+                st.stop()
 
-            with left:
-                if st.button("⬅️", disabled=(page == 0), key="btn_users_prev"):
-                    st.session_state[K_PAGE] = page - 1
-                    st.rerun()
-            with mid:
-                st.markdown(
-                    f"<div style='text-align:center; padding-top:6px;'><b>Página {page+1}/{max_pages}</b> — {start_n} a {end_n} de {total}</div>",
-                    unsafe_allow_html=True,
-                )
-            with right:
-                if st.button("➡️", disabled=(not has_next), key="btn_users_next"):
-                    st.session_state[K_PAGE] = page + 1
-                    st.rerun()
+            if not temp_pw or len(temp_pw) < 6:
+                st.error("Senha inicial obrigatória (mínimo 6).")
+                st.stop()
 
-            st.caption("Pra editar: troca pra aba **Editar usuário** ali em cima.")
+            pw_hash = hash_password(temp_pw)
 
-        # =====================================================
-        # EDITAR
-        # =====================================================
-        elif nav == "✏️ Editar usuário":
-            st.markdown("""<div class="neo-section">Editar</div>""", unsafe_allow_html=True)
-
-            choices = _user_choices(conn)
-            if not choices:
-                st.info("Sem usuários.")
-                return
-
-            if K_EDIT_USER_ID not in st.session_state:
-                st.session_state[K_EDIT_USER_ID] = choices[0][0]
-
-            id_to_label = {uid: label for uid, label in choices}
-            labels = [label for _, label in choices]
-            current_id = st.session_state[K_EDIT_USER_ID]
-            current_label = id_to_label.get(current_id, labels[0])
-
-            selected_label = st.selectbox(
-                "Selecione um usuário",
-                options=labels,
-                index=labels.index(current_label) if current_label in labels else 0,
-                key="edit_user_select_label",
-            )
-
-            selected_id = None
-            for uid, label in choices:
-                if label == selected_label:
-                    selected_id = uid
-                    break
-            selected_id = selected_id or choices[0][0]
-            st.session_state[K_EDIT_USER_ID] = selected_id
-
-            row = _get_user_by_id(conn, selected_id)
-            if not row:
-                st.error("Usuário não encontrado.")
-                return
-
-            (
-                user_id,
-                login,
-                full_name,
-                department,
-                is_admin,
-                is_active,
-                must_change_password,
-                last_login_at,
-                created_at,
-            ) = row
-
-            actor_id = str(st.session_state.get("user_id") or "")
-            is_self = (str(user_id) == actor_id)
-
-            tedit, treset = st.tabs(["✏️ Dados", "🔁 Resetar senha"])
-
-            with tedit:
-                with st.form("edit_user_form"):
-                    e1, e2 = st.columns([1, 2])
-                    with e1:
-                        e_login = st.text_input("Login", value=str(login)).strip().lower()
-                    with e2:
-                        e_full_name = st.text_input("Nome completo", value=str(full_name))
-
-                    e3, e4, e5, e6 = st.columns([1.2, 1.0, 1.0, 1.2])
-                    with e3:
-                        e_dept = st.selectbox(
-                            "Departamento",
-                            DEPARTAMENTOS,
-                            index=DEPARTAMENTOS.index(department) if department in DEPARTAMENTOS else 1,
-                        )
-                    with e4:
-                        e_is_admin = st.checkbox("Admin", value=bool(is_admin))
-                    with e5:
-                        e_is_active = st.checkbox("Ativo", value=bool(is_active))
-                    with e6:
-                        e_must_change = st.checkbox("Forçar troca de senha", value=bool(must_change_password))
-
-                    st.caption(f"ID: {user_id}")
-                    st.caption(f"Criado em: {_fmt_dt(created_at)} | Último login: {_fmt_dt(last_login_at)}")
-
-                    save = st.form_submit_button("💾 Salvar")
-
-                if save:
-                    if is_self and (not e_is_active):
-                        st.error("Você tentou se desativar. Não vou deixar (pra não se trancar fora).")
-                        st.stop()
-                    if is_self and (not e_is_admin):
-                        st.error("Você tentou tirar seu admin. Não vou deixar (pra não se ferrar depois).")
-                        st.stop()
-
-                    try:
-                        e_login2 = canon_login(e_login)
-                    except Exception as e:
-                        st.error(str(e))
-                        st.stop()
-
-                    with conn.cursor() as cur:
-                        try:
-                            cur.execute(
-                                """
-                                update public.app_users
-                                set login=%s,
-                                    full_name=%s,
-                                    department=%s,
-                                    is_admin=%s,
-                                    is_active=%s,
-                                    must_change_password=%s,
-                                    updated_at=now(),
-                                    updated_by=%s
-                                where id=%s
-                                """,
-                                (
-                                    e_login2,
-                                    e_full_name.strip(),
-                                    e_dept,
-                                    e_is_admin,
-                                    e_is_active,
-                                    e_must_change,
-                                    actor_id or None,
-                                    user_id,
-                                ),
-                            )
-                            conn.commit()
-                        except Exception as e:
-                            conn.rollback()
-                            st.error(f"Erro ao salvar (login já existe?): {e}")
-                            st.stop()
-
-                    audit_log(
-                        "user_updated",
-                        "app_users",
-                        str(user_id),
-                        {
-                            "login": e_login2,
-                            "department": e_dept,
-                            "is_admin": bool(e_is_admin),
-                            "is_active": bool(e_is_active),
-                            "must_change_password": bool(e_must_change),
-                        },
-                    )
-                    st.success("Atualizado!")
-                    st.rerun()
-
-            with treset:
-                gen_cols = st.columns([1, 3])
-                with gen_cols[0]:
-                    if st.button("🎲 Gerar", key="btn_reset_genpw"):
-                        st.session_state[K_GENPW] = _gen_temp_password()
-
-                gen = st.session_state.get(K_GENPW)
-                if gen:
-                    st.info(f"Senha gerada: `{gen}`")
-
-                new_pw = st.text_input("Nova senha", type="password", value=gen or "", key="reset_pw_input")
-                force_change = st.checkbox("Forçar trocar senha no próximo login?", value=True, key="reset_force_change")
-
-                if st.button("🔁 Resetar senha", key="btn_reset_pw"):
-                    if not new_pw or len(new_pw) < 6:
-                        st.error("Senha mínima: 6.")
-                        st.stop()
-
-                    pw_hash = hash_password(new_pw)
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            update public.app_users
-                            set password_hash=%s,
-                                must_change_password=%s,
-                                updated_at=now(),
-                                updated_by=%s
-                            where id=%s
-                            """,
-                            (pw_hash, bool(force_change), actor_id or None, user_id),
-                        )
-                        conn.commit()
-
-                    audit_log("password_reset", "app_users", str(user_id), {"target_login": str(login)})
-                    st.success("Senha resetada!")
-                    st.session_state.pop(K_GENPW, None)
-                    st.rerun()
-
-        # =====================================================
-        # CRIAR
-        # =====================================================
-        else:
-            st.markdown("""<div class="neo-section">Criar novo usuário</div>""", unsafe_allow_html=True)
-
-            g1, g2, _sp = st.columns([1, 1, 4])
-            with g1:
-                if st.button("🎲 Gerar senha", key="btn_create_genpw"):
-                    st.session_state[K_C_PW] = _gen_temp_password()
-            with g2:
-                if st.button("🧹 Limpar", key="btn_create_clear"):
-                    st.session_state[K_C_NAME] = ""
-                    st.session_state[K_C_LOGIN] = ""
-                    st.session_state[K_C_DEPT] = "Operacional"
-                    st.session_state[K_C_ADMIN] = False
-                    st.session_state[K_C_ACTIVE] = True
-                    st.session_state[K_C_PW] = ""
-                    st.session_state[K_C_MUST] = True
-                    st.rerun()
-
-            if st.session_state.get(K_C_PW):
-                st.info(f"Senha atual: `{st.session_state[K_C_PW]}`")
-
-            with st.form("create_user_form"):
-                c1, c2 = st.columns([2, 1])
-                with c1:
-                    st.text_input("Nome completo", key=K_C_NAME)
-                with c2:
-                    st.text_input("Login", key=K_C_LOGIN, help="3–32 chars: a-z 0-9 . _ -")
-
-                c3, c4, c5 = st.columns([1.2, 1.0, 1.0])
-                with c3:
-                    # sem index/value aqui (evita warning)
-                    st.selectbox("Departamento", DEPARTAMENTOS, key=K_C_DEPT)
-                with c4:
-                    st.checkbox("É admin?", key=K_C_ADMIN)
-                with c5:
-                    st.checkbox("Ativo?", key=K_C_ACTIVE)
-
-                st.text_input("Senha inicial", type="password", key=K_C_PW)
-                st.checkbox("Forçar trocar senha no 1º login?", key=K_C_MUST)
-
-                submit = st.form_submit_button("➕ Criar usuário")
-
-            if submit:
-                full_name = (st.session_state[K_C_NAME] or "").strip()
-                login_in = (st.session_state[K_C_LOGIN] or "").strip().lower()
-                dept = st.session_state[K_C_DEPT]
-                is_admin = bool(st.session_state[K_C_ADMIN])
-                is_active = bool(st.session_state[K_C_ACTIVE])
-                temp_pw = st.session_state[K_C_PW] or ""
-                must_change = bool(st.session_state[K_C_MUST])
-
-                if not full_name:
-                    st.error("Nome obrigatório.")
-                    st.stop()
-
-                try:
-                    login2 = canon_login(login_in)
-                except Exception as e:
-                    st.error(str(e))
-                    st.stop()
-
-                if not temp_pw:
-                    st.error("Senha inicial obrigatória (ou gere).")
-                    st.stop()
-
-                pw_hash = hash_password(temp_pw)
-                actor_id = st.session_state.get("user_id")
-
+            with db_conn() as conn:
                 with conn.cursor() as cur:
                     try:
                         cur.execute(
                             """
                             insert into public.app_users
-                            (login, full_name, department, is_admin, is_active, password_hash, must_change_password, created_by, updated_by)
+                            (login, full_name, department, is_admin, is_active,
+                             password_hash, must_change_password, created_by, updated_by)
                             values (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                             returning id
                             """,
@@ -637,7 +224,138 @@ def render(_df, _USUARIOS):
                         st.error(f"Erro ao criar (login já existe?): {e}")
                         st.stop()
 
-                audit_log("user_created", "app_users", str(new_id), {"login": login2, "department": dept, "is_admin": is_admin})
-                st.success("Usuário criado!")
-                st.session_state[K_C_PW] = ""
+            audit_log("user_created", "app_users", str(new_id), {"login": login2, "department": dept, "is_admin": is_admin})
+            st.success("Usuário criado!")
+            st.session_state[K_C_PW] = ""
+            st.rerun()
+
+
+def render(_df, _USUARIOS):
+    require_admin()
+    _init_defaults()
+
+    st.markdown("# 🛠️ Admin • Usuários")
+
+    with db_conn() as conn:
+        # cards do topo (mantém seu padrão bonito)
+        total_u, ativos_u, admins_u, must_u = _stats_users(conn)
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.markdown(
+                f"<div class='neo-card'><div class='neo-label'>Usuários</div><div class='neo-value'>{total_u}</div><div class='neo-subline'>Total cadastrados</div></div>",
+                unsafe_allow_html=True,
+            )
+        with c2:
+            st.markdown(
+                f"<div class='neo-card neo-success'><div class='neo-label'>Ativos</div><div class='neo-value'>{ativos_u}</div><div class='neo-subline'>Podem logar</div></div>",
+                unsafe_allow_html=True,
+            )
+        with c3:
+            st.markdown(
+                f"<div class='neo-card'><div class='neo-label'>Admins</div><div class='neo-value'>{admins_u}</div><div class='neo-subline'>Acesso total</div></div>",
+                unsafe_allow_html=True,
+            )
+        with c4:
+            st.markdown(
+                f"<div class='neo-card neo-danger'><div class='neo-label'>Trocar senha</div><div class='neo-value'>{must_u}</div><div class='neo-subline'>Forçado no próximo login</div></div>",
+                unsafe_allow_html=True,
+            )
+
+        st.divider()
+
+        # toolbar: filtros + criar usuário
+        t1, t2, t3, t4 = st.columns([1.2, 1.0, 0.9, 1.1], vertical_alignment="center")
+
+        with t1:
+            st.selectbox("Departamento", ["Todos"] + DEPARTAMENTOS, key=K_DEPT)
+        with t2:
+            st.selectbox("Status", ["Ativos", "Inativos", "Todos"], key=K_STATUS)
+        with t3:
+            if st.button("🧹 Limpar", use_container_width=True):
+                st.session_state[K_DEPT] = "Todos"
+                st.session_state[K_STATUS] = "Ativos"
+                st.session_state[K_PAGE] = 0
+                st.rerun()
+        with t4:
+            _render_create_user_popover()
+
+        st.markdown("<div class='neo-section'>Lista</div>", unsafe_allow_html=True)
+
+        page = max(0, int(st.session_state[K_PAGE]))
+
+        with st.spinner("Carregando usuários…"):
+            total, has_next, rows = _fetch_users_page(
+                conn,
+                st.session_state[K_DEPT],
+                st.session_state[K_STATUS],
+                page,
+            )
+
+        if total == 0:
+            st.info("Nada encontrado.")
+            return
+
+        # lista (um por linha)
+        for (uid, login, full_name, dept, is_admin, is_active, last_login_at) in rows:
+            # container com borda (fallback pra versões antigas)
+            try:
+                box = st.container(border=True)
+            except TypeError:
+                box = st.container()
+
+            with box:
+                try:
+                    a, b, c, d = st.columns([2.6, 1.2, 1.1, 1.4], vertical_alignment="center")
+                except Exception:
+                    a, b, c, d = st.columns([2.6, 1.2, 1.1, 1.4])
+
+                with a:
+                    # NOME CLICÁVEL -> popover com "Exibir perfil"
+                    with st.popover(f"{full_name}", use_container_width=True, key=f"u_pop_{uid}"):
+                        st.caption(f"Login: @{login}")
+                        st.caption(f"Departamento: {dept}")
+                        st.caption(f"Status: {'ATIVO' if is_active else 'INATIVO'}")
+                        st.caption(f"Último login: {_fmt_dt(last_login_at)}")
+                        if st.button("👁️ Exibir perfil", use_container_width=True, key=f"u_view_{uid}"):
+                            _goto_profile(uid)
+
+                    st.caption(f"@{login}")
+
+                with b:
+                    st.markdown(f"<span class='user-pill'>{dept}</span>", unsafe_allow_html=True)
+
+                with c:
+                    st.markdown(
+                        f"<span class='user-pill {'ok' if is_active else 'bad'}'>{'ATIVO' if is_active else 'INATIVO'}</span>",
+                        unsafe_allow_html=True,
+                    )
+                    if is_admin:
+                        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+                        st.markdown("<span class='user-pill admin'>ADMIN</span>", unsafe_allow_html=True)
+
+                with d:
+                    st.markdown(f"<div class='user-lastlogin'>Último login<br><b>{_fmt_dt(last_login_at)}</b></div>", unsafe_allow_html=True)
+
+        # paginação simples
+        st.divider()
+        left, mid, right = st.columns([1, 6, 1])
+
+        offset = page * PAGE_SIZE
+        shown = len(rows)
+        start_n = offset + 1
+        end_n = offset + shown
+        max_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+
+        with left:
+            if st.button("⬅️", disabled=(page == 0), key="btn_users_prev_new"):
+                st.session_state[K_PAGE] = page - 1
+                st.rerun()
+        with mid:
+            st.markdown(
+                f"<div style='text-align:center; padding-top:6px;'><b>Página {page+1}/{max_pages}</b> — {start_n} a {end_n} de {total}</div>",
+                unsafe_allow_html=True,
+            )
+        with right:
+            if st.button("➡️", disabled=(not has_next), key="btn_users_next_new"):
+                st.session_state[K_PAGE] = page + 1
                 st.rerun()
