@@ -7,10 +7,6 @@
   --blue2: #3b82f6;
   --cyan: #00d4ff;
   --purple: #a78bfa;
-
-  --red: #ff4d4d;
-  --orange: #ffb020;
-  --green: #37d67a;
 }
 
 /* ===== Streamlit chrome ===== */
@@ -64,14 +60,10 @@ div[data-testid="stSidebarHeader"] button[title*="fechar" i]{
   display: none !important;
 }
 
-/* mantém o botão de abrir caso Cloud inicie fechado */
+/* ✅ mata o botão “fantasma” de abrir sidebar (isso que tava duplicando/bugando) */
 [data-testid="collapsedControl"]{
-  visibility: visible !important;
-  z-index: 999999 !important;
-  opacity: .60 !important;
-}
-[data-testid="collapsedControl"]:hover{
-  opacity: 1 !important;
+  display: none !important;
+  visibility: hidden !important;
 }
 
 /* ===== Buttons ===== */
@@ -148,7 +140,7 @@ div[data-testid="stPopover"] > button{
   margin: 10px 0 14px 0;
 }
 
-/* ===== Expander mais bonito (sidebar e geral) ===== */
+/* ===== Expander ===== */
 div[data-testid="stExpander"] details{
   background: rgba(255,255,255,.03) !important;
   border: 1px solid rgba(255,255,255,.08) !important;
@@ -159,118 +151,4 @@ div[data-testid="stExpander"] summary{
   padding: .55rem .75rem !important;
   font-weight: 850 !important;
   color: rgba(232,237,246,.92) !important;
-}
-
-/* ===== Neo components (mantém compat) ===== */
-.neo-divider{
-  height: 1px;
-  background: rgba(255,255,255,.08);
-  margin: 14px 0;
-}
-.neo-section{
-  font-size: 1.2rem;
-  font-weight: 900;
-  margin: 6px 2px 12px 2px;
-  color: rgba(232,237,246,.92);
-}
-.neo-grid-4{
-  display:grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-}
-.neo-grid-2{
-  display:grid;
-  grid-template-columns: 340px 1fr;
-  gap: 14px;
-  align-items: stretch;
-}
-.neo-card{
-  position: relative;
-  border-radius: 16px;
-  padding: 16px 16px 14px 16px;
-  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
-  border: 1px solid rgba(255,255,255,.09);
-  box-shadow:
-    0 16px 34px rgba(0,0,0,.40),
-    inset 0 1px 0 rgba(255,255,255,.05);
-  overflow:hidden;
-  min-height: 120px;
-}
-.neo-card:after{
-  content:"";
-  position:absolute;
-  inset:-1px;
-  border-radius: 16px;
-  padding: 1px;
-  background: linear-gradient(135deg, rgba(88,166,255,.22), rgba(167,139,250,.12), rgba(0,212,255,.12));
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events:none;
-  opacity:.65;
-}
-.neo-label{
-  font-size: .92rem;
-  font-weight: 800;
-  letter-spacing: .02em;
-  color: rgba(232,237,246,.85);
-  margin-bottom: 10px;
-}
-.neo-value{
-  font-size: 2.3rem;
-  font-weight: 950;
-  letter-spacing: .4px;
-  line-height: 1.05;
-  color: rgba(255,255,255,.96);
-}
-.neo-subline{
-  margin-top: 10px;
-  font-size: .90rem;
-  color: rgba(232,237,246,.70);
-  font-weight: 650;
-}
-
-/* Home hero (pra home.py novo) */
-.home-hero{
-  position: relative;
-  border-radius: 22px;
-  padding: 18px 18px 16px 18px;
-  background:
-    radial-gradient(420px 140px at 18% 30%, rgba(88,166,255,.22), transparent 60%),
-    radial-gradient(520px 200px at 90% 20%, rgba(167,139,250,.18), transparent 60%),
-    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
-  border: 1px solid rgba(255,255,255,.10);
-  box-shadow:
-    0 26px 70px rgba(0,0,0,.55),
-    inset 0 1px 0 rgba(255,255,255,.06);
-  overflow: hidden;
-}
-.home-hero:after{
-  content:"";
-  position:absolute;
-  inset:-1px;
-  border-radius: 22px;
-  padding:1px;
-  background: linear-gradient(135deg, rgba(88,166,255,.28), rgba(167,139,250,.18), rgba(0,212,255,.14));
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events:none;
-  opacity:.70;
-}
-.home-title{
-  font-size: 2.2rem;
-  font-weight: 950;
-  line-height: 1.05;
-  color: rgba(255,255,255,.96);
-  letter-spacing: .2px;
-}
-.home-sub{
-  margin-top: 10px;
-  font-weight: 800;
-  color: rgba(232,237,246,.78);
 }
