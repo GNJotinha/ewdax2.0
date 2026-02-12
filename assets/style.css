@@ -1,62 +1,38 @@
-/* =========================================================
-   MOVEE • Painel de Entregadores — style.css
-   - Topbar + Drawer esquerda (sem sidebar Streamlit)
-   ========================================================= */
-
 :root{
   --bg: #0b0f14;
-  --bg2:#070a0f;
-
   --text: #e8edf6;
   --muted: rgba(232,237,246,.70);
 
-  --blue:  #58a6ff;
+  --blue: #58a6ff;
   --blue2: #3b82f6;
-  --cyan:  #00d4ff;
-  --purple:#a78bfa;
+  --cyan: #00d4ff;
+  --purple: #a78bfa;
 
-  --red:   #ff4d4d;
-  --orange:#ffb020;
+  --red: #ff4d4d;
+  --orange: #ffb020;
   --green: #37d67a;
-
-  --stroke: rgba(255,255,255,.10);
-  --stroke2: rgba(255,255,255,.07);
-
-  --card-bg: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
-  --card-shadow: 0 16px 34px rgba(0,0,0,.40);
-
-  --radius-xl: 22px;
-  --radius-lg: 16px;
-  --radius-md: 14px;
-  --radius-sm: 12px;
 }
 
-/* ---- Base ---- */
-html, body{ height: 100%; }
-body{
-  margin: 0;
-  color: var(--text);
-  background:
-    radial-gradient(900px 500px at 15% 10%, rgba(88,166,255,.15), transparent 60%),
-    radial-gradient(700px 420px at 85% 0%, rgba(167,139,250,.14), transparent 55%),
-    radial-gradient(700px 420px at 70% 95%, rgba(0,212,255,.08), transparent 55%),
-    linear-gradient(180deg, var(--bg2) 0%, var(--bg) 45%, var(--bg) 100%);
-}
-
-/* chrome */
-footer{ display:none !important; }
-#MainMenu{ visibility:hidden !important; }
-div[data-testid="stDecoration"]{ display:none !important; }
-
+/* ===== Streamlit chrome ===== */
 header[data-testid="stHeader"]{
   background: transparent !important;
   box-shadow: none !important;
   border: 0 !important;
 }
+header [data-testid="stToolbar"]{ visibility: hidden !important; }
 
-/* se quiser toolbar do Streamlit, comenta */
-header [data-testid="stToolbar"]{
-  visibility: hidden !important;
+footer{ display:none !important; }
+#MainMenu{ visibility:hidden !important; }
+[data-testid="stAppViewContainer"]{ padding-top: 0rem !important; }
+div[data-testid="stDecoration"]{ display:none !important; }
+
+body{
+  background:
+    radial-gradient(900px 500px at 15% 10%, rgba(88,166,255,.15), transparent 60%),
+    radial-gradient(700px 420px at 85% 0%, rgba(167,139,250,.14), transparent 55%),
+    radial-gradient(700px 420px at 70% 95%, rgba(0,212,255,.08), transparent 55%),
+    linear-gradient(180deg, #070a0f 0%, #0b0f14 45%, #0b0f14 100%);
+  color: var(--text);
 }
 
 .block-container{
@@ -64,55 +40,57 @@ header [data-testid="stToolbar"]{
   padding-top: 1.0rem !important;
   padding-bottom: 2.0rem !important;
 }
-
 [data-testid="stVerticalBlock"]{ gap: 0.65rem; }
 
-h1, h2, h3{
-  color: rgba(255,255,255,.96);
-  letter-spacing: .2px;
-}
-
-hr{
-  border: 0;
-  height: 1px;
-  background: rgba(255,255,255,.08);
-}
-
-/* ---- Sidebar do Streamlit: OFF ---- */
+/* ===== Sidebar ===== */
 section[data-testid="stSidebar"]{
-  display:none !important;
-  visibility:hidden !important;
-  width:0 !important;
-  min-width:0 !important;
-}
-[data-testid="collapsedControl"]{
-  display:none !important;
-  visibility:hidden !important;
+  background: rgba(18,22,30,.92);
+  border-right: 1px solid rgba(255,255,255,.07);
 }
 
-/* ---- Buttons ---- */
+/* ✅ mata o botão de recolher/fechar do sidebar */
+div[data-testid="stSidebarHeader"] button[data-testid="baseButton-header"],
+div[data-testid="stSidebarHeader"] button[kind="headerNoPadding"]{
+  display: none !important;
+}
+div[data-testid="stSidebarHeader"] button[aria-label*="collapse" i],
+div[data-testid="stSidebarHeader"] button[aria-label*="close" i],
+div[data-testid="stSidebarHeader"] button[aria-label*="recolher" i],
+div[data-testid="stSidebarHeader"] button[aria-label*="fechar" i],
+div[data-testid="stSidebarHeader"] button[title*="collapse" i],
+div[data-testid="stSidebarHeader"] button[title*="close" i],
+div[data-testid="stSidebarHeader"] button[title*="recolher" i],
+div[data-testid="stSidebarHeader"] button[title*="fechar" i]{
+  display: none !important;
+}
+
+/* mantém o botão de abrir caso Cloud inicie fechado */
+[data-testid="collapsedControl"]{
+  visibility: visible !important;
+  z-index: 999999 !important;
+  opacity: .60 !important;
+}
+[data-testid="collapsedControl"]:hover{
+  opacity: 1 !important;
+}
+
+/* ===== Buttons ===== */
 .stButton>button{
   background: linear-gradient(135deg, rgba(88,166,255,.92), rgba(59,130,246,.92));
   color: white;
   border: 1px solid rgba(255,255,255,.12);
-  border-radius: var(--radius-md);
+  border-radius: 14px;
   padding: .70rem 1.20rem;
   font-weight: 800;
   box-shadow: 0 12px 26px rgba(0,0,0,.45);
   white-space: nowrap !important;
 }
-
 .stButton>button:hover{
   filter: brightness(1.08);
   border-color: rgba(255,255,255,.18);
 }
 
-.stButton>button:disabled{
-  opacity: .55 !important;
-  cursor: not-allowed !important;
-  filter: none !important;
-}
-
+/* secundário */
 .stButton>button[kind="secondary"],
 .stButton>button[data-testid="baseButton-secondary"]{
   background: rgba(255,255,255,.04) !important;
@@ -128,76 +106,14 @@ section[data-testid="stSidebar"]{
   border-color: rgba(255,255,255,.22) !important;
 }
 
-/* Popover icon button */
+/* Popover button com cara de ícone */
 div[data-testid="stPopover"] > button{
   padding: .55rem .10rem !important;
   font-weight: 950 !important;
-  border-radius: var(--radius-md) !important;
-}
-
-/* ---- Inputs ---- */
-div[data-baseweb="input"] input,
-div[data-baseweb="textarea"] textarea{
-  background: rgba(255,255,255,.03) !important;
-  color: rgba(232,237,246,.92) !important;
-  border: 1px solid rgba(255,255,255,.12) !important;
-  border-radius: 12px !important;
-}
-
-div[data-baseweb="select"] > div{
-  background: rgba(255,255,255,.03) !important;
-  border: 1px solid rgba(255,255,255,.12) !important;
-  border-radius: 12px !important;
-}
-
-label, .stMarkdown, .stCaption{
-  color: rgba(232,237,246,.78);
-}
-
-/* ---- Expander ---- */
-div[data-testid="stExpander"] details{
-  background: rgba(255,255,255,.03) !important;
-  border: 1px solid rgba(255,255,255,.08) !important;
   border-radius: 14px !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
-}
-div[data-testid="stExpander"] summary{
-  padding: .55rem .75rem !important;
-  font-weight: 850 !important;
-  color: rgba(232,237,246,.92) !important;
 }
 
-/* ---- Metrics ---- */
-div[data-testid="metric-container"]{
-  background: var(--card-bg) !important;
-  border: 1px solid rgba(255,255,255,.09) !important;
-  border-radius: 16px !important;
-  padding: 14px 14px 12px 14px !important;
-  box-shadow: var(--card-shadow);
-}
-div[data-testid="metric-container"] label{
-  color: rgba(232,237,246,.78) !important;
-  font-weight: 850 !important;
-}
-div[data-testid="metric-container"] [data-testid="stMetricValue"]{
-  color: rgba(255,255,255,.96) !important;
-  font-weight: 950 !important;
-}
-
-/* ---- Tables ---- */
-div[data-testid="stDataFrame"],
-div[data-testid="stTable"]{
-  background: rgba(255,255,255,.02);
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 16px;
-  padding: 8px;
-  box-shadow: 0 18px 44px rgba(0,0,0,.35);
-  overflow: hidden;
-}
-
-/* =============================
-   TOPBAR
-============================= */
+/* ===== Topbar ===== */
 .app-topbar{
   position: sticky;
   top: 0;
@@ -215,8 +131,8 @@ div[data-testid="stTable"]{
   font-size: 2.05rem;
   font-weight: 950;
   line-height: 1.05;
-  letter-spacing: .2px;
   color: rgba(255,255,255,.96);
+  letter-spacing: .2px;
 }
 
 .tb-meta{
@@ -232,79 +148,47 @@ div[data-testid="stTable"]{
   margin: 10px 0 14px 0;
 }
 
-/* =============================
-   DRAWER ESQUERDA (coluna)
-============================= */
-.left-drawer{
-  position: sticky;
-  top: 86px;
-  height: calc(100vh - 118px);
-  overflow: auto;
-
-  padding: 14px 12px;
-  border-radius: 18px;
-  background: rgba(18,22,30,.60);
-  border: 1px solid rgba(255,255,255,.10);
-  box-shadow: 0 22px 60px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+/* ===== Expander mais bonito (sidebar e geral) ===== */
+div[data-testid="stExpander"] details{
+  background: rgba(255,255,255,.03) !important;
+  border: 1px solid rgba(255,255,255,.08) !important;
+  border-radius: 14px !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+}
+div[data-testid="stExpander"] summary{
+  padding: .55rem .75rem !important;
+  font-weight: 850 !important;
+  color: rgba(232,237,246,.92) !important;
 }
 
-.left-divider{
-  height: 1px;
-  background: rgba(255,255,255,.10);
-  margin: 12px 0;
-}
-
-/* botões do drawer alinhados à esquerda */
-.left-drawer .stButton>button{
-  width: 100% !important;
-  justify-content: flex-start !important;
-  text-align: left !important;
-}
-
-/* scroll */
-.left-drawer::-webkit-scrollbar{ width: 10px; }
-.left-drawer::-webkit-scrollbar-thumb{
-  background: rgba(255,255,255,.12);
-  border-radius: 999px;
-}
-.left-drawer::-webkit-scrollbar-thumb:hover{
-  background: rgba(255,255,255,.18);
-}
-
-/* =============================
-   COMPONENTES NEO (compat)
-============================= */
+/* ===== Neo components (mantém compat) ===== */
 .neo-divider{
   height: 1px;
   background: rgba(255,255,255,.08);
   margin: 14px 0;
 }
-
 .neo-section{
   font-size: 1.2rem;
   font-weight: 900;
   margin: 6px 2px 12px 2px;
   color: rgba(232,237,246,.92);
 }
-
 .neo-grid-4{
   display:grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
-
 .neo-grid-2{
   display:grid;
   grid-template-columns: 340px 1fr;
   gap: 14px;
   align-items: stretch;
 }
-
 .neo-card{
   position: relative;
   border-radius: 16px;
   padding: 16px 16px 14px 16px;
-  background: var(--card-bg);
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
   border: 1px solid rgba(255,255,255,.09);
   box-shadow:
     0 16px 34px rgba(0,0,0,.40),
@@ -312,7 +196,6 @@ div[data-testid="stTable"]{
   overflow:hidden;
   min-height: 120px;
 }
-
 .neo-card:after{
   content:"";
   position:absolute;
@@ -328,7 +211,6 @@ div[data-testid="stTable"]{
   pointer-events:none;
   opacity:.65;
 }
-
 .neo-label{
   font-size: .92rem;
   font-weight: 800;
@@ -336,7 +218,6 @@ div[data-testid="stTable"]{
   color: rgba(232,237,246,.85);
   margin-bottom: 10px;
 }
-
 .neo-value{
   font-size: 2.3rem;
   font-weight: 950;
@@ -344,7 +225,6 @@ div[data-testid="stTable"]{
   line-height: 1.05;
   color: rgba(255,255,255,.96);
 }
-
 .neo-subline{
   margin-top: 10px;
   font-size: .90rem;
@@ -352,76 +232,45 @@ div[data-testid="stTable"]{
   font-weight: 650;
 }
 
-/* =============================
-   HOME (compat)
-============================= */
-.home-wrap{ margin-top: 6px; }
+/* Home hero (pra home.py novo) */
+.home-hero{
+  position: relative;
+  border-radius: 22px;
+  padding: 18px 18px 16px 18px;
+  background:
+    radial-gradient(420px 140px at 18% 30%, rgba(88,166,255,.22), transparent 60%),
+    radial-gradient(520px 200px at 90% 20%, rgba(167,139,250,.18), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  border: 1px solid rgba(255,255,255,.10);
+  box-shadow:
+    0 26px 70px rgba(0,0,0,.55),
+    inset 0 1px 0 rgba(255,255,255,.06);
+  overflow: hidden;
+}
+.home-hero:after{
+  content:"";
+  position:absolute;
+  inset:-1px;
+  border-radius: 22px;
+  padding:1px;
+  background: linear-gradient(135deg, rgba(88,166,255,.28), rgba(167,139,250,.18), rgba(0,212,255,.14));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events:none;
+  opacity:.70;
+}
 .home-title{
-  font-size: 3.0rem;
+  font-size: 2.2rem;
   font-weight: 950;
   line-height: 1.05;
-  letter-spacing: .2px;
   color: rgba(255,255,255,.96);
+  letter-spacing: .2px;
 }
-.home-meta{
+.home-sub{
   margin-top: 10px;
-  color: rgba(232,237,246,.72);
-  font-weight: 750;
-}
-.home-chip{
-  display:inline-block;
-  margin-left:10px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.05);
-  border: 1px solid rgba(255,255,255,.12);
-  color: rgba(232,237,246,.85);
   font-weight: 800;
-  font-size: .85rem;
-}
-
-.pill{
-  display:inline-block;
-  margin-left:10px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.06);
-  border: 1px solid rgba(255,255,255,.12);
-  color: rgba(232,237,246,.86);
-  font-weight: 850;
-  font-size: .85rem;
-}
-
-.action-tile{
-  border-radius: 16px;
-  padding: 14px 14px 12px 14px;
-  background: var(--card-bg);
-  border: 1px solid rgba(55,214,122,.20);
-  box-shadow: 0 16px 34px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,255,255,.05);
-  margin-bottom: 10px;
-}
-.action-tile-blue{ border-color: rgba(88,166,255,.22); }
-.action-title{
-  font-weight: 950;
-  font-size: 1.05rem;
-  color: rgba(232,237,246,.95);
-}
-.action-desc{
-  margin-top: 6px;
-  font-weight: 700;
-  color: rgba(232,237,246,.68);
-  font-size: .90rem;
-}
-
-/* responsivo */
-@media (max-width: 1100px){
-  .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .neo-grid-2{ grid-template-columns: 1fr; }
-}
-@media (max-width: 760px){
-  .left-drawer{
-    position: relative;
-    top: 0;
-    height: auto;
-  }
+  color: rgba(232,237,246,.78);
 }
