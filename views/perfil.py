@@ -5,9 +5,14 @@ from zoneinfo import ZoneInfo
 from db import db_conn, audit_log
 from auth import canon_login, hash_password, verify_password, require_admin
 
-
-DEPARTAMENTOS = ["Administrador", "Operacional", "Financeiro"]
 TZ_LOCAL = ZoneInfo("America/Sao_Paulo")
+DEPARTAMENTOS = ["Administrador", "Operacional", "Financeiro"]
+
+
+def _logout():
+    for k in list(st.session_state.keys()):
+        del st.session_state[k]
+    st.rerun()
 
 
 def _fmt_sp(dt) -> str:
@@ -21,7 +26,7 @@ def _fmt_sp(dt) -> str:
         if pd.isna(d):
             return str(dt)
 
-        # se vier naive, trata como UTC pra evitar cagada
+        # se vier naive, assume UTC pra evitar cagada
         if getattr(d, "tzinfo", None) is None:
             d = d.tz_localize("UTC")
 
@@ -48,19 +53,13 @@ def _bonequinho_svg() -> str:
     """
 
 
-def _get_target_user_id() -> str:
+def _get_target_user_id():
     """
-    Prepara o modo 'admin vendo outro usuário'.
-    No futuro, quando clicar em alguém na tela de admin:
+    Modo admin vendo outro usuário:
       st.session_state["profile_target_user_id"] = <uuid>
-      st.session_state["module"] = "views.perfil"
     """
     me = st.session_state.get("user_id")
-    target = (
-        st.session_state.get("profile_target_user_id")
-        or st.session_state.get("perfil_target_user_id")
-    )
-
+    target = st.session_state.get("profile_target_user_id") or st.session_state.get("perfil_target_user_id")
     if target and st.session_state.get("is_admin"):
         return target
     return me
@@ -74,8 +73,6 @@ def _toggle(label: str, value: bool, key: str):
 
 
 def render(_df, _USUARIOS):
-    st.markdown("#  Meu Perfil" if viewing_self else "#  Perfil")
-
     my_user_id = st.session_state.get("user_id")
     if not my_user_id:
         st.error("Sessão inválida. Faz login de novo.")
@@ -87,6 +84,9 @@ def render(_df, _USUARIOS):
 
     if admin_mode:
         require_admin()
+
+    # TÍTULO CERTO (agora viewing_self já existe)
+    st.markdown("# Meu Perfil" if viewing_self else "# Perfil")
 
     # --- carrega usuário alvo ---
     with db_conn() as conn:
@@ -107,19 +107,17 @@ def render(_df, _USUARIOS):
 
     login, full_name, department, is_admin_db, is_active, must_change_password, last_login_at = row
 
-    # --- layout 2 colunas (robusto p/ versões) ---
+    # --- layout 2 colunas (robusto) ---
     try:
         left, right = st.columns([1.05, 2.0], vertical_alignment="top")
     except Exception:
         left, right = st.columns([1.05, 2.0])
 
     # =========================
-    # ESQUERDA: silhueta + botões
+    # ESQUERDA: silhueta + ações
     # =========================
     with left:
         st.markdown(_bonequinho_svg(), unsafe_allow_html=True)
-
-        st.markdown("<div class='profile-left-actions'>", unsafe_allow_html=True)
 
         if viewing_self:
             # ---------- Alterar apelido ----------
@@ -130,6 +128,7 @@ def render(_df, _USUARIOS):
                     help="3–32 chars: a-z 0-9 . _ -",
                     key="pf_new_login",
                 ).strip()
+
                 pw_now = st.text_input("Senha atual", type="password", key="pf_pw_for_login")
 
                 if st.button("Salvar apelido", use_container_width=True, key="pf_save_login"):
@@ -143,7 +142,6 @@ def render(_df, _USUARIOS):
                         st.error("Informe sua senha atual pra confirmar.")
                         st.stop()
 
-                    # valida senha atual
                     with db_conn() as conn:
                         with conn.cursor() as cur:
                             cur.execute("select password_hash from public.app_users where id=%s", (my_user_id,))
@@ -154,7 +152,6 @@ def render(_df, _USUARIOS):
                             st.error("Senha atual incorreta.")
                             st.stop()
 
-                        # atualiza login
                         try:
                             with conn.cursor() as cur:
                                 cur.execute(
@@ -222,6 +219,9 @@ def render(_df, _USUARIOS):
                     st.success("Senha trocada!")
                     st.rerun()
 
+            if st.button("Sair", use_container_width=True, type="secondary"):
+                _logout()
+
         else:
             # admin vendo outro usuário
             with st.popover("Alterar informações", use_container_width=True):
@@ -271,36 +271,42 @@ def render(_df, _USUARIOS):
                     st.success("Usuário atualizado!")
                     st.rerun()
 
-        if st.button("Voltar", use_container_width=True, type="secondary", key="pf_back"):
-            # limpa alvo
-            st.session_state.pop("profile_target_user_id", None)
-            st.session_state.pop("perfil_target_user_id", None)
-        
-            # volta pra tela de onde veio (padrão: usuários)
-            back = st.session_state.get("profile_back_module", "views.admin_usuarios")
-            st.session_state["adm_users_view"] = "list"  # garante lista
-            st.session_state.module = back
-            st.session_state.open_cat = None
-            st.rerun()
+            # ✅ BOTÃO VOLTAR (pra Usuários / origem)
+            if st.button("⬅️ Voltar", use_container_width=True, type="secondary", key="pf_back"):
+                st.session_state.pop("profile_target_user_id", None)
+                st.session_state.pop("perfil_target_user_id", None)
 
-        st.markdown("</div>", unsafe_allow_html=True)
+                back = st.session_state.get("profile_back_module", "views.admin_usuarios")
+                st.session_state.pop("profile_back_module", None)
+
+                # garante voltar pra lista de usuários
+                st.session_state["adm_users_view"] = "list"
+
+                st.session_state.module = back
+                st.session_state.open_cat = None
+                st.rerun()
 
     # =========================
-    # DIREITA: infos + painel ações
+    # DIREITA: infos + ações
     # =========================
     with right:
         st.markdown(
-            f"<div class='profile-title'>{full_name}<span class='profile-nick'>({login})</span></div>"
-            f"<div class='profile-line'>Departamento: <b>{department}</b></div>"
-            f"<div class='profile-status {'ok' if is_active else 'bad'}'>{'ATIVO' if is_active else 'INATIVO'}</div>"
-            f"<div class='profile-lastlogin'>Último login: {_fmt_sp(last_login_at)}</div>",
+            f"""
+            <div class="profile-title">
+              {full_name}
+              <span class="profile-nick">({login})</span>
+            </div>
+            <div class="profile-line">Departamento: <b>{department}</b></div>
+            <div class="profile-status {'ok' if is_active else 'bad'}">{'ATIVO' if is_active else 'INATIVO'}</div>
+            <div class="profile-lastlogin">Último login: {_fmt_sp(last_login_at)}</div>
+            """,
             unsafe_allow_html=True,
         )
 
         if viewing_self and must_change_password:
             st.warning("Você precisa trocar sua senha (primeiro acesso / reset).")
 
-        # Painel vermelho: aparece pra admin (igual teu retângulo)
+        # Painel vermelho (ações): aparece pra admin (e mostra do usuário alvo)
         if st.session_state.get("is_admin"):
             st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
@@ -331,7 +337,6 @@ def render(_df, _USUARIOS):
                     ts_txt = _fmt_sp(ts)
                     ent = entity or "—"
                     eid = entity_id or "—"
-                    # IMPORTANTÍSSIMO: sem indentação/markdown, senão vira code block e “quebra”
                     html_rows.append(
                         f"<div class='audit-row'>"
                         f"<div class='audit-ts'>{ts_txt}</div>"
