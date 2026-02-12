@@ -286,4 +286,95 @@ div[data-testid="stExpander"] summary{
   color: rgba(255,255,255,.92);
   font-weight: 750;
 }
+/* ===== Perfil (layout + bonequinho + status + painel ações) ===== */
+.profile-title{
+  font-size: 1.65rem;
+  font-weight: 950;
+  letter-spacing: .2px;
+  color: rgba(255,255,255,.96);
+}
+.profile-nick{
+  font-size: 1.0rem;
+  font-weight: 850;
+  color: rgba(232,237,246,.70);
+  margin-left: 6px;
+}
+.profile-line{
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: rgba(232,237,246,.85);
+  margin-top: 8px;
+}
+.profile-status{
+  margin-top: 10px;
+  font-weight: 950;
+  letter-spacing: .6px;
+}
+.profile-status.ok{ color: #22c55e; }
+.profile-status.bad{ color: #ef4444; }
+
+.profile-lastlogin{
+  margin-top: 6px;
+  font-weight: 850;
+  color: #22c55e;
+}
+
+.profile-left-actions{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* Silhueta */
+.avatar-box{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  height: 240px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.10);
+}
+.avatar-box svg{
+  width: 80%;
+  height: 80%;
+}
+
+/* Painel "Últimas ações" (vermelho) */
+.audit-box{
+  border: 2px solid rgba(239,68,68,.85);
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: rgba(239,68,68,.04);
+  height: 420px;
+  overflow: auto;
+}
+.audit-title{
+  text-align:center;
+  font-weight: 950;
+  color: rgba(239,68,68,.95);
+  margin-bottom: 8px;
+}
+.audit-row{
+  display:flex;
+  gap:10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  font-size: .92rem;
+}
+.audit-row:last-child{ border-bottom: 0; }
+.audit-ts{
+  min-width: 140px;
+  color: rgba(232,237,246,.65);
+  font-variant-numeric: tabular-nums;
+}
+.audit-act{
+  font-weight: 900;
+  color: rgba(232,237,246,.92);
+}
+.audit-meta{
+  color: rgba(232,237,246,.70);
+}
+
 
