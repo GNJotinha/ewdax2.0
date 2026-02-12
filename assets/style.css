@@ -1,22 +1,14 @@
 /* =========================================================
-   MOVEE • Painel de Entregadores — style.css (revisado)
-   - Dark / Neo / Glass
-   - Topbar + Popover menu ≡
-   - Sidebar fixo (mata collapse/close)
+   MOVEE • Painel de Entregadores — style.css
+   - Topbar + Drawer esquerda (sem sidebar Streamlit)
    ========================================================= */
 
-/* -----------------------------
-   TOKENS
------------------------------- */
 :root{
   --bg: #0b0f14;
   --bg2:#070a0f;
 
   --text: #e8edf6;
   --muted: rgba(232,237,246,.70);
-  --muted2: rgba(232,237,246,.55);
-
-  --white: rgba(255,255,255,.96);
 
   --blue:  #58a6ff;
   --blue2: #3b82f6;
@@ -39,9 +31,7 @@
   --radius-sm: 12px;
 }
 
-/* -----------------------------
-   BASE / LAYOUT
------------------------------- */
+/* ---- Base ---- */
 html, body{ height: 100%; }
 body{
   margin: 0;
@@ -53,23 +43,21 @@ body{
     linear-gradient(180deg, var(--bg2) 0%, var(--bg) 45%, var(--bg) 100%);
 }
 
-/* some Streamlit chrome */
+/* chrome */
 footer{ display:none !important; }
 #MainMenu{ visibility:hidden !important; }
 div[data-testid="stDecoration"]{ display:none !important; }
 
-/* header transparente */
 header[data-testid="stHeader"]{
   background: transparent !important;
   box-shadow: none !important;
   border: 0 !important;
 }
 
-/* some toolbar (se quiser mostrar, comenta) */
-header [data-testid="stToolbar"]{ visibility: hidden !important; }
-
-/* padding */
-[data-testid="stAppViewContainer"]{ padding-top: 0rem !important; }
+/* se quiser toolbar do Streamlit, comenta */
+header [data-testid="stToolbar"]{
+  visibility: hidden !important;
+}
 
 .block-container{
   max-width: 1180px !important;
@@ -90,41 +78,19 @@ hr{
   background: rgba(255,255,255,.08);
 }
 
-/* -----------------------------
-   SIDEBAR (FIXO) — MATA O COLAPSE
------------------------------- */
+/* ---- Sidebar do Streamlit: OFF ---- */
 section[data-testid="stSidebar"]{
-  background: rgba(18,22,30,.92);
-  border-right: 1px solid rgba(255,255,255,.07);
+  display:none !important;
+  visibility:hidden !important;
+  width:0 !important;
+  min-width:0 !important;
 }
-
-/* ✅ MATA o botão de recolher/fechar (header do sidebar) */
-div[data-testid="stSidebarHeader"] button[data-testid="baseButton-header"],
-div[data-testid="stSidebarHeader"] button[kind="headerNoPadding"]{
-  display: none !important;
-}
-
-/* fallback por aria-label/title (Streamlit muda isso às vezes) */
-div[data-testid="stSidebarHeader"] button[aria-label*="collapse" i],
-div[data-testid="stSidebarHeader"] button[aria-label*="close" i],
-div[data-testid="stSidebarHeader"] button[aria-label*="recolher" i],
-div[data-testid="stSidebarHeader"] button[aria-label*="fechar" i],
-div[data-testid="stSidebarHeader"] button[title*="collapse" i],
-div[data-testid="stSidebarHeader"] button[title*="close" i],
-div[data-testid="stSidebarHeader"] button[title*="recolher" i],
-div[data-testid="stSidebarHeader"] button[title*="fechar" i]{
-  display: none !important;
-}
-
-/* ✅ MATA também o botão de abrir (quando colapsado), pra não dar ruim */
 [data-testid="collapsedControl"]{
-  display: none !important;
-  visibility: hidden !important;
+  display:none !important;
+  visibility:hidden !important;
 }
 
-/* -----------------------------
-   BOTÕES
------------------------------- */
+/* ---- Buttons ---- */
 .stButton>button{
   background: linear-gradient(135deg, rgba(88,166,255,.92), rgba(59,130,246,.92));
   color: white;
@@ -133,7 +99,7 @@ div[data-testid="stSidebarHeader"] button[title*="fechar" i]{
   padding: .70rem 1.20rem;
   font-weight: 800;
   box-shadow: 0 12px 26px rgba(0,0,0,.45);
-  white-space: nowrap !important; /* resolve “Per / fil” */
+  white-space: nowrap !important;
 }
 
 .stButton>button:hover{
@@ -147,7 +113,6 @@ div[data-testid="stSidebarHeader"] button[title*="fechar" i]{
   filter: none !important;
 }
 
-/* secundário */
 .stButton>button[kind="secondary"],
 .stButton>button[data-testid="baseButton-secondary"]{
   background: rgba(255,255,255,.04) !important;
@@ -163,16 +128,14 @@ div[data-testid="stSidebarHeader"] button[title*="fechar" i]{
   border-color: rgba(255,255,255,.22) !important;
 }
 
-/* popover (≡) com cara de ícone */
+/* Popover icon button */
 div[data-testid="stPopover"] > button{
   padding: .55rem .10rem !important;
   font-weight: 950 !important;
   border-radius: var(--radius-md) !important;
 }
 
-/* -----------------------------
-   INPUTS
------------------------------- */
+/* ---- Inputs ---- */
 div[data-baseweb="input"] input,
 div[data-baseweb="textarea"] textarea{
   background: rgba(255,255,255,.03) !important;
@@ -191,9 +154,7 @@ label, .stMarkdown, .stCaption{
   color: rgba(232,237,246,.78);
 }
 
-/* -----------------------------
-   EXPANDER
------------------------------- */
+/* ---- Expander ---- */
 div[data-testid="stExpander"] details{
   background: rgba(255,255,255,.03) !important;
   border: 1px solid rgba(255,255,255,.08) !important;
@@ -206,9 +167,7 @@ div[data-testid="stExpander"] summary{
   color: rgba(232,237,246,.92) !important;
 }
 
-/* -----------------------------
-   MÉTRICAS (st.metric)
------------------------------- */
+/* ---- Metrics ---- */
 div[data-testid="metric-container"]{
   background: var(--card-bg) !important;
   border: 1px solid rgba(255,255,255,.09) !important;
@@ -225,9 +184,7 @@ div[data-testid="metric-container"] [data-testid="stMetricValue"]{
   font-weight: 950 !important;
 }
 
-/* -----------------------------
-   TABELAS / DATAFRAME (container)
------------------------------- */
+/* ---- Tables ---- */
 div[data-testid="stDataFrame"],
 div[data-testid="stTable"]{
   background: rgba(255,255,255,.02);
@@ -238,9 +195,9 @@ div[data-testid="stTable"]{
   overflow: hidden;
 }
 
-/* -----------------------------
+/* =============================
    TOPBAR
------------------------------- */
+============================= */
 .app-topbar{
   position: sticky;
   top: 0;
@@ -250,13 +207,6 @@ div[data-testid="stTable"]{
   backdrop-filter: blur(12px);
   background: rgba(11,15,20,.55);
   border-bottom: 1px solid rgba(255,255,255,.08);
-}
-
-.tb-row{
-  display:flex;
-  align-items:flex-end;
-  justify-content:space-between;
-  gap:14px;
 }
 
 .tb-left{ margin-top: 2px; }
@@ -282,13 +232,48 @@ div[data-testid="stTable"]{
   margin: 10px 0 14px 0;
 }
 
-@media (max-width: 760px){
-  .tb-row{ flex-direction: column; align-items: stretch; }
+/* =============================
+   DRAWER ESQUERDA (coluna)
+============================= */
+.left-drawer{
+  position: sticky;
+  top: 86px;
+  height: calc(100vh - 118px);
+  overflow: auto;
+
+  padding: 14px 12px;
+  border-radius: 18px;
+  background: rgba(18,22,30,.60);
+  border: 1px solid rgba(255,255,255,.10);
+  box-shadow: 0 22px 60px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
 }
 
-/* -----------------------------
-   COMPONENTES “NEO”
------------------------------- */
+.left-divider{
+  height: 1px;
+  background: rgba(255,255,255,.10);
+  margin: 12px 0;
+}
+
+/* botões do drawer alinhados à esquerda */
+.left-drawer .stButton>button{
+  width: 100% !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+}
+
+/* scroll */
+.left-drawer::-webkit-scrollbar{ width: 10px; }
+.left-drawer::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,.12);
+  border-radius: 999px;
+}
+.left-drawer::-webkit-scrollbar-thumb:hover{
+  background: rgba(255,255,255,.18);
+}
+
+/* =============================
+   COMPONENTES NEO (compat)
+============================= */
 .neo-divider{
   height: 1px;
   background: rgba(255,255,255,.08);
@@ -367,53 +352,37 @@ div[data-testid="stTable"]{
   font-weight: 650;
 }
 
-.neo-success{ border-color: rgba(55,214,122,.22); }
-.neo-success .neo-value{ color: rgba(160,255,205,.98); }
-
-.neo-danger{ border-color: rgba(255,77,77,.22); }
-.neo-danger .neo-value{ color: rgba(255,110,110,.98); }
-
-/* responsivo */
-@media (max-width: 1100px){
-  .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .neo-grid-2{ grid-template-columns: 1fr; }
+/* =============================
+   HOME (compat)
+============================= */
+.home-wrap{ margin-top: 6px; }
+.home-title{
+  font-size: 3.0rem;
+  font-weight: 950;
+  line-height: 1.05;
+  letter-spacing: .2px;
+  color: rgba(255,255,255,.96);
 }
-
-/* Home hero (se usar) */
-.home-hero{
-  position: relative;
-  border-radius: 22px;
-  padding: 18px 18px 16px 18px;
-  background:
-    radial-gradient(420px 140px at 18% 30%, rgba(88,166,255,.22), transparent 60%),
-    radial-gradient(520px 200px at 90% 20%, rgba(167,139,250,.18), transparent 60%),
-    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
-  border: 1px solid rgba(255,255,255,.10);
-  box-shadow:
-    0 26px 70px rgba(0,0,0,.55),
-    inset 0 1px 0 rgba(255,255,255,.06);
-  overflow: hidden;
+.home-meta{
+  margin-top: 10px;
+  color: rgba(232,237,246,.72);
+  font-weight: 750;
 }
-
-.home-hero:after{
-  content:"";
-  position:absolute;
-  inset:-1px;
-  border-radius: 22px;
-  padding:1px;
-  background: linear-gradient(135deg, rgba(88,166,255,.28), rgba(167,139,250,.18), rgba(0,212,255,.14));
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events:none;
-  opacity:.70;
+.home-chip{
+  display:inline-block;
+  margin-left:10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.12);
+  color: rgba(232,237,246,.85);
+  font-weight: 800;
+  font-size: .85rem;
 }
 
 .pill{
-  display: inline-block;
-  margin-left: 10px;
+  display:inline-block;
+  margin-left:10px;
   padding: 4px 10px;
   border-radius: 999px;
   background: rgba(255,255,255,.06);
@@ -432,7 +401,6 @@ div[data-testid="stTable"]{
   margin-bottom: 10px;
 }
 .action-tile-blue{ border-color: rgba(88,166,255,.22); }
-
 .action-title{
   font-weight: 950;
   font-size: 1.05rem;
@@ -443,4 +411,17 @@ div[data-testid="stTable"]{
   font-weight: 700;
   color: rgba(232,237,246,.68);
   font-size: .90rem;
+}
+
+/* responsivo */
+@media (max-width: 1100px){
+  .neo-grid-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .neo-grid-2{ grid-template-columns: 1fr; }
+}
+@media (max-width: 760px){
+  .left-drawer{
+    position: relative;
+    top: 0;
+    height: auto;
+  }
 }
