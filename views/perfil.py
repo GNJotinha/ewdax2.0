@@ -74,7 +74,7 @@ def _toggle(label: str, value: bool, key: str):
 
 
 def render(_df, _USUARIOS):
-    st.markdown("#  Meu Perfil")
+    st.markdown("#  Meu Perfil" if viewing_self else "#  Perfil")
 
     my_user_id = st.session_state.get("user_id")
     if not my_user_id:
@@ -271,10 +271,17 @@ def render(_df, _USUARIOS):
                     st.success("Usuário atualizado!")
                     st.rerun()
 
-            if st.button("Voltar pro meu perfil", use_container_width=True, type="secondary"):
-                st.session_state.pop("profile_target_user_id", None)
-                st.session_state.pop("perfil_target_user_id", None)
-                st.rerun()
+        if st.button("Voltar", use_container_width=True, type="secondary", key="pf_back"):
+            # limpa alvo
+            st.session_state.pop("profile_target_user_id", None)
+            st.session_state.pop("perfil_target_user_id", None)
+        
+            # volta pra tela de onde veio (padrão: usuários)
+            back = st.session_state.get("profile_back_module", "views.admin_usuarios")
+            st.session_state["adm_users_view"] = "list"  # garante lista
+            st.session_state.module = back
+            st.session_state.open_cat = None
+            st.rerun()
 
         st.markdown("</div>", unsafe_allow_html=True)
 
