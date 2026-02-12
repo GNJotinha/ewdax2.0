@@ -377,4 +377,42 @@ div[data-testid="stExpander"] summary{
   color: rgba(232,237,246,.70);
 }
 
+/* ===== Admin Usuários (lista) ===== */
+.user-pill{
+  display:inline-block;
+  font-size: .78rem;
+  font-weight: 900;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.04);
+  color: rgba(232,237,246,.90);
+  line-height: 1;
+}
+.user-pill.ok{
+  border-color: rgba(34,197,94,.35);
+  background: rgba(34,197,94,.10);
+}
+.user-pill.bad{
+  border-color: rgba(239,68,68,.35);
+  background: rgba(239,68,68,.10);
+}
+.user-pill.admin{
+  border-color: rgba(167,139,250,.35);
+  background: rgba(167,139,250,.10);
+}
+.user-meta{
+  color: rgba(232,237,246,.65);
+  font-weight: 850;
+  font-size: .86rem;
+}
+.user-lastlogin{
+  color: rgba(232,237,246,.70);
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  font-size: .86rem;
+  text-align: right;
+}
+
+
 
