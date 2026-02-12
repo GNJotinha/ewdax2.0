@@ -179,7 +179,7 @@ st.session_state["MENU"] = MENU
 
 # ---------------- Sidebar (UMA vez só) ----------------
 with st.sidebar:
-    if st.button("Início", use_container_width=True, type="secondary", key="sb_home"):
+    if st.button("Iníacio", use_container_width=True, type="secondary", key="sb_home"):
         st.session_state.module = "views.home"
         st.session_state.open_cat = None
         st.rerun()
