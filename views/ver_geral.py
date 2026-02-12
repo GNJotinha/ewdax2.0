@@ -7,9 +7,6 @@ import streamlit.components.v1 as components
 
 from relatorios import gerar_dados
 
-# -----------------------------
-# Helpers
-# -----------------------------
 _EMOJI_RE = re.compile(
     r"["
     r"\U0001F300-\U0001F5FF"
@@ -29,28 +26,32 @@ _EMOJI_RE = re.compile(
 def _strip_emojis(txt: str) -> str:
     if not txt:
         return ""
-    # Remove emojis e limpa espaços “sobrando”
     out = _EMOJI_RE.sub("", txt)
-    out = re.sub(r"[ \t]+", " ", out)          # colapsa espaços
-    out = re.sub(r"\n{3,}", "\n\n", out)       # limita linhas vazias
-    out = out.strip()
-    return out
+    out = re.sub(r"[ \t]+", " ", out)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()
 
-def _copy_button(text: str, key: str, label: str = "Copiar"):
+
+def _centered_container():
+    _, mid, _ = st.columns([1, 2.6, 1], vertical_alignment="top")
+    return mid
+
+
+def _copy_button_inline(text: str, key: str, label: str = "Copiar"):
     """
-    Botão copiar via HTML/JS (Streamlit não tem clipboard nativo confiável em todas versões).
+    Botão copiar (inline) pra ficar DENTRO do card do texto.
     """
     safe = json.dumps(text or "")
     html = f"""
-    <div style="display:flex; justify-content:center; margin: 0.25rem 0 0.75rem 0;">
+    <div style="display:flex; justify-content:flex-end; margin: 0 0 .65rem 0;">
       <button
         id="btn_{key}"
         style="
           background: rgba(255,255,255,.04);
           color: rgba(232,237,246,.92);
           border: 1px solid rgba(255,255,255,.14);
-          border-radius: 14px;
-          padding: .55rem 1.0rem;
+          border-radius: 12px;
+          padding: .45rem .9rem;
           font-weight: 850;
           cursor: pointer;
         "
@@ -77,7 +78,6 @@ def _copy_button(text: str, key: str, label: str = "Copiar"):
             await navigator.clipboard.writeText(text);
             done("Copiado ✅");
           }} catch (e) {{
-            // fallback tosco porém funciona
             const ta = document.createElement("textarea");
             ta.value = text;
             document.body.appendChild(ta);
@@ -90,33 +90,29 @@ def _copy_button(text: str, key: str, label: str = "Copiar"):
       }})();
     </script>
     """
-    components.html(html, height=60)
-
-def _centered_container():
-    # Centraliza “na moral” usando colunas laterais vazias
-    _, mid, _ = st.columns([1, 2.6, 1], vertical_alignment="top")
-    return mid
+    components.html(html, height=52)
 
 
-# -----------------------------
-# View
-# -----------------------------
 def render(df: pd.DataFrame, _USUARIOS: dict):
-    # Título: só texto, sem emoji
-    st.markdown("# Desempenho geral")
-
     if df is None or df.empty or "pessoa_entregadora" not in df.columns:
         st.info("Sem dados carregados.")
         return
 
     nomes = sorted(df["pessoa_entregadora"].dropna().unique().tolist())
 
-    # Estado do resultado (pra não sumir ao mexer em select)
     st.session_state.setdefault("vg_nome", None)
     st.session_state.setdefault("vg_texto", "")
 
     with _centered_container():
-        # Card dos controles
+        # ✅ título centralizado junto do card
+        st.markdown(
+            "<div style='text-align:center; font-weight:950; font-size:2.05rem; margin: 0 0 .75rem 0;'>"
+            "Desempenho geral"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        # Card de seleção + gerar
         with st.container(border=True):
             st.markdown(
                 "<div style='text-align:center; font-weight:900; font-size:1.05rem; opacity:.92;'>"
@@ -127,7 +123,8 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             nome = st.selectbox(
                 "Selecione o entregador:",
                 [None] + nomes,
-                index=([None] + nomes).index(st.session_state.get("vg_nome")) if st.session_state.get("vg_nome") in nomes else 0,
+                index=([None] + nomes).index(st.session_state.get("vg_nome"))
+                if st.session_state.get("vg_nome") in nomes else 0,
                 format_func=lambda x: "" if x is None else x,
                 label_visibility="collapsed",
                 key="vg_select_nome",
@@ -141,36 +138,30 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             )
 
             if gerar:
-                if not nome:
-                    st.warning("Selecione um entregador.")
-                else:
-                    texto = gerar_dados(
-                        nome,
-                        None,
-                        None,
-                        df[df["pessoa_entregadora"] == nome]
-                    )
-                    texto = _strip_emojis(texto or "Nenhum dado encontrado")
-                    st.session_state["vg_nome"] = nome
-                    st.session_state["vg_texto"] = texto
+                texto = gerar_dados(nome, None, None, df[df["pessoa_entregadora"] == nome])
+                texto = _strip_emojis(texto or "Nenhum dado encontrado")
+                st.session_state["vg_nome"] = nome
+                st.session_state["vg_texto"] = texto
 
-        # Resultado
         texto_final = (st.session_state.get("vg_texto") or "").strip()
-        if texto_final:
-            st.markdown(
-                "<div style='text-align:center; font-weight:950; font-size:1.10rem; margin-top:.75rem;'>"
-                "Resultado</div>",
-                unsafe_allow_html=True,
+        if not texto_final:
+            return
+
+        st.markdown(
+            "<div style='text-align:center; font-weight:950; font-size:1.10rem; margin: .85rem 0 .35rem 0;'>"
+            "Resultado"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        # ✅ Card do texto com botão copiar DENTRO
+        with st.container(border=True):
+            _copy_button_inline(texto_final, key="vg_copy_inline", label="Copiar")
+
+            st.text_area(
+                label="",
+                value=texto_final,
+                height=420,
+                label_visibility="collapsed",
+                key="vg_text_area",
             )
-
-            # Botão copiar (sem emoji no texto, conforme você pediu)
-            _copy_button(texto_final, key="vg_copy", label="Copiar")
-
-            with st.container(border=True):
-                st.text_area(
-                    label="",
-                    value=texto_final,
-                    height=420,
-                    label_visibility="collapsed",
-                    key="vg_text_area",
-                )
