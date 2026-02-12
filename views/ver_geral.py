@@ -37,13 +37,11 @@ def _centered_container():
     return mid
 
 
-def _copy_button_inline(text: str, key: str, label: str = "Copiar"):
-    """
-    Botão copiar (inline) pra ficar DENTRO do card do texto.
-    """
+def _copy_button_bottom(text: str, key: str, label: str = "Copiar"):
+    """Botão copiar alinhado embaixo (lado direito)."""
     safe = json.dumps(text or "")
     html = f"""
-    <div style="display:flex; justify-content:flex-end; margin: 0 0 .65rem 0;">
+    <div style="display:flex; justify-content:flex-end; margin: .65rem 0 0 0;">
       <button
         id="btn_{key}"
         style="
@@ -104,7 +102,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     st.session_state.setdefault("vg_texto", "")
 
     with _centered_container():
-        # ✅ título centralizado junto do card
+        # título centralizado junto do card
         st.markdown(
             "<div style='text-align:center; font-weight:950; font-size:2.05rem; margin: 0 0 .75rem 0;'>"
             "Desempenho geral"
@@ -147,17 +145,8 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         if not texto_final:
             return
 
-        st.markdown(
-            "<div style='text-align:center; font-weight:950; font-size:1.10rem; margin: .85rem 0 .35rem 0;'>"
-            "Resultado"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-
-        # ✅ Card do texto com botão copiar DENTRO
+        # ✅ Card do texto (sem "Resultado") + Copiar embaixo
         with st.container(border=True):
-            _copy_button_inline(texto_final, key="vg_copy_inline", label="Copiar")
-
             st.text_area(
                 label="",
                 value=texto_final,
@@ -165,3 +154,4 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 label_visibility="collapsed",
                 key="vg_text_area",
             )
+            _copy_button_bottom(texto_final, key="vg_copy_bottom", label="Copiar")
