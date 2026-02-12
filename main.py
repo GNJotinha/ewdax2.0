@@ -6,15 +6,22 @@ from auth import autenticar
 from data_loader import carregar_dados
 
 
+# ---------------- Config ----------------
 st.set_page_config(
     page_title="Painel de Entregadores",
-    initial_sidebar_state="collapsed",  # sidebar fica OFF via CSS
+    initial_sidebar_state="expanded",  # menu lateral ON
 )
 
 
-def inject_css(path="assets/style.css"):
-    with open(path, "r", encoding="utf-8") as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+def inject_css():
+    # tenta os 2 caminhos (porque teu projeto já usou assets/ e também raiz)
+    for path in ("assets/style.css", "style.css"):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+            return
+        except FileNotFoundError:
+            continue
 
 
 inject_css()
@@ -39,12 +46,9 @@ def _last_date_str(df: pd.DataFrame) -> str:
     col = _pick_col(list(df.columns), ["data_do_periodo", "data", "Data", "DATA", "dt", "timestamp", "ts"])
     if not col:
         return ""
-    try:
-        dtmax = pd.to_datetime(df[col], errors="coerce").max()
-        if pd.notna(dtmax):
-            return dtmax.strftime("%d/%m/%Y")
-    except Exception:
-        pass
+    dtmax = pd.to_datetime(df[col], errors="coerce").max()
+    if pd.notna(dtmax):
+        return dtmax.strftime("%d/%m/%Y")
     return ""
 
 
@@ -59,17 +63,12 @@ def _goto(module: str, cat=None):
     st.rerun()
 
 
-def _toggle_left_menu():
-    st.session_state.show_left_menu = not st.session_state.get("show_left_menu", False)
-    st.rerun()
-
-
 def _render_topbar(df: pd.DataFrame):
     last_day = _last_date_str(df)
 
     st.markdown("<div class='app-topbar'>", unsafe_allow_html=True)
 
-    left, right = st.columns([3.2, 2.2], vertical_alignment="center")
+    left, right = st.columns([3.4, 2.0], vertical_alignment="center")
 
     with left:
         st.markdown(
@@ -83,14 +82,8 @@ def _render_topbar(df: pd.DataFrame):
         )
 
     with right:
-        c0, c1, c2, c3, c4 = st.columns([0.65, 0.65, 1.05, 1.05, 0.65])
+        c1, c2, c3, c4 = st.columns([0.65, 1.05, 1.05, 0.65])
 
-        # botão NOVO: abre/fecha menu na esquerda
-        with c0:
-            if st.button("≡", type="secondary", use_container_width=True, key="tb_leftmenu"):
-                _toggle_left_menu()
-
-        # home (ícone)
         with c1:
             if st.button("⌂", type="secondary", use_container_width=True, key="tb_home"):
                 _goto("views.home", None)
@@ -104,54 +97,22 @@ def _render_topbar(df: pd.DataFrame):
                 _logout()
                 st.rerun()
 
-        # botão da direita reservado (sem navegação)
+        # ✅ bagulho da direita = Admin
         with c4:
-            with st.popover("⋯", use_container_width=True):
-                st.caption("Reservado")
+            with st.popover("≡", use_container_width=True):
+                if st.session_state.get("is_admin"):
+                    a1, a2 = st.columns(2)
+                    with a1:
+                        if st.button("Usuários", use_container_width=True, key="pop_admin_users"):
+                            _goto("views.admin_usuarios", None)
+                    with a2:
+                        if st.button("Auditoria", use_container_width=True, key="pop_admin_audit"):
+                            _goto("views.auditoria", None)
+                else:
+                    st.caption("Sem opções de admin.")
 
     st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<div class='tb-divider'></div>", unsafe_allow_html=True)
-
-
-def _render_left_menu(menu: dict):
-    st.markdown("<div class='left-drawer'>", unsafe_allow_html=True)
-
-    # Admin aqui (Usuários / Auditoria) — sai do popover da direita
-    if st.session_state.get("is_admin"):
-        a1, a2 = st.columns(2)
-        with a1:
-            if st.button("Usuários", use_container_width=True, key="lm_admin_users"):
-                _goto("views.admin_usuarios", None)
-        with a2:
-            if st.button("Auditoria", use_container_width=True, key="lm_admin_audit"):
-                _goto("views.auditoria", None)
-
-        st.markdown("<div class='left-divider'></div>", unsafe_allow_html=True)
-
-    q = st.text_input(
-        "",
-        key="lm_q",
-        placeholder="Buscar tela…",
-        label_visibility="collapsed",
-    ).strip().lower()
-
-    for cat, opts in menu.items():
-        if q:
-            hits = {lbl: mod for lbl, mod in opts.items() if q in lbl.lower() or q in cat.lower()}
-            if not hits:
-                continue
-            opts_to_show = hits
-        else:
-            opts_to_show = opts
-
-        expanded = (st.session_state.get("open_cat") == cat)
-        with st.expander(cat, expanded=expanded):
-            for label, module in opts_to_show.items():
-                if st.button(label, use_container_width=True, key=f"lm_{cat}_{label}"):
-                    st.session_state.open_cat = cat
-                    _goto(module, cat)
-
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ---------------- Estado inicial ----------------
@@ -159,7 +120,6 @@ st.session_state.setdefault("logado", False)
 st.session_state.setdefault("usuario", "")
 st.session_state.setdefault("module", "views.home")
 st.session_state.setdefault("open_cat", None)
-st.session_state.setdefault("show_left_menu", False)
 
 
 # ---------------- Login ----------------
@@ -188,7 +148,7 @@ if not st.session_state.logado:
     st.stop()
 
 
-# ---------------- MENU (mesmo de antes) ----------------
+# ---------------- MENU ----------------
 MENU = {
     "Desempenho do Entregador": {
         "Ver geral": "views.ver_geral",
@@ -218,6 +178,25 @@ MENU = {
 st.session_state["MENU"] = MENU
 
 
+# ---------------- Sidebar (menu lateral de volta) ----------------
+with st.sidebar:
+    st.caption("Navegação")
+
+    if st.button("Início", use_container_width=True, type="secondary", key="sb_home"):
+        st.session_state.module = "views.home"
+        st.session_state.open_cat = None
+        st.rerun()
+
+    for cat, opts in MENU.items():
+        expanded = (st.session_state.open_cat == cat)
+        with st.expander(cat, expanded=expanded):
+            for label, module in opts.items():
+                if st.button(label, key=f"sb_{cat}_{label}", use_container_width=True):
+                    st.session_state.module = module
+                    st.session_state.open_cat = cat
+                    st.rerun()
+
+
 # ---------------- Toast ----------------
 if st.session_state.pop("show_welcome", False):
     msg = f"Bem-vindo, {st.session_state.usuario}!"
@@ -233,26 +212,18 @@ if st.session_state.pop("show_welcome", False):
 # ---------------- Dados ----------------
 df = get_df_once()
 
+if st.session_state.pop("just_refreshed", False):
+    st.success("Base atualizada.")
+
+
 # ---------------- Topbar ----------------
 _render_topbar(df)
 
-# ---------------- Layout: Drawer esquerda + conteúdo ----------------
-if st.session_state.get("show_left_menu", False):
-    col_menu, col_main = st.columns([1.15, 2.85], gap="large")
-    with col_menu:
-        _render_left_menu(MENU)
 
-    with col_main:
-        try:
-            page = importlib.import_module(st.session_state.module)
-        except Exception as e:
-            st.error(f"Erro ao carregar módulo **{st.session_state.module}**: {e}")
-        else:
-            page.render(df, {})
+# ---------------- Roteador ----------------
+try:
+    page = importlib.import_module(st.session_state.module)
+except Exception as e:
+    st.error(f"Erro ao carregar módulo **{st.session_state.module}**: {e}")
 else:
-    try:
-        page = importlib.import_module(st.session_state.module)
-    except Exception as e:
-        st.error(f"Erro ao carregar módulo **{st.session_state.module}**: {e}")
-    else:
-        page.render(df, {})
+    page.render(df, {})
