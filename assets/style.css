@@ -460,6 +460,21 @@ div[data-testid="stExpander"] summary{
   margin: 0;
 }
 
+/* mais respiro no bloco da silhueta */
+.avatar-box{
+  margin-bottom: 14px;   /* cria espaço antes dos botões */
+  height: 220px;         /* opcional: um pouco menor pra não ficar gigante */
+}
+
+/* dá um espacinho extra entre widgets da coluna esquerda (só no perfil) */
+.profile-left-spacer{
+  height: 12px;
+}
+.profile-between-buttons{
+  height: 10px;
+}
+
+
 
 
 
