@@ -74,7 +74,7 @@ def _toggle(label: str, value: bool, key: str):
 
 
 def render(_df, _USUARIOS):
-    st.markdown("# 👤 Meu Perfil")
+    st.markdown("#  Meu Perfil")
 
     my_user_id = st.session_state.get("user_id")
     if not my_user_id:
