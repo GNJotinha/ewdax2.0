@@ -7,20 +7,36 @@
   --blue2: #3b82f6;
   --cyan: #00d4ff;
   --purple: #a78bfa;
+
+  --stroke: rgba(255,255,255,.10);
+  --stroke2: rgba(255,255,255,.07);
 }
 
-/* ===== Streamlit chrome ===== */
+/* ===== Streamlit chrome (VOLTA AO NORMAL) ===== */
+
+/* ✅ volta a barrinha/decoration do Streamlit */
+div[data-testid="stDecoration"]{
+  display:block !important;
+}
+
+/* ✅ NÃO esconder toolbar do topo */
+header [data-testid="stToolbar"]{
+  visibility: visible !important;
+}
+
+/* ✅ NÃO esconder menu e footer (normal) */
+#MainMenu{ visibility: visible !important; }
+footer{ display:block !important; }
+
 header[data-testid="stHeader"]{
   background: transparent !important;
   box-shadow: none !important;
   border: 0 !important;
 }
-header [data-testid="stToolbar"]{ visibility: hidden !important; }
 
-footer{ display:none !important; }
-#MainMenu{ visibility:hidden !important; }
-[data-testid="stAppViewContainer"]{ padding-top: 0rem !important; }
-div[data-testid="stDecoration"]{ display:none !important; }
+[data-testid="stAppViewContainer"]{
+  padding-top: 0rem !important;
+}
 
 body{
   background:
@@ -38,32 +54,32 @@ body{
 }
 [data-testid="stVerticalBlock"]{ gap: 0.65rem; }
 
-/* ===== Sidebar ===== */
+/* ===== Sidebar (menu lateral) ===== */
 section[data-testid="stSidebar"]{
   background: rgba(18,22,30,.92);
   border-right: 1px solid rgba(255,255,255,.07);
 }
 
-/* ✅ mata o botão de recolher/fechar do sidebar */
-div[data-testid="stSidebarHeader"] button[data-testid="baseButton-header"],
-div[data-testid="stSidebarHeader"] button[kind="headerNoPadding"]{
-  display: none !important;
+/* ✅ AQUI É O PONTO: VOLTA O BOTÃO DE RECOLHER/ABRIR */
+
+/* volta o botão do header do sidebar (recolher/fechar) */
+div[data-testid="stSidebarHeader"] button{
+  display: inline-flex !important;
+  opacity: .60 !important;
 }
-div[data-testid="stSidebarHeader"] button[aria-label*="collapse" i],
-div[data-testid="stSidebarHeader"] button[aria-label*="close" i],
-div[data-testid="stSidebarHeader"] button[aria-label*="recolher" i],
-div[data-testid="stSidebarHeader"] button[aria-label*="fechar" i],
-div[data-testid="stSidebarHeader"] button[title*="collapse" i],
-div[data-testid="stSidebarHeader"] button[title*="close" i],
-div[data-testid="stSidebarHeader"] button[title*="recolher" i],
-div[data-testid="stSidebarHeader"] button[title*="fechar" i]{
-  display: none !important;
+div[data-testid="stSidebarHeader"] button:hover{
+  opacity: 1 !important;
 }
 
-/* ✅ mata o botão “fantasma” de abrir sidebar (isso que tava duplicando/bugando) */
+/* volta o botão “abrir sidebar” quando ele estiver recolhido */
 [data-testid="collapsedControl"]{
-  display: none !important;
-  visibility: hidden !important;
+  display: flex !important;
+  visibility: visible !important;
+  z-index: 9999 !important;
+  opacity: .65 !important;
+}
+[data-testid="collapsedControl"]:hover{
+  opacity: 1 !important;
 }
 
 /* ===== Buttons ===== */
@@ -105,7 +121,7 @@ div[data-testid="stPopover"] > button{
   border-radius: 14px !important;
 }
 
-/* ===== Topbar ===== */
+/* ===== Topbar (a nossa) ===== */
 .app-topbar{
   position: sticky;
   top: 0;
