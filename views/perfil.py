@@ -6,7 +6,7 @@ from db import db_conn, audit_log
 from auth import canon_login, hash_password, verify_password, require_admin
 
 TZ_LOCAL = ZoneInfo("America/Sao_Paulo")
-DEPARTAMENTOS = ["Administrador", "Operacional", "Financeiro"]
+DEPARTAMENTOS = ["Administrador", "Operacional", "Financeiro","Desenvolvedor"]
 
 
 def _logout():
