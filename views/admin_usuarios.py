@@ -87,9 +87,15 @@ def _fetch_users_page(conn, page: int):
 
 def _goto_profile(user_id: str):
     st.session_state["profile_target_user_id"] = str(user_id)
+
+    # guarda pra onde voltar
+    st.session_state["profile_back_module"] = "views.admin_usuarios"
+    st.session_state["adm_users_view"] = "list"  # garante lista quando voltar
+
     st.session_state.module = "views.perfil"
     st.session_state.open_cat = None
     st.rerun()
+
 
 
 def _gen_temp_password() -> str:
