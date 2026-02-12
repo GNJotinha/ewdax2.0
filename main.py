@@ -86,10 +86,14 @@ def _render_topbar(df: pd.DataFrame):
         with c1:
             if st.button("⌂", type="secondary", use_container_width=True, key="tb_home"):
                 _goto("views.home", None)
-
-        with c2:
-            if st.button("Perfil", type="secondary", use_container_width=True, key="tb_profile"):
-                _goto("views.perfil", None)
+    
+    with c2:
+        if st.button("Perfil", type="secondary", use_container_width=True, key="tb_profile"):
+            # "Perfil" aqui é SEMPRE o meu perfil, então limpa alvo do admin
+            for k in ("profile_target_user_id", "perfil_target_user_id", "profile_back_module"):
+                st.session_state.pop(k, None)
+    
+            _goto("views.perfil", None)
 
         with c3:
             if st.button("Sair", type="secondary", use_container_width=True, key="tb_logout"):
