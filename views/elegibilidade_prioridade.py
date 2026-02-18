@@ -8,7 +8,7 @@ import streamlit as st
 # =========================
 # IDs fixos (SP)
 # =========================
-REGION_ID_SP = "3841c245-fac1-40a6-8b8f-8d6876447a6d
+REGION_ID_SP = "3841c245-fac1-40a6-8b8f-8d6876447a6d"
 
 SUB_IDS_SP = [
     "c838bd2d-5be4-401a-8ad2-b9d6a9d87a58",  # PERDIZES - SP
