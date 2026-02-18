@@ -22,44 +22,9 @@ SUB_IDS_SP = [
     "695dfbe5-bd3a-4e2b-a654-8b8af0eeba8b",  # JABAQUARA E SANTO AMARO - SP
 ]
 
-
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
-
-
-def _parse_driver_ids_from_text(txt: str) -> list[str]:
-    """Parseia um TXT com **1 id por linha**.
-
-    Regras (pra não virar zona):
-      - ignora linha vazia
-      - ignora comentários: linha começando com #
-      - remove espaços
-      - dedup preservando ordem
-      - normaliza pra lowercase
-    """
-    if not txt:
-        return []
-
-    out: list[str] = []
-    seen: set[str] = set()
-
-    for raw in txt.splitlines():
-        line = (raw or "").strip()
-        if not line:
-            continue
-        if line.startswith("#"):
-            continue
-
-        driver_id = line.split()[0].strip().lower()
-        if not driver_id:
-            continue
-        if driver_id in seen:
-            continue
-        seen.add(driver_id)
-        out.append(driver_id)
-
-    return out
 
 
 def _decode_upload_to_text(uploaded) -> str:
@@ -74,12 +39,67 @@ def _decode_upload_to_text(uploaded) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def _parse_driver_ids_from_text(txt: str) -> dict:
+    """Parseia TXT com 1 id por linha.
+
+    Regras:
+      - ignora linha vazia
+      - ignora comentários: linha começando com #
+      - pega só o primeiro token da linha (antes de espaço)
+      - normaliza pra lowercase
+      - valida UUID
+      - dedup preservando ordem
+    Retorna:
+      {
+        "valid": [...],
+        "invalid": [...],
+        "duplicates": int,
+        "total_tokens": int
+      }
+    """
+    if not txt:
+        return {"valid": [], "invalid": [], "duplicates": 0, "total_tokens": 0}
+
+    valid: list[str] = []
+    invalid: list[str] = []
+    seen: set[str] = set()
+    duplicates = 0
+    total_tokens = 0
+
+    for raw in txt.splitlines():
+        line = (raw or "").strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            continue
+
+        token = line.split()[0].strip().lower()
+        if not token:
+            continue
+
+        total_tokens += 1
+
+        if not _UUID_RE.match(token):
+            invalid.append(token)
+            continue
+
+        if token in seen:
+            duplicates += 1
+            continue
+
+        seen.add(token)
+        valid.append(token)
+
+    return {"valid": valid, "invalid": invalid, "duplicates": duplicates, "total_tokens": total_tokens}
+
+
 def render(df: pd.DataFrame, _USUARIOS: dict):
     st.header("📦 Exportar CSV — Elegibilidade & Prioridade")
 
     st.write(
         "Aqui a **fonte da verdade** é o TXT de ativos (1 `driver_id` por linha). "
-        "Se o cara saiu, ele não tá no TXT — e aí você não gera CSV com ID fantasma (que dá pau no sistema interno)."
+        "Sem regra de 7 dias, sem puxar fantasma da base. "
+        "E a gente **barra lixo** (não-UUID) pra não dar B.O no sistema interno."
     )
 
     st.subheader("1) Suba o TXT de ativos")
@@ -98,73 +118,49 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         )
 
     txt = _decode_upload_to_text(uploaded) if uploaded is not None else (pasted or "")
-    drivers = _parse_driver_ids_from_text(txt)
+    parsed = _parse_driver_ids_from_text(txt)
 
-    cA, cB, cC = st.columns(3)
+    drivers = parsed["valid"]
+    invalid = parsed["invalid"]
+    duplicates = parsed["duplicates"]
+    total_tokens = parsed["total_tokens"]
+
+    cA, cB, cC, cD = st.columns(4)
     with cA:
-        st.metric("Drivers no TXT", len(drivers))
+        st.metric("IDs no TXT (lidos)", total_tokens)
     with cB:
-        invalid = [d for d in drivers if not _UUID_RE.match(d)]
-        st.metric("IDs fora do padrão UUID", len(invalid))
+        st.metric("UUID válidos", len(drivers))
     with cC:
-        st.metric("SUB_REGION por driver", len(SUB_IDS_SP))
+        st.metric("Inválidos (não UUID)", len(invalid))
+    with cD:
+        st.metric("Duplicados (ignorados)", duplicates)
+
+    if not txt.strip():
+        st.info("Suba (ou cole) o TXT de ativos pra liberar os downloads.")
+        return
 
     if invalid:
         st.warning(
-            "Tem ID no TXT que **não parece UUID**. Se o sistema interno exigir UUID, isso pode dar merda. "
-            f"Exemplos: {', '.join(invalid[:5])}" + (" …" if len(invalid) > 5 else "")
+            "Tem coisa no TXT que **não é UUID**. Se isso entrar no CSV, o sistema interno pode explodir. "
+            "Por padrão eu **ignoro** esses inválidos."
         )
+        with st.expander("Ver exemplos de inválidos"):
+            st.write(invalid[:200])
+
+        # segurança: se sobrar 0 válido, não faz nada
+        if not drivers:
+            st.error("Depois de ignorar inválidos, **não sobrou nenhum UUID válido**. Corrige o TXT.")
+            return
+
+        # opcional: exigir confirmação pra seguir
+        ok = st.checkbox("Ok, entendi — gerar CSV ignorando os inválidos", value=False)
+        if not ok:
+            st.info("Marque a caixinha acima pra liberar os downloads.")
+            return
 
     if not drivers:
-        st.info("Suba (ou cole) o TXT de ativos pra liberar os downloads.")
-
-        # modo antigo fica escondido — só pra emergência
-        with st.expander("⚠️ Emergência: gerar pela base (modo antigo)"):
-            st.caption(
-                "Isso volta a regra velha (>= 2 completadas em 7 dias) e **pode incluir ex-entregador**, "
-                "ou seja: pode voltar o erro no sistema interno."
-            )
-            usar_base = st.toggle("Usar modo antigo agora", value=False)
-
-            if usar_base:
-                if df is None or df.empty:
-                    st.error("Sem base carregada. Não dá pra usar o modo antigo.")
-                    return
-
-                for col in ("data_do_periodo", "uuid", "numero_de_corridas_completadas"):
-                    if col not in df.columns:
-                        st.error(f"Coluna obrigatória ausente: '{col}'")
-                        return
-
-                base = df.copy()
-                base["data_do_periodo"] = pd.to_datetime(base["data_do_periodo"], errors="coerce")
-                base = base.dropna(subset=["data_do_periodo"]).copy()
-                base["dia"] = base["data_do_periodo"].dt.normalize()
-
-                base["uuid"] = base["uuid"].astype(str).fillna("").str.strip()
-                base = base[base["uuid"] != ""].copy()
-
-                base["numero_de_corridas_completadas"] = pd.to_numeric(
-                    base["numero_de_corridas_completadas"], errors="coerce"
-                ).fillna(0)
-
-                fim = base["dia"].max()
-                inicio = fim - pd.Timedelta(days=6)
-                st.caption(
-                    f"Período considerado: **{inicio:%d/%m/%Y} a {fim:%d/%m/%Y}** (7 dias)"
-                )
-
-                recorte = base[(base["dia"] >= inicio) & (base["dia"] <= fim)].copy()
-                if recorte.empty:
-                    st.info("Sem dados no período.")
-                    return
-
-                tot = recorte.groupby("uuid")["numero_de_corridas_completadas"].sum()
-                drivers = sorted(tot[tot >= 2].index.astype(str).tolist())
-                st.metric("Drivers elegíveis (>= 2 em 7 dias)", len(drivers))
-
-        if not drivers:
-            return
+        st.info("Nenhum UUID válido encontrado no TXT.")
+        return
 
     # checagem opcional: quantos do TXT aparecem na base (só pra diagnóstico)
     if df is not None and not df.empty and "uuid" in df.columns:
@@ -194,12 +190,14 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     # =========================
     # ELEGIBILIDADE (REGION + TODAS SUB_REGION)
     # =========================
-    reg_out = pd.DataFrame({
-        "driver_id": drivers,
-        "reference_id": REGION_ID_SP,
-        "type": "REGION",
-        "enabled": "TRUE",
-    })
+    reg_out = pd.DataFrame(
+        {
+            "driver_id": drivers,
+            "reference_id": REGION_ID_SP,
+            "type": "REGION",
+            "enabled": "TRUE",
+        }
+    )
 
     sub_out = pd.DataFrame(
         [(d, sub_id) for d in drivers for sub_id in SUB_IDS_SP],
@@ -210,7 +208,10 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     elegibilidade_df = pd.concat([reg_out, sub_out], ignore_index=True)
 
-    st.caption(f"Linhas no elegibilidade.csv: **{len(elegibilidade_df)}** (≈ {1+len(SUB_IDS_SP)} por driver)")
+    st.caption(
+        f"Linhas no elegibilidade.csv: **{len(elegibilidade_df)}** "
+        f"(≈ {1 + len(SUB_IDS_SP)} por driver)"
+    )
 
     # =========================
     # Downloads
