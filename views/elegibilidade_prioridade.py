@@ -96,11 +96,6 @@ def _parse_driver_ids_from_text(txt: str) -> dict:
 def render(df: pd.DataFrame, _USUARIOS: dict):
     st.header("📦 Exportar CSV — Elegibilidade & Prioridade")
 
-    st.write(
-        "Aqui a **fonte da verdade** é o TXT de ativos (1 `driver_id` por linha). "
-        "Sem regra de 7 dias, sem puxar fantasma da base. "
-        "E a gente **barra lixo** (não-UUID) pra não dar B.O no sistema interno."
-    )
 
     st.subheader("1) Suba o TXT de ativos")
     uploaded = st.file_uploader(
