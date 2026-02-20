@@ -2,13 +2,18 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+
 from relatorios import utr_por_entregador_turno
-from shared import sub_options_with_livre, apply_sub_filter  # 👈 filtro por subpraça
-from utils import calcular_aderencia
+from shared import sub_options_with_livre, apply_sub_filter
 
-PRIMARY_COLOR = ["#00BFFF"]  # paleta padrão
 
-# Paleta viva pra "blocos" de semana (Seg–Dom). Cada semana recebe uma cor diferente.
+# =========================
+# Paletas / rótulos
+# =========================
+
+WEEKDAY_LABELS = {0: "Seg", 1: "Ter", 2: "Qua", 3: "Qui", 4: "Sex", 5: "Sáb", 6: "Dom"}
+WEEKDAY_ORDER = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+
 WEEK_PALETTE = [
     "#00E5FF",  # ciano neon
     "#FF2D55",  # rosa/vermelho neon
@@ -20,34 +25,73 @@ WEEK_PALETTE = [
     "#FF375F",  # vermelho vivo
 ]
 
-WEEKDAY_LABELS = {0: "Seg", 1: "Ter", 2: "Qua", 3: "Qui", 4: "Sex", 5: "Sáb", 6: "Dom"}
-WEEKDAY_ORDER = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+PRIMARY_COLOR = ["#00BFFF"]
 
 
-def _add_semana_cor_por_dia(por_dia: pd.DataFrame, ano: int, mes: int) -> pd.DataFrame:
+# =========================
+# Helpers de dados
+# =========================
+
+def _ensure_data_mes_ano(df: pd.DataFrame) -> pd.DataFrame:
+    """Garante colunas data/mes/ano, mesmo que o CSV não tenha."""
+    df = df.copy()
+
+    # data
+    if "data" not in df.columns:
+        df["data"] = pd.to_datetime(df.get("data_do_periodo", df.get("data")), errors="coerce")
+    else:
+        df["data"] = pd.to_datetime(df["data"], errors="coerce")
+
+    # mes/ano (blindado)
+    if "mes" not in df.columns:
+        df["mes"] = df["data"].dt.month.astype("Int64")
+    else:
+        df["mes"] = pd.to_numeric(df["mes"], errors="coerce").astype("Int64")
+
+    if "ano" not in df.columns:
+        df["ano"] = df["data"].dt.year.astype("Int64")
+    else:
+        df["ano"] = pd.to_numeric(df["ano"], errors="coerce").astype("Int64")
+
+    df["mes_ano"] = df["data"].dt.strftime("%m/%Y")
+
+    # segundos_abs (evita negativo/NaN virar cagada em UTR/horas)
+    if "segundos_abs" in df.columns:
+        df["segundos_abs"] = pd.to_numeric(df["segundos_abs"], errors="coerce").fillna(0).clip(lower=0)
+
+    return df
+
+
+def calcular_aderencia(df: pd.DataFrame, group_cols=("data",)):
     """
-    Recebe um DF agregado por 'dia' (1..31) e adiciona:
-      - date (YYYY-MM-DD)
-      - week_start (segunda-feira da semana)
-      - weekday / weekday_label
-      - cor (uma cor por semana)
+    Aderência = regulares_atuaram / vagas
+    - vagas: numero_minimo_de_entregadores_regulares_na_escala
+    - regulares_atuaram: entregadores com tag == 'REGULAR'
     """
-    if por_dia is None or por_dia.empty or "dia" not in por_dia.columns:
-        return por_dia
+    df = df.copy()
+    if "tag" not in df.columns:
+        df["tag"] = pd.NA
+    if "numero_minimo_de_entregadores_regulares_na_escala" not in df.columns:
+        df["numero_minimo_de_entregadores_regulares_na_escala"] = 0
 
-    out = por_dia.copy()
-    out["date"] = pd.to_datetime(dict(year=int(ano), month=int(mes), day=out["dia"]), errors="coerce")
-    out["weekday"] = out["date"].dt.weekday
-    out["weekday_label"] = out["weekday"].map(WEEKDAY_LABELS)
+    df["vagas"] = pd.to_numeric(df["numero_minimo_de_entregadores_regulares_na_escala"], errors="coerce").fillna(0).clip(lower=0)
+    df["is_regular"] = df["tag"].astype(str).str.upper().str.contains("REGULAR", na=False)
 
-    out["week_start"] = out["date"] - pd.to_timedelta(out["weekday"], unit="D")
+    base = (
+        df.groupby(list(group_cols), as_index=False)
+        .agg(
+            vagas=("vagas", "sum"),
+            regulares_atuaram=("is_regular", "sum"),
+        )
+        .sort_values(list(group_cols))
+    )
+    base["aderencia"] = (base["regulares_atuaram"] / base["vagas"] * 100.0).where(base["vagas"] > 0, 0.0)
+    return base
 
-    weeks = sorted(out["week_start"].dropna().unique().tolist())
-    color_map = {ws: WEEK_PALETTE[i % len(WEEK_PALETTE)] for i, ws in enumerate(weeks)}
-    out["cor"] = out["week_start"].map(color_map)
 
-    return out
-
+# =========================
+# Semanal (clean)
+# =========================
 
 def _render_comparar_semanas(df_day: pd.DataFrame, y_col: str, yaxis_title: str, chart_title: str, key_prefix: str):
     """
@@ -66,21 +110,21 @@ def _render_comparar_semanas(df_day: pd.DataFrame, y_col: str, yaxis_title: str,
         st.info("Sem semanas disponíveis pra comparar.")
         return
 
-    # Labels bonitinhas: "dd/mm (seg)"
     week_labels = {ws: pd.to_datetime(ws).strftime("%d/%m/%Y") for ws in weeks}
-    default = weeks[-2:] if len(weeks) >= 2 else weeks
-    default_labels = [week_labels[w] for w in default]
+    all_labels = [week_labels[w] for w in weeks]
 
-    sel = st.multiselect(
-        "Semanas (início na segunda-feira):",
-        options=[week_labels[w] for w in weeks],
-        default=default_labels,
-        key=f"{key_prefix}_weeks",
-    )
-    sel_weeks = [w for w in weeks if week_labels[w] in sel]
-    if not sel_weeks:
-        st.info("Selecione pelo menos uma semana.")
-        return
+    # UI clean: por padrão mostra TODAS as semanas.
+    with st.expander("Semanas", expanded=False):
+        sel = st.multiselect(
+            "Semanas (início na segunda-feira):",
+            options=all_labels,
+            default=all_labels,
+            key=f"{key_prefix}_weeks",
+            label_visibility="collapsed",
+        )
+
+    # Se o usuário desmarcar tudo, assume "todas"
+    sel_weeks = [w for w in weeks if week_labels[w] in sel] if sel else weeks
 
     fig = go.Figure()
     for i, ws in enumerate(sel_weeks):
@@ -120,10 +164,8 @@ def _render_modo_semanal(
 ):
     """Tela dedicada pro comparativo semanal (sem checkbox espalhado)."""
 
-    st.subheader("📅 Comparativo semanal (Seg–Dom)")
-
     indicador = st.radio(
-        "Indicador do semanal:",
+        "",
         [
             "Corridas ofertadas",
             "Corridas aceitas",
@@ -136,23 +178,11 @@ def _render_modo_semanal(
         index=0,
         horizontal=True,
         key=f"wk_indicador_{mes_ref}_{ano_ref}",
+        label_visibility="collapsed",
     )
 
-    abrangencia = st.selectbox(
-        "Cobertura das semanas:",
-        [
-            "Semana completa (Seg–Dom) — pode incluir dias fora do mês",
-            "Só dias dentro do mês (sem puxar mês vizinho)",
-        ],
-        index=0,
-        help=(
-            "Se a semana começou no mês passado (ou termina no próximo), a opção de semana completa "
-            "puxa esses dias pra você não perder a porra do começo/fim da semana."
-        ),
-        key=f"wk_scope_{mes_ref}_{ano_ref}",
-    )
-
-    df_scope = (df_cmp_ref if abrangencia.startswith("Semana completa") else df_mes_ref).copy()
+    # Sempre usa semana completa no comparativo semanal (Seg–Dom) pra não perder dias quando cruza mês
+    df_scope = (df_cmp_ref if (df_cmp_ref is not None and not df_cmp_ref.empty) else df_mes_ref).copy()
 
     # Blindagem de colunas (dataset diferente não pode quebrar a tela)
     for _c in [
@@ -173,7 +203,7 @@ def _render_modo_semanal(
         st.info("Sem dados no período selecionado pra montar o semanal.")
         return
 
-    # Se for Aderência, a base vem do calcular_aderencia (porque não é só somar colunas)
+    # Aderência (%): usa calcular_aderencia porque não é soma simples
     if indicador == "Aderência (%)":
         if ("numero_minimo_de_entregadores_regulares_na_escala" not in df_scope.columns) or ("tag" not in df_scope.columns):
             st.info("Aderência precisa das colunas 'numero_minimo_de_entregadores_regulares_na_escala' e 'tag'.")
@@ -181,6 +211,7 @@ def _render_modo_semanal(
 
         grp = ("data", turno_col) if turno_col is not None else ("data",)
         base_ap = calcular_aderencia(df_scope.copy(), group_cols=grp)
+
         base_ap["date"] = pd.to_datetime(base_ap["data"]).dt.normalize()
         base_ap["weekday"] = base_ap["date"].dt.weekday
         base_ap["weekday_label"] = base_ap["weekday"].map(WEEKDAY_LABELS)
@@ -226,7 +257,6 @@ def _render_modo_semanal(
         title_wk = f"Totais por semana (Seg–Dom) — {mes_ref:02d}/{ano_ref}"
 
     else:
-        # Base comum (corridas/horas/entregadores)
         tmp_day = df_scope.copy()
         tmp_day["date"] = pd.to_datetime(tmp_day["data"]).dt.normalize()
         tmp_day["weekday"] = tmp_day["date"].dt.weekday
@@ -285,7 +315,7 @@ def _render_modo_semanal(
             axis=1,
         )
 
-        # Escolhas de métrica (igualzinho você já tinha em outros lugares)
+        # Métricas / modos
         if indicador == "Corridas ofertadas":
             wk_metric = st.radio(
                 "Métrica",
@@ -304,13 +334,7 @@ def _render_modo_semanal(
                 text_wk = por_semana.apply(lambda r: f"{int(r['ofe'])} ({r['utr']:.2f} UTR)", axis=1)
 
         elif indicador == "Corridas aceitas":
-            modo = st.radio(
-                "Modo",
-                ["Quantidade", "%"],
-                index=0,
-                horizontal=True,
-                key=f"wk_mode_ace_{mes_ref}_{ano_ref}",
-            )
+            modo = st.radio("Modo", ["Quantidade", "%"], index=0, horizontal=True, key=f"wk_mode_ace_{mes_ref}_{ano_ref}")
             if modo == "%":
                 y_cmp, yaxis = "acc_pct", "Taxa de aceite (%)"
                 y_wk = "acc_pct"
@@ -321,13 +345,7 @@ def _render_modo_semanal(
                 text_wk = por_semana.apply(lambda r: f"{int(r['ace'])} ({r['acc_pct']:.1f}%)", axis=1)
 
         elif indicador == "Corridas rejeitadas":
-            modo = st.radio(
-                "Modo",
-                ["Quantidade", "%"],
-                index=0,
-                horizontal=True,
-                key=f"wk_mode_rej_{mes_ref}_{ano_ref}",
-            )
+            modo = st.radio("Modo", ["Quantidade", "%"], index=0, horizontal=True, key=f"wk_mode_rej_{mes_ref}_{ano_ref}")
             if modo == "%":
                 y_cmp, yaxis = "rej_pct", "Taxa de rejeição (%)"
                 y_wk = "rej_pct"
@@ -338,13 +356,7 @@ def _render_modo_semanal(
                 text_wk = por_semana.apply(lambda r: f"{int(r['rej'])} ({r['rej_pct']:.1f}%)", axis=1)
 
         elif indicador == "Corridas completadas":
-            modo = st.radio(
-                "Modo",
-                ["Quantidade", "%"],
-                index=0,
-                horizontal=True,
-                key=f"wk_mode_com_{mes_ref}_{ano_ref}",
-            )
+            modo = st.radio("Modo", ["Quantidade", "%"], index=0, horizontal=True, key=f"wk_mode_com_{mes_ref}_{ano_ref}")
             if modo == "%":
                 y_cmp, yaxis = "comp_pct", "Taxa de conclusão (%)"
                 y_wk = "comp_pct"
@@ -367,9 +379,7 @@ def _render_modo_semanal(
         title_cmp = f"Comparação semanal (Seg–Dom) — {yaxis}"
         title_wk = f"Totais por semana (Seg–Dom) — {mes_ref:02d}/{ano_ref}"
 
-    # ----------------------------
     # Render: duas visões
-    # ----------------------------
     tab1, tab2 = st.tabs(["📅 Seg–Dom (dia a dia)", "🧱 Semana 1, 2, 3... (total)"])
 
     with tab1:
@@ -397,33 +407,23 @@ def _render_modo_semanal(
         st.plotly_chart(fig_wk, use_container_width=True)
 
 
-def _ensure_mes_ano(df: pd.DataFrame) -> pd.DataFrame:
-    """Garante a coluna 'mes_ano' (timestamp do 1º dia do mês)."""
-    if "mes_ano" in df.columns:
-        return df
-    base_dt = pd.to_datetime(df.get("data_do_periodo", df.get("data")), errors="coerce")
-    dfx = df.copy()
-    dfx["mes_ano"] = base_dt.dt.to_period("M").dt.to_timestamp()
-    return dfx
+# =========================
+# Render principal
+# =========================
 
+def render(df: pd.DataFrame):
+    st.title("Indicadores Gerais")
 
-def _utr_media_mensal(df: pd.DataFrame, mes: int, ano: int) -> float:
-    """
-    UTR 'Médias' por mês: média de (ofertadas/horas) nas linhas de (pessoa, turno, dia) com horas>0.
-    Usa relatorios.utr_por_entregador_turno para manter consistência com a tela de UTR.
-    """
-    base = utr_por_entregador_turno(df, mes, ano)
-    if base is None or base.empty:
-        return 0.0
-    base = base[base.get("supply_hours", 0) > 0].copy()
-    if base.empty:
-        return 0.0
-    return float((base["corridas_ofertadas"] / base["supply_hours"]).mean())
+    if df is None or df.empty:
+        st.info("Sem dados carregados.")
+        return
 
+    df = _ensure_data_mes_ano(df)
+    df = df.dropna(subset=["data"]).copy()
 
-def render(df: pd.DataFrame, _USUARIOS: dict):
-    st.header("📊 Indicadores Gerais")
-
+    # =========================
+    # Tipo de gráfico (inclui semanal)
+    # =========================
     tipo_grafico = st.radio(
         "Tipo de gráfico:",
         [
@@ -440,7 +440,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         horizontal=True,
     )
 
-    # 👇 Seletor só para o MENSAL de ofertadas
+    # controles condicionais
     utr_modo = None
     if tipo_grafico == "Corridas ofertadas":
         utr_modo = st.radio(
@@ -451,8 +451,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             help="Como calcular a UTR exibida no gráfico MENSAL de ofertadas.",
         )
 
-
-    # 👇 Seletor para ACEITAS/REJEITADAS/COMPLETADAS (Quantidade vs %)
     modo_taxa = None
     if tipo_grafico in ("Corridas aceitas", "Corridas rejeitadas", "Corridas completadas"):
         modo_taxa = st.radio(
@@ -463,117 +461,71 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             help="Quantidade: mostra corridas (com % no texto).  %: mostra a taxa (com quantidade no texto).",
         )
 
-    # Garante mes_ano
-    df = _ensure_mes_ano(df)
-    df["data"] = pd.to_datetime(df.get("data_do_periodo", df.get("data")), errors="coerce")
+    # =========================
+    # Filtros (subpraça / turno / entregador)
+    # =========================
+    c1, c2, c3 = st.columns(3)
 
-    # Blindagem: evita sumir gráfico quando o CSV não tem 'mes'/'ano' ou vem zoado.
-    df["ano"] = df["data"].dt.year.astype("Int64")
-    df["mes"] = df["data"].dt.month.astype("Int64")
+    with c1:
+        praca_scope = "SAO PAULO"
+        subs = sub_options_with_livre(df[df.get("praca") == praca_scope], praca_scope=praca_scope)
+        sub_sel = st.multiselect("Subpraça", options=subs, default=[])
 
-    # segundos_abs precisa ser numérico e nunca negativo (senão quebra horas/UTR)
-    if "segundos_abs" in df.columns:
-        df["segundos_abs"] = pd.to_numeric(df["segundos_abs"], errors="coerce").fillna(0).clip(lower=0)
+    with c2:
+        turno_col = "turno" if "turno" in df.columns else None
+        turno_options = ["Todos"]
+        if turno_col is not None:
+            turno_options += sorted([t for t in df[turno_col].dropna().unique().tolist()])
+        turno_sel = st.selectbox("Turno", options=turno_options, index=0)
 
-    # ---------------------------------------------------------
-    # Filtros (subpraça), turno e entregador
-    # ---------------------------------------------------------
-    col_f1, col_f2, col_f3 = st.columns([1, 1, 2])
+    with c3:
+        ent_col = "pessoa_entregadora" if "pessoa_entregadora" in df.columns else None
+        ent_options = []
+        if ent_col is not None:
+            ent_options = sorted([e for e in df[ent_col].dropna().unique().tolist()])
+        ent_sel = st.multiselect("Entregador(es)", options=ent_options, default=[])
 
-    # Subpraça (com 'LIVRE' quando praca=SAO PAULO e sub_praca nulo)
-    sub_opts = sub_options_with_livre(df, praca_scope="SAO PAULO")
-    sub_sel = col_f1.multiselect("Subpraça", sub_opts)
-    df = apply_sub_filter(df, sub_sel, praca_scope="SAO PAULO")
+    # aplica filtros
+    if sub_sel:
+        df = apply_sub_filter(df, sub_sel, praca_scope=praca_scope)
 
-    # Turno (se existir)
-    turno_col = next((c for c in ("turno", "tipo_turno", "periodo") if c in df.columns), None)
-    if turno_col is not None:
-        op_turno = ["Todos"] + sorted(df[turno_col].dropna().unique().tolist())
-        turno_sel = col_f2.selectbox("Turno", op_turno, index=0)
-        if turno_sel != "Todos":
-            df = df[df[turno_col] == turno_sel]
+    if turno_col is not None and turno_sel != "Todos":
+        df = df[df[turno_col] == turno_sel].copy()
 
-    # Entregador(es)
-    ent_opts = sorted(df.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().unique().tolist())
-    ent_sel = col_f3.multiselect("Entregador(es)", ent_opts)
-    if ent_sel:
-        df = df[df["pessoa_entregadora"].isin(ent_sel)]
+    if ent_col is not None and ent_sel:
+        df = df[df[ent_col].isin(ent_sel)].copy()
 
-    # ---------------------------------------------------------
-    # Seletor de Mês/Ano para o GRÁFICO DIÁRIO (passa a obedecer filtros)
-    # ---------------------------------------------------------
-    # pega o último mês/ano disponível já considerando filtros aplicados
-    try:
-        ultimo_ts = pd.to_datetime(df["mes_ano"]).max()
-        default_mes = int(ultimo_ts.month) if pd.notna(ultimo_ts) else int(pd.to_datetime(df["mes_ano"]).dt.month.max())
-        default_ano = int(ultimo_ts.year) if pd.notna(ultimo_ts) else int(pd.to_datetime(df["mes_ano"]).dt.year.max())
-    except Exception:
-        default_mes = int(pd.to_datetime(df.get("data_do_periodo", df.get("data")), errors="coerce").dt.month.max())
-        default_ano = int(pd.to_datetime(df.get("data_do_periodo", df.get("data")), errors="coerce").dt.year.max())
+    if df.empty:
+        st.warning("Sem dados com esses filtros.")
+        return
 
-    anos_disp = sorted([int(x) for x in df.get("ano", pd.Series(dtype=object)).dropna().unique().tolist()], reverse=True) or [default_ano]
-    col_p1, col_p2 = st.columns(2)
-    _lbl_mes_ref = "Mês (gráfico diário)" if tipo_grafico != "Comparativo semanal" else "Mês de referência (semanal)"
-    _lbl_ano_ref = "Ano (gráfico diário)" if tipo_grafico != "Comparativo semanal" else "Ano de referência (semanal)"
-    mes_diario = col_p1.selectbox(_lbl_mes_ref, list(range(1, 13)), index=max(0, default_mes - 1))
-    ano_idx = anos_disp.index(default_ano) if default_ano in anos_disp else 0
-    ano_diario = col_p2.selectbox(_lbl_ano_ref, anos_disp, index=ano_idx)
+    # =========================
+    # Seleção mês/ano do diário
+    # =========================
+    colm, cola = st.columns(2)
+    with colm:
+        meses_disponiveis = sorted([int(m) for m in df["mes"].dropna().unique().tolist()])
+        mes_diario = st.selectbox("Mês (gráfico diário)", options=meses_disponiveis, index=len(meses_disponiveis) - 1)
+    with cola:
+        anos_disponiveis = sorted([int(a) for a in df["ano"].dropna().unique().tolist()])
+        ano_diario = st.selectbox("Ano (gráfico diário)", options=anos_disponiveis, index=len(anos_disponiveis) - 1)
 
-    # Estilo do diário: por padrão, colore por semana (Seg–Dom)
-    # (sem checkbox aqui em cima pra não virar bagunça)
-    colorir_diario_por_semana = True
-
-    # Slices de tempo
+    # =========================
+    # Slices de tempo (mês / ano / comparativo semanal com semana completa)
+    # =========================
     month_start = pd.Timestamp(int(ano_diario), int(mes_diario), 1)
     month_end = month_start + pd.offsets.MonthEnd(1)
+
     cmp_start = month_start - pd.Timedelta(days=6)
     cmp_end = month_end + pd.Timedelta(days=6)
 
     df_mes_ref = df[(df["mes"] == mes_diario) & (df["ano"] == ano_diario)].copy()
     df_ano_ref = df[df["ano"] == ano_diario].copy()
-
-    # Base estendida só pra comparativos semanais (pra completar Seg–Dom quando a semana cruza mês)
     df_cmp_ref = df[(df["data"] >= cmp_start) & (df["data"] <= cmp_end)].copy()
 
-    # ---------------------------------------------------------
-    # Helper: resumo anual (do ano selecionado no seletor)
-    # ---------------------------------------------------------
-    def _render_resumo_ano():
-        """Mostra os números gerais do ANO selecionado (em baixo, letra maior)."""
-        tot_ofert = df_ano_ref.get("numero_de_corridas_ofertadas", pd.Series(dtype=float)).sum()
-        tot_aceit = df_ano_ref.get("numero_de_corridas_aceitas", pd.Series(dtype=float)).sum()
-        tot_rej = df_ano_ref.get("numero_de_corridas_rejeitadas", pd.Series(dtype=float)).sum()
-        tot_comp = df_ano_ref.get("numero_de_corridas_completadas", pd.Series(dtype=float)).sum()
-
-        tx_aceit_ano = (tot_aceit / tot_ofert * 100) if tot_ofert > 0 else 0.0
-        tx_rej_ano = (tot_rej / tot_ofert * 100) if tot_ofert > 0 else 0.0
-        tx_comp_ano = (tot_comp / tot_aceit * 100) if tot_aceit > 0 else 0.0
-
-        # Ativos = entregadores únicos no ano
-        tot_sh = int(df_ano_ref.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().nunique())
-
-        # Horas realizadas no ano
-        tot_horas = df_ano_ref.get("segundos_abs", pd.Series(dtype=float)).sum() / 3600.0
-
-        st.divider()
-        st.markdown("### 📅 Números gerais do ano selecionado")
-        st.markdown(
-            (
-                "<div style='font-size:1.1rem; line-height:1.7; margin-top:0.5em;'>"
-                f"<b>Ofertadas:</b> {int(tot_ofert):,}<br>"
-                f"<b>Aceitas:</b> {int(tot_aceit):,} ({tx_aceit_ano:.1f}%)<br>"
-                f"<b>Rejeitadas:</b> {int(tot_rej):,} ({tx_rej_ano:.1f}%)<br>"
-                f"<b>Completadas:</b> {int(tot_comp):,} ({tx_comp_ano:.1f}%)<br>"
-                f"<b>Ativos (SH):</b> {int(tot_sh):,}<br>"
-                f"<b>Horas realizadas:</b> {tot_horas:.1f} h"
-                "</div>"
-            ).replace(",", "."),
-            unsafe_allow_html=True,
-        )
-
-    # ---------------------------------------------------------
-    # Modo semanal (fica lá em cima como um "tipo de gráfico")
-    # ---------------------------------------------------------
+    # =========================
+    # Modo semanal (limpo) como tipo de gráfico
+    # =========================
     if tipo_grafico == "Comparativo semanal":
         _render_modo_semanal(
             df_filtrado=df,
@@ -585,428 +537,240 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             ano_ref=ano_diario,
             turno_col=turno_col,
         )
-        _render_resumo_ano()
         return
 
-    # ---------------------------------------------------------
-    # Aderência (%)
-    # ---------------------------------------------------------
-    if tipo_grafico == "Aderência (%)":
-        # valida colunas
-        if ("numero_minimo_de_entregadores_regulares_na_escala" not in df.columns) or ("tag" not in df.columns):
-            st.info("Esses indicadores precisam das colunas 'numero_minimo_de_entregadores_regulares_na_escala' e 'tag'.")
-            _render_resumo_ano()
-            return
+    # =========================
+    # A partir daqui: modos normais (mensal + diário) do tipo escolhido
+    # =========================
 
-        turno_col_ap = turno_col  # já definido acima
-        grp = ("data", turno_col_ap) if turno_col_ap is not None else ("data",)
-
-        base_ap = calcular_aderencia(df.dropna(subset=["data"]).copy(), group_cols=grp)
-        base_ap["mes_ano"] = pd.to_datetime(base_ap["data"]).dt.to_period("M").dt.to_timestamp()
-        base_ap["mes_rotulo"] = pd.to_datetime(base_ap["mes_ano"]).dt.strftime("%b/%y")
-
-        mensal = (
-            base_ap.groupby(["mes_ano", "mes_rotulo"], as_index=False)
-            .agg(
-                vagas=("vagas", "sum"),
-                regulares=("regulares_atuaram", "sum"),
-            )
-            .sort_values("mes_ano")
+    # --- agregados mensais
+    df_mensal = (
+        df_ano_ref.groupby("mes_ano", as_index=False)
+        .agg(
+            ofertadas=("numero_de_corridas_ofertadas", "sum") if "numero_de_corridas_ofertadas" in df_ano_ref.columns else ("mes_ano", "size"),
+            aceitas=("numero_de_corridas_aceitas", "sum") if "numero_de_corridas_aceitas" in df_ano_ref.columns else ("mes_ano", "size"),
+            rejeitadas=("numero_de_corridas_rejeitadas", "sum") if "numero_de_corridas_rejeitadas" in df_ano_ref.columns else ("mes_ano", "size"),
+            completadas=("numero_de_corridas_completadas", "sum") if "numero_de_corridas_completadas" in df_ano_ref.columns else ("mes_ano", "size"),
+            segundos=("segundos_abs", "sum") if "segundos_abs" in df_ano_ref.columns else ("mes_ano", "size"),
+            entregadores=("pessoa_entregadora", "nunique") if "pessoa_entregadora" in df_ano_ref.columns else ("mes_ano", "size"),
         )
+    )
 
-        mensal["aderencia_pct"] = mensal.apply(lambda r: (r["regulares"] / r["vagas"] * 100.0) if r["vagas"] else 0.0, axis=1)
+    df_mensal["horas"] = pd.to_numeric(df_mensal["segundos"], errors="coerce").fillna(0).clip(lower=0) / 3600.0
+    df_mensal["utr_abs"] = (df_mensal["ofertadas"] / df_mensal["horas"]).where(df_mensal["horas"] > 0, 0.0)
 
-        fig_m = px.bar(
-            mensal,
-            x="mes_rotulo",
-            y="aderencia_pct",
-            text=mensal["aderencia_pct"].map(lambda v: f"{v:.1f}%"),
-            title="Aderência (REGULAR / vagas) por mês",
-            labels={"mes_rotulo": "Mês/Ano", "aderencia_pct": "Aderência (%)"},
-            template="plotly_dark",
-            color_discrete_sequence=PRIMARY_COLOR,
-        )
-        fig_m.update_traces(textposition="outside")
-        fig_m.update_layout(margin=dict(t=60, b=30, l=40, r=40))
-        st.plotly_chart(fig_m, use_container_width=True)
-
-        # ------------------------------
-        # Diário (mês selecionado)
-        # ------------------------------
-        if not df_mes_ref.empty:
-            base_ap_mes = calcular_aderencia(df_mes_ref.dropna(subset=["data"]).copy(), group_cols=grp)
-            base_ap_mes["dia"] = pd.to_datetime(base_ap_mes["data"]).dt.day
-            por_dia = (
-                base_ap_mes.groupby("dia", as_index=False)
-                .agg(
-                    vagas=("vagas", "sum"),
-                    regulares=("regulares_atuaram", "sum"),
-                )
-                .sort_values("dia")
-            )
-            por_dia["aderencia_pct"] = por_dia.apply(lambda r: (r["regulares"] / r["vagas"] * 100.0) if r["vagas"] else 0.0, axis=1)
-
-            # Cores por semana (Seg–Dom) no diário
-            por_dia = _add_semana_cor_por_dia(por_dia, ano_diario, mes_diario)
-            marker_color = por_dia["cor"] if (colorir_diario_por_semana and "cor" in por_dia.columns) else PRIMARY_COLOR[0]
-
-            fig_d = go.Figure()
-            fig_d.add_bar(
-                x=por_dia["dia"],
-                y=por_dia["aderencia_pct"],
-                text=por_dia["aderencia_pct"].map(lambda v: f"{v:.1f}%"),
-                textposition="outside",
-                marker=dict(color=marker_color),
-                name="Aderência"
-            )
-            fig_d.update_layout(
-                title=f"📊 Aderência por dia ({mes_diario:02d}/{ano_diario})",
-                template="plotly_dark",
-                margin=dict(t=60, b=30, l=40, r=40),
-                xaxis_title="Dia",
-                yaxis_title="Aderência (%)",
-                xaxis=dict(tickmode="linear", dtick=1)
-            )
-            st.metric(
-                "📌 Aderência no mês selecionado",
-                f"{por_dia['regulares'].sum() / por_dia['vagas'].sum() * 100.0:.1f}%" if por_dia['vagas'].sum() > 0 else "0,0%",
-            )
-            st.plotly_chart(fig_d, use_container_width=True)
+    # UTR médias (mesmo padrão do seu projeto)
+    try:
+        df_utr_medias = utr_por_entregador_turno(df_ano_ref.copy())
+        # df_utr_medias deve ter colunas mes_ano e utr_por_entregador_turno (dependendo do seu relatorios.py)
+        if "mes_ano" in df_utr_medias.columns:
+            if "utr_por_entregador_turno" in df_utr_medias.columns:
+                df_utr_medias = df_utr_medias.groupby("mes_ano", as_index=False).agg(utr_medias=("utr_por_entregador_turno", "mean"))
+            elif "utr" in df_utr_medias.columns:
+                df_utr_medias = df_utr_medias.groupby("mes_ano", as_index=False).agg(utr_medias=("utr", "mean"))
+            else:
+                df_utr_medias["utr_medias"] = 0.0
         else:
-            st.info("Sem dados no mês selecionado.")
+            df_utr_medias = pd.DataFrame({"mes_ano": df_mensal["mes_ano"], "utr_medias": 0.0})
+    except Exception:
+        df_utr_medias = pd.DataFrame({"mes_ano": df_mensal["mes_ano"], "utr_medias": 0.0})
 
-        _render_resumo_ano()
-        return
+    df_mensal = df_mensal.merge(df_utr_medias, on="mes_ano", how="left")
+    df_mensal["utr_medias"] = pd.to_numeric(df_mensal.get("utr_medias", 0), errors="coerce").fillna(0)
 
-
-    # ---------------------------------------------------------
-    # Horas realizadas
-    # ---------------------------------------------------------
-    if tipo_grafico == "Horas realizadas":
-        mensal_horas = (
-            df.groupby("mes_ano", as_index=False)["segundos_abs"].sum()
-              .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
+    # --- agregados diários (mês selecionado)
+    df_diario = (
+        df_mes_ref.groupby(df_mes_ref["data"].dt.date, as_index=False)
+        .agg(
+            ofertadas=("numero_de_corridas_ofertadas", "sum") if "numero_de_corridas_ofertadas" in df_mes_ref.columns else ("data", "size"),
+            aceitas=("numero_de_corridas_aceitas", "sum") if "numero_de_corridas_aceitas" in df_mes_ref.columns else ("data", "size"),
+            rejeitadas=("numero_de_corridas_rejeitadas", "sum") if "numero_de_corridas_rejeitadas" in df_mes_ref.columns else ("data", "size"),
+            completadas=("numero_de_corridas_completadas", "sum") if "numero_de_corridas_completadas" in df_mes_ref.columns else ("data", "size"),
+            segundos=("segundos_abs", "sum") if "segundos_abs" in df_mes_ref.columns else ("data", "size"),
+            entregadores=("pessoa_entregadora", "nunique") if "pessoa_entregadora" in df_mes_ref.columns else ("data", "size"),
         )
-        mensal_horas["mes_rotulo"] = pd.to_datetime(mensal_horas["mes_ano"]).dt.strftime("%b/%y")
+    )
+    df_diario = df_diario.rename(columns={"data": "dia"}).copy()
+    df_diario["dia"] = pd.to_datetime(df_diario["dia"])
+    df_diario["horas"] = pd.to_numeric(df_diario["segundos"], errors="coerce").fillna(0).clip(lower=0) / 3600.0
+    df_diario["utr"] = (df_diario["ofertadas"] / df_diario["horas"]).where(df_diario["horas"] > 0, 0.0)
 
-        fig_m = px.bar(
-            mensal_horas,
-            x="mes_rotulo",
-            y="horas",
-            text="horas",
-            title="Horas realizadas por mês",
-            labels={"mes_rotulo": "Mês/Ano", "horas": "Horas"},
-            template="plotly_dark",
-            color_discrete_sequence=PRIMARY_COLOR,
-        )
-        fig_m.update_traces(texttemplate="<b>%{text:.1f}h</b>", textposition="outside")
-        fig_m.update_layout(margin=dict(t=60, b=30, l=40, r=40))
-        st.plotly_chart(fig_m, use_container_width=True)
+    # taxas
+    df_diario["acc_pct"] = (df_diario["aceitas"] / df_diario["ofertadas"] * 100).where(df_diario["ofertadas"] > 0, 0.0)
+    df_diario["rej_pct"] = (df_diario["rejeitadas"] / df_diario["ofertadas"] * 100).where(df_diario["ofertadas"] > 0, 0.0)
+    df_diario["comp_pct"] = (df_diario["completadas"] / df_diario["aceitas"] * 100).where(df_diario["aceitas"] > 0, 0.0)
 
-        if not df_mes_ref.empty:
-            por_dia = (
-                df_mes_ref.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-                .groupby("dia", as_index=False)["segundos_abs"].sum()
-                .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
-                .sort_values("dia")
-            )
-            # Cores por semana (Seg–Dom) no diário
-            por_dia = _add_semana_cor_por_dia(por_dia, ano_diario, mes_diario)
-            marker_color = por_dia["cor"] if (colorir_diario_por_semana and "cor" in por_dia.columns) else PRIMARY_COLOR[0]
+    # =========================
+    # Render dos gráficos (mensal + diário)
+    # =========================
 
-            # 🔧 só BARRAS, eixo X 1..31
-            fig_d = go.Figure()
-            fig_d.add_bar(
-                x=por_dia["dia"],
-                y=por_dia["horas"],
-                text=por_dia["horas"].map(lambda v: f"{v:.1f}h"),
-                textposition="outside",
-                marker=dict(color=marker_color),
-                name="Horas"
-            )
-            fig_d.update_layout(
-                title=f"📊 Horas por dia ({mes_diario:02d}/{ano_diario})",
-                template="plotly_dark",
-                margin=dict(t=60, b=30, l=40, r=40),
-                xaxis_title="Dia",
-                yaxis_title="Horas",
-                xaxis=dict(tickmode="linear", dtick=1)  # dias certinhos
-            )
-            st.metric("⏱️ Horas no mês selecionado", f"{por_dia['horas'].sum():.2f}h")
-            st.plotly_chart(fig_d, use_container_width=True)
-        else:
-            st.info("Sem dados no mês selecionado.")
-
-        _render_resumo_ano()
-        return
-
-    # ---------------------------------------------------------
-    # Entregadores ativos
-    # ---------------------------------------------------------
-    if tipo_grafico == "Entregadores ativos":
-        mensal = (
-            df.groupby("mes_ano", as_index=False)["pessoa_entregadora"].nunique()
-              .rename(columns={"pessoa_entregadora": "entregadores"})
-        )
-        mensal["mes_rotulo"] = pd.to_datetime(mensal["mes_ano"]).dt.strftime("%b/%y")
-
+    def _plot_mensal(y_col: str, y_title: str, title: str, text_col=None):
         fig = px.bar(
-            mensal,
-            x="mes_rotulo",
-            y="entregadores",
-            text="entregadores",
-            title="Entregadores ativos por mês",
+            df_mensal,
+            x="mes_ano",
+            y=y_col,
+            text=text_col,
+            title=title,
             template="plotly_dark",
             color_discrete_sequence=PRIMARY_COLOR,
         )
-        fig.update_traces(texttemplate="<b>%{text}</b>", textposition="outside")
-        fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
+        if text_col is not None:
+            fig.update_traces(texttemplate="<b>%{text}</b>", textposition="outside", cliponaxis=False)
+        fig.update_layout(margin=dict(t=60, b=40, l=40, r=40), yaxis_title=y_title, xaxis_title="Mês/Ano")
         st.plotly_chart(fig, use_container_width=True)
 
-        if not df_mes_ref.empty:
-            por_dia = (
-                df_mes_ref.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-                .groupby("dia", as_index=False)["pessoa_entregadora"].nunique()
-                .rename(columns={"pessoa_entregadora": "entregadores"})
-                .sort_values("dia")
-            )
-            # Cores por semana (Seg–Dom) no diário
-            por_dia = _add_semana_cor_por_dia(por_dia, ano_diario, mes_diario)
-            marker_color = por_dia["cor"] if (colorir_diario_por_semana and "cor" in por_dia.columns) else PRIMARY_COLOR[0]
+    def _plot_diario(y_col: str, y_title: str, title: str, text_series=None):
+        fig2 = px.bar(
+            df_diario,
+            x=df_diario["dia"].dt.day,
+            y=y_col,
+            title=title,
+            template="plotly_dark",
+            color_discrete_sequence=PRIMARY_COLOR,
+        )
+        if text_series is not None:
+            fig2.update_traces(text=text_series, texttemplate="<b>%{text}</b>", textposition="outside", cliponaxis=False)
+        fig2.update_layout(
+            margin=dict(t=60, b=40, l=40, r=40),
+            xaxis_title="Dia",
+            yaxis_title=y_title,
+            xaxis=dict(tickmode="linear", dtick=1),  # dias 1,2,3...
+        )
+        st.plotly_chart(fig2, use_container_width=True)
 
-            # 🔧 só BARRAS, eixo X 1..31
-            fig2 = go.Figure()
-            fig2.add_bar(
-                x=por_dia["dia"],
-                y=por_dia["entregadores"],
-                text=por_dia["entregadores"].astype(int).astype(str),
-                textposition="outside",
-                marker=dict(color=marker_color),
-                name="Entregadores"
-            )
-            fig2.update_layout(
-                title=f"📊 Entregadores por dia ({mes_diario:02d}/{ano_diario})",
-                template="plotly_dark",
-                margin=dict(t=60, b=30, l=40, r=40),
-                xaxis_title="Dia",
-                yaxis_title="Entregadores",
-                xaxis=dict(tickmode="linear", dtick=1)  # dias certinhos
-            )
-            st.plotly_chart(fig2, use_container_width=True)
-        else:
-            st.info("Sem dados no mês selecionado.")
-
-        _render_resumo_ano()
-        return
-
-    # ---------------------------------------------------------
-    # Genéricos: ofertadas/aceitas/rejeitadas/completadas
-    # ---------------------------------------------------------
-    col_map = {
-        "Corridas ofertadas": (
-            "numero_de_corridas_ofertadas",
-            "Corridas ofertadas por mês",
-            "Corridas",
-        ),
-        "Corridas aceitas": (
-            "numero_de_corridas_aceitas",
-            "Corridas aceitas por mês",
-            "Corridas Aceitas",
-        ),
-        "Corridas rejeitadas": (
-            "numero_de_corridas_rejeitadas",
-            "Corridas rejeitadas por mês",
-            "Corridas Rejeitadas",
-        ),
-        "Corridas completadas": (
-            "numero_de_corridas_completadas",
-            "Corridas completadas por mês",
-            "Corridas Completadas",
-        ),
-    }
-    col, titulo, label = col_map[tipo_grafico]
-
-    # ---------- Mensal ----------
-    mensal = df.groupby("mes_ano", as_index=False)[col].sum().rename(columns={col: "valor"})
-    mensal["mes_rotulo"] = pd.to_datetime(mensal["mes_ano"]).dt.strftime("%b/%y")
-
+    # --- Corridas ofertadas (com UTR no mensal)
     if tipo_grafico == "Corridas ofertadas":
-        # Horas por mês
-        secs_mensal = df.groupby("mes_ano", as_index=False)["segundos_abs"].sum().rename(columns={"segundos_abs": "segundos"})
-        mensal = mensal.merge(secs_mensal, on="mes_ano", how="left")
-        mensal["segundos"] = pd.to_numeric(mensal.get("segundos", 0), errors="coerce").fillna(0)
-        mensal["horas"] = mensal["segundos"] / 3600.0
-
-        # UTR por mês conforme modo
+        st.markdown("### Corridas ofertadas por mês")
         if utr_modo == "Médias":
-            def _calc_row_utr_media(row: pd.Series) -> float:
-                ts = pd.to_datetime(row["mes_ano"])
-                return _utr_media_mensal(df, int(ts.month), int(ts.year))
-            mensal["utr"] = mensal.apply(_calc_row_utr_media, axis=1)
+            # mostra ofertadas e UTR médias no texto
+            df_mensal["text_ofe"] = df_mensal.apply(lambda r: f"{int(r['ofertadas'])} ({r['utr_medias']:.2f} UTR)", axis=1)
+            _plot_mensal("ofertadas", "Corridas", "Corridas ofertadas por mês", text_col="text_ofe")
         else:
-            mensal["utr"] = mensal.apply(lambda r: (r["valor"] / r["horas"]) if r["horas"] > 0 else 0.0, axis=1)
+            df_mensal["text_ofe"] = df_mensal.apply(lambda r: f"{int(r['ofertadas'])} ({r['utr_abs']:.2f} UTR)", axis=1)
+            _plot_mensal("ofertadas", "Corridas", "Corridas ofertadas por mês", text_col="text_ofe")
 
-        # Label no formato: "N (x.xx UTR)"
-        mensal["label"] = mensal.apply(lambda r: f"{int(r['valor'])} ({r['utr']:.2f} UTR)", axis=1)
+        st.markdown("### Corridas ofertadas por dia")
+        df_diario["text_ofe_d"] = df_diario.apply(lambda r: f"{int(r['ofertadas'])} ({r['utr']:.2f} UTR)", axis=1)
+        _plot_diario("ofertadas", "Corridas", f"Corridas ofertadas — {mes_diario:02d}/{ano_diario}", text_series=df_diario["text_ofe_d"])
+
+    # --- Aceitas / Rejeitadas / Completadas com modo Quantidade vs %
     elif tipo_grafico == "Corridas aceitas":
-        ref = df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum().rename(
-            columns={"numero_de_corridas_ofertadas": "ref"}
-        )
-        mensal = mensal.merge(ref, on="mes_ano", how="left")
-        mensal["pct"] = (mensal["valor"] / mensal["ref"] * 100).where(mensal["ref"] > 0, 0.0)
-        mensal["label"] = mensal.apply(lambda r: (f"{r['pct']:.1f}% ({int(r['valor'])})" if modo_taxa == "%" else f"{int(r['valor'])} ({r['pct']:.1f}%)"), axis=1)
+        st.markdown("### Corridas aceitas por mês")
+        df_mensal["acc_pct"] = (df_mensal["aceitas"] / df_mensal["ofertadas"] * 100).where(df_mensal["ofertadas"] > 0, 0.0)
+
+        if modo_taxa == "%":
+            df_mensal["text_acc"] = df_mensal.apply(lambda r: f"{r['acc_pct']:.1f}% ({int(r['aceitas'])})", axis=1)
+            _plot_mensal("acc_pct", "Taxa (%)", "Taxa de aceite por mês", text_col="text_acc")
+        else:
+            df_mensal["text_acc"] = df_mensal.apply(lambda r: f"{int(r['aceitas'])} ({r['acc_pct']:.1f}%)", axis=1)
+            _plot_mensal("aceitas", "Corridas", "Corridas aceitas por mês", text_col="text_acc")
+
+        st.markdown("### Corridas aceitas por dia")
+        if modo_taxa == "%":
+            df_diario["text_acc_d"] = df_diario.apply(lambda r: f"{r['acc_pct']:.1f}% ({int(r['aceitas'])})", axis=1)
+            _plot_diario("acc_pct", "Taxa (%)", f"Taxa de aceite — {mes_diario:02d}/{ano_diario}", text_series=df_diario["text_acc_d"])
+        else:
+            df_diario["text_acc_d"] = df_diario.apply(lambda r: f"{int(r['aceitas'])} ({r['acc_pct']:.1f}%)", axis=1)
+            _plot_diario("aceitas", "Corridas", f"Corridas aceitas — {mes_diario:02d}/{ano_diario}", text_series=df_diario["text_acc_d"])
+
     elif tipo_grafico == "Corridas rejeitadas":
-        ref = df.groupby("mes_ano", as_index=False)["numero_de_corridas_ofertadas"].sum().rename(
-            columns={"numero_de_corridas_ofertadas": "ref"}
-        )
-        mensal = mensal.merge(ref, on="mes_ano", how="left")
-        mensal["pct"] = (mensal["valor"] / mensal["ref"] * 100).where(mensal["ref"] > 0, 0.0)
-        mensal["label"] = mensal.apply(lambda r: (f"{r['pct']:.1f}% ({int(r['valor'])})" if modo_taxa == "%" else f"{int(r['valor'])} ({r['pct']:.1f}%)"), axis=1)
+        st.markdown("### Corridas rejeitadas por mês")
+        df_mensal["rej_pct"] = (df_mensal["rejeitadas"] / df_mensal["ofertadas"] * 100).where(df_mensal["ofertadas"] > 0, 0.0)
+
+        if modo_taxa == "%":
+            df_mensal["text_rej"] = df_mensal.apply(lambda r: f"{r['rej_pct']:.1f}% ({int(r['rejeitadas'])})", axis=1)
+            _plot_mensal("rej_pct", "Taxa (%)", "Taxa de rejeição por mês", text_col="text_rej")
+        else:
+            df_mensal["text_rej"] = df_mensal.apply(lambda r: f"{int(r['rejeitadas'])} ({r['rej_pct']:.1f}%)", axis=1)
+            _plot_mensal("rejeitadas", "Corridas", "Corridas rejeitadas por mês", text_col="text_rej")
+
+        st.markdown("### Corridas rejeitadas por dia")
+        if modo_taxa == "%":
+            df_diario["text_rej_d"] = df_diario.apply(lambda r: f"{r['rej_pct']:.1f}% ({int(r['rejeitadas'])})", axis=1)
+            _plot_diario("rej_pct", "Taxa (%)", f"Taxa de rejeição — {mes_diario:02d}/{ano_diario}", text_series=df_diario["text_rej_d"])
+        else:
+            df_diario["text_rej_d"] = df_diario.apply(lambda r: f"{int(r['rejeitadas'])} ({r['rej_pct']:.1f}%)", axis=1)
+            _plot_diario("rejeitadas", "Corridas", f"Corridas rejeitadas — {mes_diario:02d}/{ano_diario}", text_series=df_diario["text_rej_d"])
+
     elif tipo_grafico == "Corridas completadas":
-        ref = df.groupby("mes_ano", as_index=False)["numero_de_corridas_aceitas"].sum().rename(
-            columns={"numero_de_corridas_aceitas": "ref"}
+        st.markdown("### Corridas completadas por mês")
+        df_mensal["comp_pct"] = (df_mensal["completadas"] / df_mensal["aceitas"] * 100).where(df_mensal["aceitas"] > 0, 0.0)
+
+        if modo_taxa == "%":
+            df_mensal["text_com"] = df_mensal.apply(lambda r: f"{r['comp_pct']:.1f}% ({int(r['completadas'])})", axis=1)
+            _plot_mensal("comp_pct", "Taxa (%)", "Taxa de conclusão por mês", text_col="text_com")
+        else:
+            df_mensal["text_com"] = df_mensal.apply(lambda r: f"{int(r['completadas'])} ({r['comp_pct']:.1f}%)", axis=1)
+            _plot_mensal("completadas", "Corridas", "Corridas completadas por mês", text_col="text_com")
+
+        st.markdown("### Corridas completadas por dia")
+        if modo_taxa == "%":
+            df_diario["text_com_d"] = df_diario.apply(lambda r: f"{r['comp_pct']:.1f}% ({int(r['completadas'])})", axis=1)
+            _plot_diario("comp_pct", "Taxa (%)", f"Taxa de conclusão — {mes_diario:02d}/{ano_diario}", text_series=df_diario["text_com_d"])
+        else:
+            df_diario["text_com_d"] = df_diario.apply(lambda r: f"{int(r['completadas'])} ({r['comp_pct']:.1f}%)", axis=1)
+            _plot_diario("completadas", "Corridas", f"Corridas completadas — {mes_diario:02d}/{ano_diario}", text_series=df_diario["text_com_d"])
+
+    # --- Horas realizadas
+    elif tipo_grafico == "Horas realizadas":
+        st.markdown("### Horas realizadas por mês")
+        df_mensal["text_h"] = df_mensal["horas"].map(lambda v: f"{v:.1f}h")
+        _plot_mensal("horas", "Horas", "Horas realizadas por mês", text_col="text_h")
+
+        st.markdown("### Horas realizadas por dia")
+        df_diario["text_h_d"] = df_diario["horas"].map(lambda v: f"{v:.1f}h")
+        _plot_diario("horas", "Horas", f"Horas realizadas — {mes_diario:02d}/{ano_diario}", text_series=df_diario["text_h_d"])
+
+    # --- Entregadores ativos
+    elif tipo_grafico == "Entregadores ativos":
+        st.markdown("### Entregadores ativos por mês")
+        df_mensal["text_e"] = df_mensal["entregadores"].map(lambda v: f"{int(v)}")
+        _plot_mensal("entregadores", "Entregadores", "Entregadores ativos por mês", text_col="text_e")
+
+        st.markdown("### Entregadores ativos por dia")
+        df_diario["text_e_d"] = df_diario["entregadores"].map(lambda v: f"{int(v)}")
+        _plot_diario("entregadores", "Entregadores", f"Entregadores ativos — {mes_diario:02d}/{ano_diario}", text_series=df_diario["text_e_d"])
+
+    # --- Aderência (%)
+    elif tipo_grafico == "Aderência (%)":
+        st.markdown("### Aderência por mês")
+        grp = ("data", turno_col) if turno_col is not None else ("data",)
+        base_ad = calcular_aderencia(df_ano_ref.copy(), group_cols=grp)
+        base_ad["mes_ano"] = pd.to_datetime(base_ad["data"]).dt.strftime("%m/%Y")
+        ad_m = base_ad.groupby("mes_ano", as_index=False).agg(vagas=("vagas", "sum"), reg=("regulares_atuaram", "sum"))
+        ad_m["ader"] = (ad_m["reg"] / ad_m["vagas"] * 100.0).where(ad_m["vagas"] > 0, 0.0)
+        ad_m["text"] = ad_m["ader"].map(lambda v: f"{v:.1f}%")
+        fig = px.bar(
+            ad_m,
+            x="mes_ano",
+            y="ader",
+            text="text",
+            title="Aderência (%) por mês",
+            template="plotly_dark",
+            color_discrete_sequence=PRIMARY_COLOR,
         )
-        mensal = mensal.merge(ref, on="mes_ano", how="left")
-        mensal["pct"] = (mensal["valor"] / mensal["ref"] * 100).where(mensal["ref"] > 0, 0.0)
-        mensal["label"] = mensal.apply(lambda r: (f"{r['pct']:.1f}% ({int(r['valor'])})" if modo_taxa == "%" else f"{int(r['valor'])} ({r['pct']:.1f}%)"), axis=1)
-    else:
-        mensal["label"] = mensal["valor"].astype(str)
+        fig.update_traces(texttemplate="<b>%{text}</b>", textposition="outside", cliponaxis=False)
+        fig.update_layout(margin=dict(t=60, b=40, l=40, r=40), yaxis_title="Aderência (%)", xaxis_title="Mês/Ano")
+        st.plotly_chart(fig, use_container_width=True)
 
-    # Decide eixo Y no mensal (Quantidade vs %)
-    y_mensal = "valor"
-    titulo_mensal = titulo
-    label_mensal = label
-    if tipo_grafico in ("Corridas aceitas", "Corridas rejeitadas", "Corridas completadas") and modo_taxa == "%":
-        y_mensal = "pct"
-        if tipo_grafico == "Corridas aceitas":
-            titulo_mensal = "Taxa de aceite por mês"
-            label_mensal = "Taxa de aceite (%)"
-        elif tipo_grafico == "Corridas rejeitadas":
-            titulo_mensal = "Taxa de rejeição por mês"
-            label_mensal = "Taxa de rejeição (%)"
-        else:
-            titulo_mensal = "Taxa de conclusão por mês"
-            label_mensal = "Taxa de conclusão (%)"
-
-    fig = px.bar(
-        mensal,
-        x="mes_rotulo",
-        y=y_mensal,
-        text="label",
-        title=titulo_mensal,
-        labels={"mes_rotulo": "Mês/Ano", y_mensal: label_mensal},
-        template="plotly_dark",
-        color_discrete_sequence=PRIMARY_COLOR,
-    )
-    fig.update_traces(texttemplate="<b>%{text}</b>", textposition="outside")
-    fig.update_layout(margin=dict(t=60, b=30, l=40, r=40))
-    st.plotly_chart(fig, use_container_width=True)
-
-    # ---------- Por dia (mês SELECIONADO) — SÓ BARRAS ----------
-    por_dia_base = (
-        df_mes_ref.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-        .groupby("dia", as_index=False)[
-            [
-                "numero_de_corridas_ofertadas",
-                "numero_de_corridas_aceitas",
-                "numero_de_corridas_rejeitadas",
-                "numero_de_corridas_completadas",
-                "segundos_abs",
-                "pessoa_entregadora",
-            ]
-        ]
-        .agg({
-            "numero_de_corridas_ofertadas": "sum",
-            "numero_de_corridas_aceitas": "sum",
-            "numero_de_corridas_rejeitadas": "sum",
-            "numero_de_corridas_completadas": "sum",
-            "segundos_abs": "sum",
-            "pessoa_entregadora": "nunique",
-        })
-        .rename(columns={
-            "numero_de_corridas_ofertadas": "ofe",
-            "numero_de_corridas_aceitas": "ace",
-            "numero_de_corridas_rejeitadas": "rej",
-            "numero_de_corridas_completadas": "com",
-            "segundos_abs": "seg",
-            "pessoa_entregadora": "entregadores",
-        })
-        .sort_values("dia")
-    )
-
-    if por_dia_base.empty:
-        st.info("Sem dados no mês selecionado.")
-        _render_resumo_ano()
-        return
-
-    por_dia_base["horas"] = por_dia_base["seg"] / 3600.0
-    por_dia_base["acc_pct"] = (por_dia_base["ace"] / por_dia_base["ofe"] * 100).where(por_dia_base["ofe"] > 0, 0.0)
-    por_dia_base["rej_pct"] = (por_dia_base["rej"] / por_dia_base["ofe"] * 100).where(por_dia_base["ofe"] > 0, 0.0)
-    por_dia_base["comp_pct"] = (por_dia_base["com"] / por_dia_base["ace"] * 100).where(por_dia_base["ace"] > 0, 0.0)
-    por_dia_base["utr"] = (por_dia_base["ofe"] / por_dia_base["horas"]).where(por_dia_base["horas"] > 0, 0.0)
-
-    # Cores por semana (Seg–Dom) no diário
-    por_dia_base = _add_semana_cor_por_dia(por_dia_base, ano_diario, mes_diario)
-    marker_color = por_dia_base["cor"] if (colorir_diario_por_semana and "cor" in por_dia_base.columns) else PRIMARY_COLOR[0]
-
-    # Seleção de métrica (Quantidade vs %) no diário
-    if tipo_grafico == "Corridas ofertadas":
-        y_col = "ofe"
-        y_title = "Corridas ofertadas"
-        label_bar = por_dia_base.apply(lambda r: f"{int(r['ofe'])} ({r['utr']:.2f} UTR)", axis=1)
-
-    elif tipo_grafico == "Corridas aceitas":
-        if modo_taxa == "%":
-            y_col = "acc_pct"
-            y_title = "Taxa de aceite (%)"
-            label_bar = por_dia_base.apply(lambda r: f"{r['acc_pct']:.1f}% ({int(r['ace'])})", axis=1)
-        else:
-            y_col = "ace"
-            y_title = "Corridas aceitas"
-            label_bar = por_dia_base.apply(lambda r: f"{int(r['ace'])} ({r['acc_pct']:.1f}%)", axis=1)
-
-    elif tipo_grafico == "Corridas rejeitadas":
-        if modo_taxa == "%":
-            y_col = "rej_pct"
-            y_title = "Taxa de rejeição (%)"
-            label_bar = por_dia_base.apply(lambda r: f"{r['rej_pct']:.1f}% ({int(r['rej'])})", axis=1)
-        else:
-            y_col = "rej"
-            y_title = "Corridas rejeitadas"
-            label_bar = por_dia_base.apply(lambda r: f"{int(r['rej'])} ({r['rej_pct']:.1f}%)", axis=1)
-
-    else:  # "Corridas completadas"
-        if modo_taxa == "%":
-            y_col = "comp_pct"
-            y_title = "Taxa de conclusão (%)"
-            label_bar = por_dia_base.apply(lambda r: f"{r['comp_pct']:.1f}% ({int(r['com'])})", axis=1)
-        else:
-            y_col = "com"
-            y_title = "Corridas completadas"
-            label_bar = por_dia_base.apply(lambda r: f"{int(r['com'])} ({r['comp_pct']:.1f}%)", axis=1)
-
-    y_bar = por_dia_base[y_col]
-    fig2 = go.Figure()
-    fig2.add_bar(
-        x=por_dia_base["dia"],
-        y=y_bar,
-        text=label_bar,
-        textposition="outside",
-        name=y_title,
-        marker=dict(color=marker_color),
-    )
-    fig2.update_layout(
-        title=f"📊 {y_title} por dia ({mes_diario:02d}/{ano_diario})",
-        template="plotly_dark",
-        margin=dict(t=60, b=30, l=40, r=40),
-        xaxis_title="Dia",
-        yaxis_title=y_title,
-        xaxis=dict(tickmode="linear", dtick=1),  # dias 1,2,3...
-    )
-    st.plotly_chart(fig2, use_container_width=True)
-
-    
-
-    _render_resumo_ano()
-
-
+        st.markdown("### Aderência por dia")
+        base_ad_m = calcular_aderencia(df_mes_ref.copy(), group_cols=grp)
+        base_ad_m["dia"] = pd.to_datetime(base_ad_m["data"])
+        base_ad_m["text"] = base_ad_m["aderencia"].map(lambda v: f"{v:.1f}%")
+        fig2 = px.bar(
+            base_ad_m,
+            x=base_ad_m["dia"].dt.day,
+            y="aderencia",
+            text="text",
+            title=f"Aderência (%) — {mes_diario:02d}/{ano_diario}",
+            template="plotly_dark",
+            color_discrete_sequence=PRIMARY_COLOR,
+        )
+        fig2.update_traces(texttemplate="<b>%{text}</b>", textposition="outside", cliponaxis=False)
+        fig2.update_layout(
+            margin=dict(t=60, b=40, l=40, r=40),
+            xaxis_title="Dia",
+            yaxis_title="Aderência (%)",
+            xaxis=dict(tickmode="linear", dtick=1),
+        )
+        st.plotly_chart(fig2, use_container_width=True)
