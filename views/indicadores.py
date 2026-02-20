@@ -232,9 +232,26 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         help="Cada bloco de segunda a domingo recebe uma cor diferente. Ajuda a enxergar a semana no gráfico diário.",
     )
 
+    cmp_incluir_dias_fora_mes = st.checkbox(
+        "📅 Comparativo semanal: incluir dias fora do mês (pra completar Seg–Dom)",
+        value=True,
+        help=("Se a semana começar no mês anterior (ou terminar no próximo), "
+              "isso puxa esses dias SÓ pro comparativo semanal / totais por semana. "
+              "Os gráficos diários/mensais do mês continuam normais."),
+    )
+
+
     # Slices de tempo
+    month_start = pd.Timestamp(int(ano_diario), int(mes_diario), 1)
+    month_end = month_start + pd.offsets.MonthEnd(1)
+    cmp_start = month_start - pd.Timedelta(days=6)
+    cmp_end = month_end + pd.Timedelta(days=6)
+
     df_mes_ref = df[(df["mes"] == mes_diario) & (df["ano"] == ano_diario)].copy()
     df_ano_ref = df[df["ano"] == ano_diario].copy()
+
+    # Base estendida só pra comparativos semanais (pra completar Seg–Dom quando a semana cruza mês)
+    df_cmp_ref = df[(df["data"] >= cmp_start) & (df["data"] <= cmp_end)].copy()
 
     # ---------------------------------------------------------
     # Helper: resumo anual (do ano selecionado no seletor)
@@ -633,6 +650,83 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     por_dia_base = _add_semana_cor_por_dia(por_dia_base, ano_diario, mes_diario)
     marker_color = por_dia_base["cor"] if (colorir_diario_por_semana and "cor" in por_dia_base.columns) else PRIMARY_COLOR[0]
 
+    # ------------------------------
+    # Bases para comparativos semanais (semana completa Seg–Dom)
+    # ------------------------------
+    df_semana_scope = (df_cmp_ref if cmp_incluir_dias_fora_mes else df_mes_ref).copy()
+
+    # Se faltar alguma coluna (dataset diferente), evita quebrar a tela
+    for _c in [
+        "numero_de_corridas_ofertadas",
+        "numero_de_corridas_aceitas",
+        "numero_de_corridas_rejeitadas",
+        "numero_de_corridas_completadas",
+        "segundos_abs",
+    ]:
+        if _c not in df_semana_scope.columns:
+            df_semana_scope[_c] = 0
+
+    if "pessoa_entregadora" not in df_semana_scope.columns:
+        df_semana_scope["pessoa_entregadora"] = pd.NA
+
+    tmp_day = df_semana_scope.dropna(subset=["data"]).copy()
+    tmp_day["date"] = pd.to_datetime(tmp_day["data"]).dt.normalize()
+    tmp_day["weekday"] = tmp_day["date"].dt.weekday
+    tmp_day["weekday_label"] = tmp_day["weekday"].map(WEEKDAY_LABELS)
+    tmp_day["week_start"] = tmp_day["date"] - pd.to_timedelta(tmp_day["weekday"], unit="D")
+    tmp_day["week_end"] = tmp_day["week_start"] + pd.Timedelta(days=6)
+
+    # Mantém só semanas que encostam no mês selecionado
+    tmp_day = tmp_day[(tmp_day["week_end"] >= month_start) & (tmp_day["week_start"] <= month_end)].copy()
+
+    # Base (week_start + dia da semana) pro comparativo semanal Seg..Dom
+    por_data_cmp = (
+        tmp_day.groupby(["week_start", "weekday_label"], as_index=False)
+        .agg(
+            ofe=("numero_de_corridas_ofertadas", "sum"),
+            ace=("numero_de_corridas_aceitas", "sum"),
+            rej=("numero_de_corridas_rejeitadas", "sum"),
+            com=("numero_de_corridas_completadas", "sum"),
+            seg=("segundos_abs", "sum"),
+            entregadores=("pessoa_entregadora", "nunique"),
+        )
+    )
+    por_data_cmp["horas"] = por_data_cmp["seg"] / 3600.0
+    por_data_cmp["utr"] = (por_data_cmp["ofe"] / por_data_cmp["horas"]).where(por_data_cmp["horas"] > 0, 0.0)
+    por_data_cmp["acc_pct"] = (por_data_cmp["ace"] / por_data_cmp["ofe"] * 100).where(por_data_cmp["ofe"] > 0, 0.0)
+    por_data_cmp["rej_pct"] = (por_data_cmp["rej"] / por_data_cmp["ofe"] * 100).where(por_data_cmp["ofe"] > 0, 0.0)
+    por_data_cmp["comp_pct"] = (por_data_cmp["com"] / por_data_cmp["ace"] * 100).where(por_data_cmp["ace"] > 0, 0.0)
+
+    # Totais por semana (sem dia-a-dia) — Semana 1, Semana 2, ...
+    por_semana = (
+        tmp_day.groupby("week_start", as_index=False)
+        .agg(
+            ofe=("numero_de_corridas_ofertadas", "sum"),
+            ace=("numero_de_corridas_aceitas", "sum"),
+            rej=("numero_de_corridas_rejeitadas", "sum"),
+            com=("numero_de_corridas_completadas", "sum"),
+            seg=("segundos_abs", "sum"),
+            entregadores=("pessoa_entregadora", "nunique"),
+        )
+        .sort_values("week_start")
+        .reset_index(drop=True)
+    )
+    por_semana["horas"] = por_semana["seg"] / 3600.0
+    por_semana["utr"] = (por_semana["ofe"] / por_semana["horas"]).where(por_semana["horas"] > 0, 0.0)
+    por_semana["acc_pct"] = (por_semana["ace"] / por_semana["ofe"] * 100).where(por_semana["ofe"] > 0, 0.0)
+    por_semana["rej_pct"] = (por_semana["rej"] / por_semana["ofe"] * 100).where(por_semana["ofe"] > 0, 0.0)
+    por_semana["comp_pct"] = (por_semana["com"] / por_semana["ace"] * 100).where(por_semana["ace"] > 0, 0.0)
+
+    por_semana["semana_n"] = por_semana.index + 1
+    por_semana["semana_lbl"] = por_semana.apply(
+        lambda r: (
+            f"Semana {int(r['semana_n'])}<br>"
+            f"{pd.to_datetime(r['week_start']).strftime('%d/%m')}–{(pd.to_datetime(r['week_start']) + pd.Timedelta(days=6)).strftime('%d/%m')}"
+        ),
+        axis=1,
+    )
+
+
     # Seleção de métrica (Quantidade vs %) no diário
     if tipo_grafico == "Corridas ofertadas":
         y_col = "ofe"
@@ -689,9 +783,92 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     )
     st.plotly_chart(fig2, use_container_width=True)
 
+    # 🧱 Totais por semana (sem dia a dia): Semana 1, Semana 2, ...
+    with st.expander("🧱 Totais por semana (Semana 1, 2, 3...)", expanded=False):
+        if por_semana is None or por_semana.empty:
+            st.info("Sem dados suficientes pra montar totais por semana.")
+        else:
+            if tipo_grafico == "Corridas ofertadas":
+                wk_metric = st.radio(
+                    "Métrica do semanal",
+                    ["Corridas", "UTR"],
+                    index=0,
+                    horizontal=True,
+                    key=f"wk_metric_{mes_diario}_{ano_diario}",
+                )
+                if wk_metric == "UTR":
+                    y_wk = "utr"
+                    y_wk_title = "UTR"
+                    text_wk = por_semana.apply(lambda r: f"{r['utr']:.2f} ({int(r['ofe'])} corr.)", axis=1)
+                else:
+                    y_wk = "ofe"
+                    y_wk_title = "Corridas ofertadas"
+                    text_wk = por_semana.apply(lambda r: f"{int(r['ofe'])} ({r['utr']:.2f} UTR)", axis=1)
+
+            elif tipo_grafico == "Corridas aceitas":
+                if modo_taxa == "%":
+                    y_wk = "acc_pct"
+                    y_wk_title = "Taxa de aceite (%)"
+                    text_wk = por_semana.apply(lambda r: f"{r['acc_pct']:.1f}% ({int(r['ace'])})", axis=1)
+                else:
+                    y_wk = "ace"
+                    y_wk_title = "Corridas aceitas"
+                    text_wk = por_semana.apply(lambda r: f"{int(r['ace'])} ({r['acc_pct']:.1f}%)", axis=1)
+
+            elif tipo_grafico == "Corridas rejeitadas":
+                if modo_taxa == "%":
+                    y_wk = "rej_pct"
+                    y_wk_title = "Taxa de rejeição (%)"
+                    text_wk = por_semana.apply(lambda r: f"{r['rej_pct']:.1f}% ({int(r['rej'])})", axis=1)
+                else:
+                    y_wk = "rej"
+                    y_wk_title = "Corridas rejeitadas"
+                    text_wk = por_semana.apply(lambda r: f"{int(r['rej'])} ({r['rej_pct']:.1f}%)", axis=1)
+
+            elif tipo_grafico == "Corridas completadas":
+                if modo_taxa == "%":
+                    y_wk = "comp_pct"
+                    y_wk_title = "Taxa de conclusão (%)"
+                    text_wk = por_semana.apply(lambda r: f"{r['comp_pct']:.1f}% ({int(r['com'])})", axis=1)
+                else:
+                    y_wk = "com"
+                    y_wk_title = "Corridas completadas"
+                    text_wk = por_semana.apply(lambda r: f"{int(r['com'])} ({r['comp_pct']:.1f}%)", axis=1)
+
+            elif tipo_grafico == "Horas realizadas":
+                y_wk = "horas"
+                y_wk_title = "Horas"
+                text_wk = por_semana["horas"].map(lambda v: f"{v:.1f}h")
+
+            elif tipo_grafico == "Entregadores ativos":
+                y_wk = "entregadores"
+                y_wk_title = "Entregadores"
+                text_wk = por_semana["entregadores"].map(lambda v: f"{int(v)}")
+
+            else:
+                y_wk = None
+                st.info("Totais por semana não estão habilitados pra esse indicador (por enquanto).")
+
+            if y_wk is not None:
+                fig_wk = px.bar(
+                    por_semana,
+                    x="semana_lbl",
+                    y=y_wk,
+                    text=text_wk,
+                    title=f"Totais por semana (Seg–Dom) — {mes_diario:02d}/{ano_diario}",
+                    labels={"semana_lbl": "Semana (Seg–Dom)", y_wk: y_wk_title},
+                    template="plotly_dark",
+                    color_discrete_sequence=PRIMARY_COLOR,
+                )
+                fig_wk.update_traces(texttemplate="<b>%{text}</b>", textposition="outside", cliponaxis=False)
+                fig_wk.update_layout(margin=dict(t=60, b=40, l=40, r=40))
+                st.plotly_chart(fig_wk, use_container_width=True)
+
     # 🔎 Comparar várias semanas (Seg–Dom) em um gráfico (linhas)
     with st.expander("📅 Comparar semanas (Seg–Dom)", expanded=False):
-        if tipo_grafico == "Corridas ofertadas":
+        if por_data_cmp is None or por_data_cmp.empty:
+            st.info("Sem dados suficientes pra comparar semanas.")
+        elif tipo_grafico == "Corridas ofertadas":
             cmp_metric = st.radio(
                 "Métrica da comparação",
                 ["Corridas", "UTR"],
@@ -702,10 +879,10 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             y_cmp = "ofe" if cmp_metric == "Corridas" else "utr"
             yaxis = "Corridas ofertadas" if cmp_metric == "Corridas" else "UTR"
             title_cmp = f"Comparação semanal (Seg–Dom) — {yaxis}"
-            _render_comparar_semanas(por_dia_base, y_cmp, yaxis, title_cmp, key_prefix=f"cmp_ofe_{mes_diario}_{ano_diario}")
+            _render_comparar_semanas(por_data_cmp, y_cmp, yaxis, title_cmp, key_prefix=f"cmp_ofe_{mes_diario}_{ano_diario}")
         else:
             title_cmp = f"Comparação semanal (Seg–Dom) — {y_title}"
-            _render_comparar_semanas(por_dia_base, y_col, y_title, title_cmp, key_prefix=f"cmp_{y_col}_{mes_diario}_{ano_diario}")
-
+            _render_comparar_semanas(por_data_cmp, y_col, y_title, title_cmp, key_prefix=f"cmp_{y_col}_{mes_diario}_{ano_diario}")
 
     _render_resumo_ano()
+
