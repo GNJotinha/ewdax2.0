@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
+import plotly.graph_objects as g
 
 from relatorios import utr_por_entregador_turno
 from shared import sub_options_with_livre, apply_sub_filter  # não mexe no shared
