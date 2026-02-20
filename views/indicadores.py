@@ -9,6 +9,26 @@ from utils import calcular_aderencia
 PRIMARY_COLOR = ["#00BFFF"]  # paleta padrão
 
 
+def _clean_sub_praca_inplace(df: pd.DataFrame) -> pd.DataFrame:
+    """Evita o bug do filtro com 2 'LIVRE': normaliza ''/espaço/'null' etc pra NA."""
+    if "sub_praca" not in df.columns:
+        return df
+    s = df["sub_praca"].astype("object")
+    s = s.map(lambda x: x.strip() if isinstance(x, str) else x)
+    s = s.replace("", pd.NA)
+    s = s.map(lambda x: pd.NA if isinstance(x, str) and x.lower() in ("none", "null", "nan", "na") else x)
+    df["sub_praca"] = s
+    return df
+
+
+def _colors_by_week(dates: pd.Series, c1: str = "#00BFFF", c2: str = "#2B2B2B") -> list[str]:
+    """Alterna cores por semana (Seg-Dom) usando o início da semana (segunda)."""
+    d = pd.to_datetime(dates, errors="coerce")
+    week_start = d - pd.to_timedelta(d.dt.weekday.fillna(0).astype(int), unit="D")
+    codes = pd.factorize(week_start)[0]
+    return [c1 if (i % 2 == 0) else c2 for i in codes]
+
+
 def _ensure_mes_ano(df: pd.DataFrame) -> pd.DataFrame:
     """Garante a coluna 'mes_ano' (timestamp do 1º dia do mês)."""
     if "mes_ano" in df.columns:
@@ -62,9 +82,23 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             help="Como calcular a UTR exibida no gráfico MENSAL de ofertadas.",
         )
 
+    # 👇 Seletor de modo (Quantidade vs %) para aceitas/rejeitadas/completadas
+    pct_modo = None
+    if tipo_grafico in ("Corridas aceitas", "Corridas rejeitadas", "Corridas completadas"):
+        pct_modo = st.radio(
+            "Modo do gráfico",
+            ["Quantidade", "%"],
+            index=0,
+            horizontal=True,
+            help="Quantidade mantém o total e mostra a taxa entre parênteses. % plota direto a taxa.",
+        )
+
     # Garante mes_ano
     df = _ensure_mes_ano(df)
     df["data"] = pd.to_datetime(df.get("data_do_periodo", df.get("data")), errors="coerce")
+
+    # 🔧 corrige sub_praca vindo como string vazia/espacos (evita 2 'LIVRE')
+    df = _clean_sub_praca_inplace(df)
 
     # ---------------------------------------------------------
     # Filtros (subpraça), turno e entregador
@@ -206,13 +240,19 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             )
             por_dia["aderencia_pct"] = por_dia.apply(lambda r: (r["regulares"] / r["vagas"] * 100.0) if r["vagas"] else 0.0, axis=1)
 
+            por_dia["data_ref"] = pd.to_datetime(
+                dict(year=ano_diario, month=mes_diario, day=por_dia["dia"]),
+                errors="coerce",
+            )
+            cores_semana = _colors_by_week(por_dia["data_ref"], c1=PRIMARY_COLOR[0], c2="#2B2B2B")
+
             fig_d = go.Figure()
             fig_d.add_bar(
                 x=por_dia["dia"],
                 y=por_dia["aderencia_pct"],
                 text=por_dia["aderencia_pct"].map(lambda v: f"{v:.1f}%"),
                 textposition="outside",
-                marker=dict(color=PRIMARY_COLOR[0]),
+                marker=dict(color=cores_semana),
                 name="Aderência"
             )
             fig_d.update_layout(
@@ -266,6 +306,12 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 .assign(horas=lambda d: d["segundos_abs"] / 3600.0)
                 .sort_values("dia")
             )
+
+            por_dia["data_ref"] = pd.to_datetime(
+                dict(year=ano_diario, month=mes_diario, day=por_dia["dia"]),
+                errors="coerce",
+            )
+            cores_semana = _colors_by_week(por_dia["data_ref"], c1=PRIMARY_COLOR[0], c2="#2B2B2B")
             # 🔧 só BARRAS, eixo X 1..31
             fig_d = go.Figure()
             fig_d.add_bar(
@@ -273,7 +319,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 y=por_dia["horas"],
                 text=por_dia["horas"].map(lambda v: f"{v:.1f}h"),
                 textposition="outside",
-                marker=dict(color=PRIMARY_COLOR[0]),
+                marker=dict(color=cores_semana),
                 name="Horas"
             )
             fig_d.update_layout(
@@ -322,6 +368,12 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 .rename(columns={"pessoa_entregadora": "entregadores"})
                 .sort_values("dia")
             )
+
+            por_dia["data_ref"] = pd.to_datetime(
+                dict(year=ano_diario, month=mes_diario, day=por_dia["dia"]),
+                errors="coerce",
+            )
+            cores_semana = _colors_by_week(por_dia["data_ref"], c1=PRIMARY_COLOR[0], c2="#2B2B2B")
             # 🔧 só BARRAS, eixo X 1..31
             fig2 = go.Figure()
             fig2.add_bar(
@@ -329,7 +381,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 y=por_dia["entregadores"],
                 text=por_dia["entregadores"].astype(int).astype(str),
                 textposition="outside",
-                marker=dict(color=PRIMARY_COLOR[0]),
+                marker=dict(color=cores_semana),
                 name="Entregadores"
             )
             fig2.update_layout(
@@ -420,13 +472,25 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     else:
         mensal["label"] = mensal["valor"].astype(str)
 
+    # Se o modo for %, plota a taxa (mantém a quantidade no texto)
+    y_mensal = "valor"
+    label_mensal = label
+    if pct_modo == "%" and tipo_grafico in ("Corridas aceitas", "Corridas rejeitadas", "Corridas completadas"):
+        y_mensal = "pct"
+        label_mensal = f"{label} (%)"
+        mensal["label"] = mensal.apply(lambda r: f"{r['pct']:.1f}% ({int(r['valor'])})", axis=1)
+
+    titulo_plot = titulo
+    if pct_modo == "%" and tipo_grafico in ("Corridas aceitas", "Corridas rejeitadas", "Corridas completadas"):
+        titulo_plot = titulo.replace("por mês", "(%) por mês") if "por mês" in titulo else f"{titulo} (%)"
+
     fig = px.bar(
         mensal,
         x="mes_rotulo",
-        y="valor",
+        y=y_mensal,
         text="label",
-        title=titulo,
-        labels={"mes_rotulo": "Mês/Ano", "valor": label},
+        title=titulo_plot,
+        labels={"mes_rotulo": "Mês/Ano", y_mensal: label_mensal},
         template="plotly_dark",
         color_discrete_sequence=PRIMARY_COLOR,
     )
@@ -477,23 +541,45 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     por_dia_base["comp_pct"] = (por_dia_base["com"] / por_dia_base["ace"] * 100).where(por_dia_base["ace"] > 0, 0.0)
     por_dia_base["utr"] = (por_dia_base["ofe"] / por_dia_base["horas"]).where(por_dia_base["horas"] > 0, 0.0)
 
+    # Cores alternadas por semana (Seg-Dom)
+    por_dia_base["data_ref"] = pd.to_datetime(
+        dict(year=ano_diario, month=mes_diario, day=por_dia_base["dia"]),
+        errors="coerce",
+    )
+    cores_semana = _colors_by_week(por_dia_base["data_ref"], c1=PRIMARY_COLOR[0], c2="#2B2B2B")
+
     # Seleção de métrica de rótulo nas barras (sem linha)
     if tipo_grafico == "Corridas ofertadas":
         y_bar = por_dia_base["ofe"]
         label_bar = por_dia_base.apply(lambda r: f"{int(r['ofe'])} ({r['utr']:.2f} UTR)", axis=1)
         y_title = "Corridas"
     elif tipo_grafico == "Corridas aceitas":
-        y_bar = por_dia_base["ace"]
-        label_bar = por_dia_base.apply(lambda r: f"{int(r['ace'])} ({r['acc_pct']:.1f}%)", axis=1)
-        y_title = "Corridas Aceitas"
+        if pct_modo == "%":
+            y_bar = por_dia_base["acc_pct"]
+            label_bar = por_dia_base.apply(lambda r: f"{r['acc_pct']:.1f}% ({int(r['ace'])})", axis=1)
+            y_title = "Aceitas (%)"
+        else:
+            y_bar = por_dia_base["ace"]
+            label_bar = por_dia_base.apply(lambda r: f"{int(r['ace'])} ({r['acc_pct']:.1f}%)", axis=1)
+            y_title = "Corridas Aceitas"
     elif tipo_grafico == "Corridas rejeitadas":
-        y_bar = por_dia_base["rej"]
-        label_bar = por_dia_base.apply(lambda r: f"{int(r['rej'])} ({r['rej_pct']:.1f}%)", axis=1)
-        y_title = "Corridas Rejeitadas"
+        if pct_modo == "%":
+            y_bar = por_dia_base["rej_pct"]
+            label_bar = por_dia_base.apply(lambda r: f"{r['rej_pct']:.1f}% ({int(r['rej'])})", axis=1)
+            y_title = "Rejeitadas (%)"
+        else:
+            y_bar = por_dia_base["rej"]
+            label_bar = por_dia_base.apply(lambda r: f"{int(r['rej'])} ({r['rej_pct']:.1f}%)", axis=1)
+            y_title = "Corridas Rejeitadas"
     else:  # "Corridas completadas"
-        y_bar = por_dia_base["com"]
-        label_bar = por_dia_base.apply(lambda r: f"{int(r['com'])} ({r['comp_pct']:.1f}%)", axis=1)
-        y_title = "Corridas Completadas"
+        if pct_modo == "%":
+            y_bar = por_dia_base["comp_pct"]
+            label_bar = por_dia_base.apply(lambda r: f"{r['comp_pct']:.1f}% ({int(r['com'])})", axis=1)
+            y_title = "Completadas (%)"
+        else:
+            y_bar = por_dia_base["com"]
+            label_bar = por_dia_base.apply(lambda r: f"{int(r['com'])} ({r['comp_pct']:.1f}%)", axis=1)
+            y_title = "Corridas Completadas"
 
     fig2 = go.Figure()
     fig2.add_bar(
@@ -502,7 +588,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         text=label_bar,
         textposition="outside",
         name=y_title,
-        marker=dict(color=PRIMARY_COLOR[0]),
+        marker=dict(color=cores_semana),
     )
     fig2.update_layout(
         title=f"📊 {y_title} por dia ({mes_diario:02d}/{ano_diario})",
