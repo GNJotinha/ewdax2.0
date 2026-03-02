@@ -17,7 +17,7 @@ SUB_IDS_SP = [
     "695dfbe5-bd3a-4e2b-a654-8b8af0eeba8b",  # JABAQUARA E SANTO AMARO - SP
     "fe841dac-692b-4855-aa0b-383a17054038",  # CIDADE DAS FLORES
     "fa9edb08-29d7-494b-80ba-8c2af20f2ceb",  # MOOCA
-    "4e14aa79-7fdb-4299-94ba-b35e12128288",  # JARDINS (MINI BTU FD)
+    "4e14aa79-7fdb-4299-94ba-b35e12128288",  # JARDINS (MINI BTU FD
 ]
 
 _UUID_RE = re.compile(
