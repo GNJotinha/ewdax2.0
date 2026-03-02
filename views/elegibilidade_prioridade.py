@@ -42,23 +42,7 @@ def _decode_upload_to_text(uploaded) -> str:
 
 
 def _parse_driver_ids_from_text(txt: str) -> dict:
-    """Parseia TXT com 1 id por linha.
 
-    Regras:
-      - ignora linha vazia
-      - ignora comentários: linha começando com #
-      - pega só o primeiro token da linha (antes de espaço)
-      - normaliza pra lowercase
-      - valida UUID
-      - dedup preservando ordem
-    Retorna:
-      {
-        "valid": [...],
-        "invalid": [...],
-        "duplicates": int,
-        "total_tokens": int
-      }
-    """
     if not txt:
         return {"valid": [], "invalid": [], "duplicates": 0, "total_tokens": 0}
 
