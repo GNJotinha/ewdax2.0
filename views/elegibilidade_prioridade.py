@@ -4,10 +4,6 @@ import re
 import pandas as pd
 import streamlit as st
 
-
-# =========================
-# IDs fixos (SP)
-# =========================
 REGION_ID_SP = "3841c245-fac1-40a6-8b8f-8d6876447a6d"
 
 SUB_IDS_SP = [
@@ -94,7 +90,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         pasted = st.text_area(
             "Cole aqui (1 id por linha)",
             height=160,
-            placeholder="3841c245-fac1-40a6-8b8f-8d6876447a6d\n...",
         )
 
     txt = _decode_upload_to_text(uploaded) if uploaded is not None else (pasted or "")
