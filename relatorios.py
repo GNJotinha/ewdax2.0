@@ -1,15 +1,8 @@
 # relatorios.py
 
-from utils import normalizar, tempo_para_segundos, calcular_tempo_online, mask_turno_valido
+from utils import normalizar, tempo_para_segundos, calcular_tempo_online
 from datetime import datetime, timedelta, date
 import pandas as pd
-
-
-def _safe_int_sum(df: pd.DataFrame, col: str) -> int:
-    """Soma segura de coluna numérica; retorna 0 se a coluna não existir."""
-    if df is None or df.empty or col not in df.columns:
-        return 0
-    return int(pd.to_numeric(df[col], errors="coerce").fillna(0).sum())
 
 
 # =========================
@@ -20,11 +13,18 @@ def get_entregadores(df):
     return [""] + sorted(df["pessoa_entregadora"].dropna().unique().tolist())
 
 
+def _safe_int_sum(df, col):
+    if col not in df.columns:
+        return 0
+    return int(pd.to_numeric(df[col], errors="coerce").fillna(0).sum())
+
+
 def gerar_texto(
     nome, periodo, dias_esperados, presencas, faltas, tempo_pct,
     turnos, ofertadas, aceitas, rejeitadas, completas, aceitos_concluidos,
     tx_aceitas, tx_rejeitadas, tx_completas
 ):
+    # ✅ Sem emoji + texto pronto limpo
     return f"""{nome} – {periodo}
 
 Dias esperados: {dias_esperados}
@@ -39,7 +39,7 @@ Corridas:
 - Ofertadas: {ofertadas}
 - Aceitas: {aceitas} ({tx_aceitas}%)
 - Rejeitadas: {rejeitadas} ({tx_rejeitadas}%)
-- Completas: {completas} ({aceitos_concluidos}) ({tx_completas}%)
+- Completas: {completas} ({aceitos_concluidos}) • ({tx_completas}%)
 """
 
 
@@ -52,7 +52,6 @@ def gerar_dados(nome, mes, ano, df):
         return None
 
     tempo_pct = calcular_tempo_online(dados)
-    turnos = int(mask_turno_valido(dados).sum())
 
     presencas = dados["data"].nunique()
     if mes and ano:
@@ -66,15 +65,16 @@ def gerar_dados(nome, mes, ano, df):
         dias_esperados = (max_data - min_data).days + 1
         faltas = dias_esperados - presencas
 
-    ofertadas = _safe_int_sum(dados, "numero_de_corridas_ofertadas")
-    aceitas = _safe_int_sum(dados, "numero_de_corridas_aceitas")
-    rejeitadas = _safe_int_sum(dados, "numero_de_corridas_rejeitadas")
-    completas = _safe_int_sum(dados, "numero_de_corridas_completadas")
+    turnos = len(dados)
+    ofertadas = int(dados["numero_de_corridas_ofertadas"].sum())
+    aceitas   = int(dados["numero_de_corridas_aceitas"].sum())
+    rejeitadas= int(dados["numero_de_corridas_rejeitadas"].sum())
+    completas = int(dados["numero_de_corridas_completadas"].sum())
     aceitos_concluidos = _safe_int_sum(dados, "numero_de_pedidos_aceitos_e_concluidos")
 
-    tx_aceitas = round(aceitas / ofertadas * 100, 1) if ofertadas else 0.0
+    tx_aceitas    = round(aceitas    / ofertadas * 100, 1) if ofertadas else 0.0
     tx_rejeitadas = round(rejeitadas / ofertadas * 100, 1) if ofertadas else 0.0
-    tx_completas = round(completas / aceitas * 100, 1) if aceitas else 0.0
+    tx_completas  = round(completas  / aceitas   * 100, 1) if aceitas   else 0.0
 
     if mes and ano:
         meses_pt = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -93,7 +93,9 @@ def gerar_dados(nome, mes, ano, df):
 
 
 def gerar_simplicado(nome, mes, ano, df):
-    """Gera bloco simplificado para WhatsApp, sem emoji."""
+    """
+    Gera bloco simplificado para WhatsApp, sem emoji.
+    """
     nome_norm = normalizar(nome)
     dados = df[
         (df["pessoa_entregadora_normalizado"] == nome_norm)
@@ -111,17 +113,17 @@ def gerar_simplicado(nome, mes, ano, df):
         return f"*{mes_nome}*\nSem dados disponíveis para esse período."
 
     tempo_pct = calcular_tempo_online(dados)
-    turnos = int(mask_turno_valido(dados).sum())
+    turnos = len(dados)
 
-    ofertadas = _safe_int_sum(dados, "numero_de_corridas_ofertadas")
-    aceitas = _safe_int_sum(dados, "numero_de_corridas_aceitas")
-    rejeitadas = _safe_int_sum(dados, "numero_de_corridas_rejeitadas")
-    completas = _safe_int_sum(dados, "numero_de_corridas_completadas")
+    ofertadas  = int(dados["numero_de_corridas_ofertadas"].sum())
+    aceitas    = int(dados["numero_de_corridas_aceitas"].sum())
+    rejeitadas = int(dados["numero_de_corridas_rejeitadas"].sum())
+    completas  = int(dados["numero_de_corridas_completadas"].sum())
     aceitos_concluidos = _safe_int_sum(dados, "numero_de_pedidos_aceitos_e_concluidos")
 
-    tx_aceitas = round(aceitas / ofertadas * 100, 1) if ofertadas else 0.0
+    tx_aceitas    = round(aceitas    / ofertadas * 100, 1) if ofertadas else 0.0
     tx_rejeitadas = round(rejeitadas / ofertadas * 100, 1) if ofertadas else 0.0
-    tx_completas = round(completas / aceitas * 100, 1) if aceitas else 0.0
+    tx_completas  = round(completas  / aceitas   * 100, 1) if aceitas   else 0.0
 
     bloco = (
         f"*{mes_nome}*\n"
@@ -130,9 +132,10 @@ def gerar_simplicado(nome, mes, ano, df):
         f"* Ofertadas: {ofertadas}\n"
         f"* Aceitas: {aceitas} ({tx_aceitas}%)\n"
         f"* Rejeitadas: {rejeitadas} ({tx_rejeitadas}%)\n"
-        f"* Completas: {completas} ({aceitos_concluidos}) ({tx_completas}%)"
+        f"* Completas: {completas} ({aceitos_concluidos}) • ({tx_completas}%)"
     )
     return bloco
+
 
 def gerar_alertas_de_faltas(df):
     hoje = datetime.now().date()
