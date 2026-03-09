@@ -50,73 +50,30 @@ def tempo_para_segundos(t):
 
 
 # ---------------------------------------------------------
-# Regras de turno válido + tempo online
+# Cálculo de tempo online (%)
 # ---------------------------------------------------------
-TURNO_VALIDO_MIN_SEG = 9 * 60 + 59  # 00:09:59
-
-
-def _numeric_series_from_col(df: pd.DataFrame, col: str, default: float = 0.0) -> pd.Series:
-    """Retorna uma Series numérica mesmo quando a coluna não existe."""
-    if df is None or df.empty:
-        return pd.Series(dtype=float)
-    if col in df.columns:
-        return pd.to_numeric(df[col], errors="coerce").fillna(default)
-    return pd.Series([default] * len(df), index=df.index, dtype=float)
-
-
-def _segundos_base_turno(df: pd.DataFrame) -> pd.Series:
-    """Base única de segundos pra validar turno em qualquer tela."""
-    if df is None or df.empty:
-        return pd.Series(dtype=float)
-
-    if "segundos_abs_raw" in df.columns:
-        secs = pd.to_numeric(df["segundos_abs_raw"], errors="coerce").fillna(0)
-    elif "segundos_abs" in df.columns:
-        secs = pd.to_numeric(df["segundos_abs"], errors="coerce").fillna(0)
-    elif "tempo_disponivel_absoluto" in df.columns:
-        secs = df["tempo_disponivel_absoluto"].apply(tempo_para_segundos)
-        secs = pd.to_numeric(secs, errors="coerce").fillna(0)
-    else:
-        secs = pd.Series([0] * len(df), index=df.index, dtype=float)
-
-    return secs
-
-
-def mask_turno_valido(df: pd.DataFrame, min_seg: int = TURNO_VALIDO_MIN_SEG) -> pd.Series:
-    """
-    True quando a linha deve contar como turno válido.
-
-    Regras:
-      - ignora a sentinela -10:00 (-600)
-      - exige absoluto >= 00:09:59 (599s)
-    """
-    secs = _segundos_base_turno(df)
-    if secs.empty and (df is None or getattr(df, "empty", True)):
-        return pd.Series(dtype=bool)
-    return (secs != -600) & (secs >= float(min_seg))
-
-
 def calcular_tempo_online(df_filtrado: pd.DataFrame) -> float:
     """
     Tempo online = média de 'tempo_disponivel_escalado' em %.
 
     Regras:
-      - ignora sentinela -10:00 e também qualquer linha com absoluto < 00:09:59
-      - auto-escalona a origem:
+      - Ignora apenas linhas com -10:00 (segundos_abs_raw == -600).
+      - Auto-escalona a origem:
           * mediana <= 1   -> assume 0–1      (multiplica por 100)
           * <= 100         -> assume 0–100    (usa como está)
           * > 100          -> assume 0–10000  (divide por 100)
-      - clip final em [0, 100] e retorna com 1 casa
+      - Clip final em [0, 100] e retorna com 1 casa.
     """
     if df_filtrado is None or df_filtrado.empty:
         return 0.0
 
     d = df_filtrado.copy()
-    d = d.loc[mask_turno_valido(d)]
-    if d.empty:
-        return 0.0
 
-    esc = _numeric_series_from_col(d, "tempo_disponivel_escalado").dropna()
+    # ignora -10:00 no cálculo do online
+    if "segundos_abs_raw" in d.columns:
+        d = d[d["segundos_abs_raw"] != -600]
+
+    esc = pd.to_numeric(d.get("tempo_disponivel_escalado"), errors="coerce").dropna()
     if esc.empty:
         return 0.0
 
@@ -137,7 +94,40 @@ def calcular_tempo_online(df_filtrado: pd.DataFrame) -> float:
 # ---------------------------------------------------------
 # Aderência (REGULAR vs vagas)
 # ---------------------------------------------------------
+TURNO_VALIDO_MIN_SEG = 10 * 60  # 00:10:00
+
+
 def entregador_key(df: pd.DataFrame) -> pd.Series:
+    """Alias público da chave única do entregador."""
+    return _entregador_key(df)
+
+
+def mask_entregador_ativo(df: pd.DataFrame, min_seg: int = 9 * 60 + 59) -> pd.Series:
+    """Regra de entregador ativo por linha.
+
+    Entra como ativo quando:
+      - fez pelo menos 1 corrida completada; OU
+      - não teve corrida completada, mas ficou >= 00:09:59 no absoluto.
+    """
+    if df is None or df.empty:
+        return pd.Series([], index=getattr(df, "index", None), dtype=bool)
+
+    com = pd.to_numeric(df.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0)
+
+    if "segundos_abs_raw" in df.columns:
+        secs = pd.to_numeric(df.get("segundos_abs_raw"), errors="coerce").fillna(0)
+    elif "segundos_abs" in df.columns:
+        secs = pd.to_numeric(df.get("segundos_abs"), errors="coerce").fillna(0)
+    elif "tempo_disponivel_absoluto" in df.columns:
+        secs = pd.to_numeric(df["tempo_disponivel_absoluto"].apply(tempo_para_segundos), errors="coerce").fillna(0)
+    else:
+        secs = pd.Series([0] * len(df), index=df.index, dtype=float)
+
+    turno_ok = (secs != -600) & (secs >= float(min_seg))
+    return (com > 0) | turno_ok
+
+
+def _entregador_key(df: pd.DataFrame) -> pd.Series:
     """
     Chave única do entregador (anti-duplicidade).
     Prioridade:
@@ -161,8 +151,9 @@ def entregador_key(df: pd.DataFrame) -> pd.Series:
     return pd.Series([""] * len(df), index=df.index, dtype="string")
 
 
-# compat: chamadas antigas ainda funcionam
-_entregador_key = entregador_key
+def mask_turno_valido(df: pd.DataFrame, min_seg: int = TURNO_VALIDO_MIN_SEG) -> pd.Series:
+    secs = pd.to_numeric(df.get("segundos_abs", 0), errors="coerce").fillna(0)
+    return secs >= float(min_seg)
 
 
 def _coerce_ptbr_number(series: pd.Series) -> pd.Series:
@@ -220,7 +211,7 @@ def calcular_aderencia(
     if "segundos_abs" not in dfx.columns:
         raise KeyError("Coluna 'segundos_abs' não encontrada (esperada no df carregado).")
 
-    dfx["_key"] = entregador_key(dfx)
+    dfx["_key"] = _entregador_key(dfx)
     dfx["_turno_valido"] = mask_turno_valido(dfx, min_seg=min_seg)
     dfx["_tag"] = dfx[tag_col].astype(str).fillna("").str.strip().str.upper()
 
