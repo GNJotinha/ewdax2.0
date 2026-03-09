@@ -4,7 +4,37 @@ import pandas as pd
 import numpy as np
 
 from shared import sub_options_with_livre, apply_sub_filter
-from utils import calcular_tempo_online, calcular_aderencia, mask_turno_valido, entregador_key
+from utils import calcular_tempo_online, tempo_para_segundos, calcular_aderencia, mask_entregador_ativo, entregador_key
+
+
+# ------------------------------
+# Regras de "turno válido" p/ contagem
+# ------------------------------
+LIMIAR_ABS_SEG = 9 * 60 + 59  # 00:09:59 -> 599s
+
+
+def _turno_valido_mask(df: pd.DataFrame) -> pd.Series:
+    """True quando a linha deve contar como 1 turno (>=00:09:59 no absoluto).
+
+    Obs:
+      - NÃO mexe em ofertadas/aceitas/completas; isso é só contagem.
+      - Reaproveita 'segundos_abs_raw' quando existir.
+      - Remove sentinela -10:00 (-600) e qualquer absoluto < 599s.
+    """
+    if df is None or df.empty:
+        return pd.Series([], dtype=bool)
+
+    if "segundos_abs_raw" in df.columns:
+        sec = pd.to_numeric(df["segundos_abs_raw"], errors="coerce").fillna(0)
+    elif "segundos_abs" in df.columns:
+        sec = pd.to_numeric(df["segundos_abs"], errors="coerce").fillna(0)
+    elif "tempo_disponivel_absoluto" in df.columns:
+        sec = df["tempo_disponivel_absoluto"].apply(tempo_para_segundos)
+        sec = pd.to_numeric(sec, errors="coerce").fillna(0)
+    else:
+        sec = pd.Series([0] * len(df), index=df.index, dtype=float)
+
+    return (sec != -600) & (sec >= LIMIAR_ABS_SEG)
 
 
 # ------------------------------
@@ -33,18 +63,8 @@ def _ensure_uuid(df: pd.DataFrame) -> pd.DataFrame:
     return d
 
 
-def _first_non_empty(series: pd.Series) -> str:
-    vals = series.dropna().astype(str).str.strip()
-    vals = vals[vals != ""]
-    return vals.iloc[0] if not vals.empty else ""
-
-
 def _activity_mask(df: pd.DataFrame) -> pd.Series:
-    seg = pd.to_numeric(df.get("segundos_abs", 0), errors="coerce").fillna(0)
-    ofe = pd.to_numeric(df.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0)
-    ace = pd.to_numeric(df.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0)
-    com = pd.to_numeric(df.get("numero_de_corridas_completadas", 0), errors="coerce").fillna(0)
-    return (seg + ofe + ace + com) > 0
+    return mask_entregador_ativo(df)
 
 
 def _fmt_int(x) -> str:
@@ -180,13 +200,11 @@ def _agg_individual(df_sel: pd.DataFrame) -> pd.DataFrame:
     # Contagem de "turnos" deve ignorar linhas com absoluto < 00:09:59.
     # (sem mexer nas rotas: ofertadas/aceitas/completas seguem contando tudo.)
     base = df_sel.copy()
-    base["_key"] = entregador_key(base)
-    base["_turno_ok"] = mask_turno_valido(base).astype(int)
+    base["_turno_ok"] = _turno_valido_mask(base).astype(int)
 
     agg = (
-        base.groupby(["_key"], dropna=True)
+        base.groupby(["pessoa_entregadora"], dropna=True)
         .agg(
-            pessoa_entregadora=("pessoa_entregadora", _first_non_empty),
             turnos=("_turno_ok", "sum"),
             ofertadas=("numero_de_corridas_ofertadas", "sum"),
             aceitas=("numero_de_corridas_aceitas", "sum"),
@@ -208,8 +226,8 @@ def _agg_individual(df_sel: pd.DataFrame) -> pd.DataFrame:
     agg["UTR_abs"] = np.where(agg["horas"] > 0, agg["ofertadas"] / agg["horas"], 0.0)
 
     online_vals = []
-    for key in agg["_key"].tolist():
-        chunk = df_sel[entregador_key(df_sel) == key].copy()
+    for nome in agg["pessoa_entregadora"].tolist():
+        chunk = df_sel[df_sel["pessoa_entregadora"] == nome].copy()
         online_vals.append(float(calcular_tempo_online(chunk)))
     agg["tempo_online_%"] = online_vals
 
@@ -364,17 +382,18 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     # Lista de presentes (Nome/UUID)
     # ------------------------------
     m = _activity_mask(df_sel)
-    presentes = df_sel.loc[m].copy()
-    presentes["_key"] = entregador_key(presentes)
+    ativos_df = df_sel.loc[m, ["pessoa_entregadora", "uuid"]].copy()
+    ativos_df["_entregador_key"] = entregador_key(df_sel.loc[m])
     ativos_df = (
-        presentes.groupby("_key", dropna=True, as_index=False)
-        .agg(
-            pessoa_entregadora=("pessoa_entregadora", _first_non_empty),
-            uuid=("uuid", _first_non_empty),
-        )
-        .rename(columns={"pessoa_entregadora": "Nome", "uuid": "UUID"})
-        .sort_values("Nome")
+        ativos_df
+        .dropna(subset=["pessoa_entregadora"])
+        .replace({"_entregador_key": {"": pd.NA}})
+        .dropna(subset=["_entregador_key"])
+        .drop_duplicates(subset=["_entregador_key"])
+        .sort_values("pessoa_entregadora")
         .reset_index(drop=True)
+        .rename(columns={"pessoa_entregadora": "Nome", "uuid": "UUID"})
+        .drop(columns=["_entregador_key"], errors="ignore")
     )
 
     with st.expander("👤 Lista de entregadores presentes (Nome/UUID)", expanded=True):

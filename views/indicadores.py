@@ -4,7 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from relatorios import utr_por_entregador_turno
 from shared import sub_options_with_livre, apply_sub_filter  # 👈 filtro por subpraça
-from utils import calcular_aderencia
+from utils import calcular_aderencia, mask_entregador_ativo, entregador_key
 
 PRIMARY_COLOR = ["#00BFFF"]  # paleta padrão
 
@@ -22,6 +22,32 @@ WEEK_PALETTE = [
 
 WEEKDAY_LABELS = {0: "Seg", 1: "Ter", 2: "Qua", 3: "Qui", 4: "Sex", 5: "Sáb", 6: "Dom"}
 WEEKDAY_ORDER = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+
+
+def _agg_entregadores_ativos(df: pd.DataFrame, group_cols) -> pd.DataFrame:
+    """Conta entregadores ativos por chave única, seguindo a mesma regra do Ativos."""
+    if isinstance(group_cols, str):
+        group_cols = [group_cols]
+    else:
+        group_cols = list(group_cols)
+
+    if df is None or df.empty:
+        return pd.DataFrame(columns=group_cols + ["entregadores"])
+
+    base = df.loc[mask_entregador_ativo(df)].copy()
+    if base.empty:
+        return pd.DataFrame(columns=group_cols + ["entregadores"])
+
+    base["_entregador_key"] = entregador_key(base).replace("", pd.NA)
+    base = base.dropna(subset=["_entregador_key"])
+    if base.empty:
+        return pd.DataFrame(columns=group_cols + ["entregadores"])
+
+    return (
+        base.groupby(group_cols, as_index=False)["_entregador_key"]
+        .nunique()
+        .rename(columns={"_entregador_key": "entregadores"})
+    )
 
 
 def _add_semana_cor_por_dia(por_dia: pd.DataFrame, ano: int, mes: int) -> pd.DataFrame:
@@ -234,9 +260,11 @@ def _render_modo_semanal(
                 rej=("numero_de_corridas_rejeitadas", "sum"),
                 com=("numero_de_corridas_completadas", "sum"),
                 seg=("segundos_abs", "sum"),
-                entregadores=("pessoa_entregadora", "nunique"),
             )
         )
+        ativos_por_dia = _agg_entregadores_ativos(tmp_day, ["week_start", "weekday_label"])
+        por_data_cmp = por_data_cmp.merge(ativos_por_dia, on=["week_start", "weekday_label"], how="left")
+        por_data_cmp["entregadores"] = pd.to_numeric(por_data_cmp.get("entregadores", 0), errors="coerce").fillna(0)
         por_data_cmp["horas"] = por_data_cmp["seg"] / 3600.0
         por_data_cmp["utr"] = (por_data_cmp["ofe"] / por_data_cmp["horas"]).where(por_data_cmp["horas"] > 0, 0.0)
         por_data_cmp["acc_pct"] = (por_data_cmp["ace"] / por_data_cmp["ofe"] * 100).where(por_data_cmp["ofe"] > 0, 0.0)
@@ -251,11 +279,13 @@ def _render_modo_semanal(
                 rej=("numero_de_corridas_rejeitadas", "sum"),
                 com=("numero_de_corridas_completadas", "sum"),
                 seg=("segundos_abs", "sum"),
-                entregadores=("pessoa_entregadora", "nunique"),
             )
             .sort_values("week_start")
             .reset_index(drop=True)
         )
+        ativos_por_semana = _agg_entregadores_ativos(tmp_day, ["week_start"])
+        por_semana = por_semana.merge(ativos_por_semana, on=["week_start"], how="left")
+        por_semana["entregadores"] = pd.to_numeric(por_semana.get("entregadores", 0), errors="coerce").fillna(0)
         por_semana["horas"] = por_semana["seg"] / 3600.0
         por_semana["utr"] = (por_semana["ofe"] / por_semana["horas"]).where(por_semana["horas"] > 0, 0.0)
         por_semana["acc_pct"] = (por_semana["ace"] / por_semana["ofe"] * 100).where(por_semana["ofe"] > 0, 0.0)
@@ -536,7 +566,12 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         tx_comp_ano = (tot_comp / tot_aceit * 100) if tot_aceit > 0 else 0.0
 
         # Ativos = entregadores únicos no ano
-        tot_sh = int(df_ano_ref.get("pessoa_entregadora", pd.Series(dtype=object)).dropna().nunique())
+        if df_ano_ref is not None and not df_ano_ref.empty:
+            _ano_base = df_ano_ref.copy()
+            _ano_base["__ano__"] = int(ano_ref)
+            tot_sh = int(_agg_entregadores_ativos(_ano_base, ["__ano__"]).get("entregadores", pd.Series([0])).sum())
+        else:
+            tot_sh = 0
 
         # Horas realizadas no ano
         tot_horas = df_ano_ref.get("segundos_abs", pd.Series(dtype=float)).sum() / 3600.0
@@ -724,10 +759,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     # Entregadores ativos
     # ---------------------------------------------------------
     if tipo_grafico == "Entregadores ativos":
-        mensal = (
-            df.groupby("mes_ano", as_index=False)["pessoa_entregadora"].nunique()
-              .rename(columns={"pessoa_entregadora": "entregadores"})
-        )
+        mensal = _agg_entregadores_ativos(df, ["mes_ano"])
         mensal["mes_rotulo"] = pd.to_datetime(mensal["mes_ano"]).dt.strftime("%b/%y")
 
         fig = px.bar(
@@ -744,12 +776,8 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.plotly_chart(fig, use_container_width=True)
 
         if not df_mes_ref.empty:
-            por_dia = (
-                df_mes_ref.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
-                .groupby("dia", as_index=False)["pessoa_entregadora"].nunique()
-                .rename(columns={"pessoa_entregadora": "entregadores"})
-                .sort_values("dia")
-            )
+            por_dia_base_ativos = df_mes_ref.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day)
+            por_dia = _agg_entregadores_ativos(por_dia_base_ativos, ["dia"]).sort_values("dia")
             # Cores por semana (Seg–Dom) no diário
             por_dia = _add_semana_cor_por_dia(por_dia, ano_diario, mes_diario)
             marker_color = por_dia["cor"] if (colorir_diario_por_semana and "cor" in por_dia.columns) else PRIMARY_COLOR[0]
@@ -890,7 +918,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
                 "numero_de_corridas_rejeitadas",
                 "numero_de_corridas_completadas",
                 "segundos_abs",
-                "pessoa_entregadora",
             ]
         ]
         .agg({
@@ -899,7 +926,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             "numero_de_corridas_rejeitadas": "sum",
             "numero_de_corridas_completadas": "sum",
             "segundos_abs": "sum",
-            "pessoa_entregadora": "nunique",
         })
         .rename(columns={
             "numero_de_corridas_ofertadas": "ofe",
@@ -907,10 +933,12 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             "numero_de_corridas_rejeitadas": "rej",
             "numero_de_corridas_completadas": "com",
             "segundos_abs": "seg",
-            "pessoa_entregadora": "entregadores",
         })
         .sort_values("dia")
     )
+    ativos_por_dia = _agg_entregadores_ativos(df_mes_ref.assign(dia=lambda d: pd.to_datetime(d["data"]).dt.day), ["dia"])
+    por_dia_base = por_dia_base.merge(ativos_por_dia, on="dia", how="left")
+    por_dia_base["entregadores"] = pd.to_numeric(por_dia_base.get("entregadores", 0), errors="coerce").fillna(0)
 
     if por_dia_base.empty:
         st.info("Sem dados no mês selecionado.")
