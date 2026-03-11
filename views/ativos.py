@@ -2,9 +2,16 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from io import BytesIO
 
 from shared import sub_options_with_livre, apply_sub_filter
-from utils import calcular_tempo_online, tempo_para_segundos, calcular_aderencia, mask_entregador_ativo, entregador_key
+from utils import (
+    calcular_tempo_online,
+    tempo_para_segundos,
+    calcular_aderencia,
+    mask_entregador_ativo,
+    entregador_key,
+)
 
 
 # ------------------------------
@@ -95,7 +102,6 @@ def _normalize_praca_sigla(df: pd.DataFrame) -> str | None:
     vals = df["praca"].dropna().astype(str).unique().tolist()
     if not vals:
         return None
-    # se tiver mais de uma praça, não chuta
     if len(vals) != 1:
         return None
     v = vals[0].strip().upper()
@@ -142,6 +148,66 @@ def _build_title(
     return " — ".join(parts).strip()
 
 
+def _to_xlsx_bytes(df_export: pd.DataFrame, sheet_name: str = "Desempenhos") -> bytes:
+    out = BytesIO()
+    x = df_export.copy()
+
+    decimal_cols = [
+        c for c in [
+            "Tempo online (%)",
+            "SH",
+            "Aceitação (%)",
+            "Rejeição (%)",
+            "Conclusão (%)",
+            "UTR (Abs.)",
+        ] if c in x.columns
+    ]
+
+    int_cols = [
+        c for c in [
+            "Turnos",
+            "Ofertadas",
+            "Aceitas",
+            "Rejeitadas",
+            "Completas",
+        ] if c in x.columns
+    ]
+
+    date_cols = [c for c in ["Data última rota completa"] if c in x.columns]
+
+    for c in decimal_cols:
+        x[c] = pd.to_numeric(x[c], errors="coerce").round(2)
+
+    for c in int_cols:
+        x[c] = pd.to_numeric(x[c], errors="coerce").fillna(0).round(0).astype(int)
+
+    for c in date_cols:
+        x[c] = pd.to_datetime(x[c], errors="coerce")
+
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        x.to_excel(writer, index=False, sheet_name=sheet_name)
+
+        ws = writer.sheets[sheet_name]
+        ws.freeze_panes = "A2"
+
+        for idx, col in enumerate(x.columns, start=1):
+            if col in decimal_cols:
+                for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=idx, max_col=idx):
+                    for cell in row:
+                        cell.number_format = "0.00"
+            elif col in int_cols:
+                for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=idx, max_col=idx):
+                    for cell in row:
+                        cell.number_format = "0"
+            elif col in date_cols:
+                for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=idx, max_col=idx):
+                    for cell in row:
+                        cell.number_format = "DD/MM/YYYY"
+
+    out.seek(0)
+    return out.getvalue()
+
+
 def _kpis(df_slice: pd.DataFrame) -> dict:
     ofe = pd.to_numeric(df_slice.get("numero_de_corridas_ofertadas", 0), errors="coerce").fillna(0).sum()
     ace = pd.to_numeric(df_slice.get("numero_de_corridas_aceitas", 0), errors="coerce").fillna(0).sum()
@@ -155,10 +221,8 @@ def _kpis(df_slice: pd.DataFrame) -> dict:
     rejp = (rej / ofe * 100.0) if ofe > 0 else 0.0
     comp = (com / ace * 100.0) if ace > 0 else 0.0
 
-    # UTR absoluto (agregado)
     utr_abs = (ofe / horas) if horas > 0 else 0.0
 
-    # UTR "Médias": média do (ofertadas/horas) por linha com horas>0
     df_ok = df_slice.copy()
     df_ok["segundos_abs"] = pd.to_numeric(df_ok.get("segundos_abs", 0), errors="coerce").fillna(0)
     df_ok["numero_de_corridas_ofertadas"] = pd.to_numeric(
@@ -179,7 +243,12 @@ def _kpis(df_slice: pd.DataFrame) -> dict:
 
     ativos = 0
     if "pessoa_entregadora" in df_slice.columns:
-        ativos = int(entregador_key(df_slice.loc[_activity_mask(df_slice)]).replace("", pd.NA).dropna().nunique())
+        ativos = int(
+            entregador_key(df_slice.loc[_activity_mask(df_slice)])
+            .replace("", pd.NA)
+            .dropna()
+            .nunique()
+        )
 
     return dict(
         ofe=ofe,
@@ -197,10 +266,16 @@ def _kpis(df_slice: pd.DataFrame) -> dict:
 
 
 def _agg_individual(df_sel: pd.DataFrame) -> pd.DataFrame:
-    # Contagem de "turnos" deve ignorar linhas com absoluto < 00:09:59.
-    # (sem mexer nas rotas: ofertadas/aceitas/completas seguem contando tudo.)
     base = df_sel.copy()
     base["_turno_ok"] = _turno_valido_mask(base).astype(int)
+
+    base["data"] = pd.to_datetime(base["data"], errors="coerce")
+
+    completas_num = pd.to_numeric(
+        base.get("numero_de_corridas_completadas", 0), errors="coerce"
+    ).fillna(0)
+
+    base["_ultima_rota_completa"] = base["data"].where(completas_num > 0, pd.NaT)
 
     agg = (
         base.groupby(["pessoa_entregadora"], dropna=True)
@@ -211,6 +286,7 @@ def _agg_individual(df_sel: pd.DataFrame) -> pd.DataFrame:
             rejeitadas=("numero_de_corridas_rejeitadas", "sum"),
             completas=("numero_de_corridas_completadas", "sum"),
             segundos=("segundos_abs", "sum"),
+            ultima_rota_completa=("_ultima_rota_completa", "max"),
         )
         .reset_index()
     )
@@ -276,7 +352,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     praca_sigla = _normalize_praca_sigla(base)
 
-    # filtros (sem legendas)
     f1, f2, f3 = st.columns(3)
 
     if "sub_praca" in base.columns:
@@ -293,7 +368,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     periodo = f3.date_input("Período", [data_min, data_max], format="DD/MM/YYYY", key="ru_periodo")
 
-    # aplica filtros
     df_sel = base.copy()
 
     if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
@@ -310,7 +384,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     if turnos_sel and "periodo" in df_sel.columns:
         df_sel = df_sel[df_sel["periodo"].isin(turnos_sel)]
 
-    # sem filtro "de verdade" (período default + sem sub/turno)
     period_is_default = False
     if isinstance(periodo, (list, tuple)) and len(periodo) == 2:
         try:
@@ -327,13 +400,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         st.info("❌ Nenhum dado encontrado com os filtros.")
         return
 
-    # ------------------------------
-    # KPIs na ordem:
-    # Ofertadas  | Completas(%)
-    # Aceitas(%) | Rejeitadas(%)
-    # Entregadores | Horas
-    # UTR (Abs.) | UTR (Médias)
-    # ------------------------------
     k = _kpis(df_sel)
 
     completas_label = f"{_fmt_int(k['com'])} ({_fmt_pct(k['comp'], 1)})"
@@ -356,9 +422,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     r4c1.metric("🧭 UTR (Abs.)", f"{k['utr_abs']:.2f}")
     r4c2.metric("📊 UTR (Médias)", f"{k['utr_med']:.2f}")
 
-    # ------------------------------
-    # Aderência (no recorte)
-    # ------------------------------
     if ("numero_minimo_de_entregadores_regulares_na_escala" in df_sel.columns) and ("tag" in df_sel.columns):
         turno_col_ap = next((c for c in ("turno", "tipo_turno", "periodo") if c in df_sel.columns), None)
         group_cols_ap = ("data", turno_col_ap) if turno_col_ap else ("data",)
@@ -368,7 +431,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             vagas = float(base_ap["vagas"].sum())
             ader = (reg / vagas * 100.0) if vagas > 0 else 0.0
 
-            r5c1, = st.columns(1)
+            (r5c1,) = st.columns(1)
             r5c1.metric("📌 Aderência (REGULAR)", f"{ader:.1f}%")
             r5c1.caption(f"Regulares: **{reg}** / Vagas: **{int(vagas)}**")
             if bool(base_ap["vagas_inconsistente"].any()):
@@ -378,9 +441,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     st.divider()
 
-    # ------------------------------
-    # Lista de presentes (Nome/UUID)
-    # ------------------------------
     m = _activity_mask(df_sel)
     ativos_df = df_sel.loc[m, ["pessoa_entregadora", "uuid"]].copy()
     ativos_df["_entregador_key"] = entregador_key(df_sel.loc[m])
@@ -409,9 +469,6 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     st.divider()
 
-    # ------------------------------
-    # Individual (checkbox)
-    # ------------------------------
     show_ind = st.checkbox("📈 Mostrar desempenhos individuais", value=False)
 
     if not show_ind:
@@ -431,6 +488,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
             "pessoa_entregadora": "Entregador",
             "turnos": "Turnos",
             "horas": "SH",
+            "ultima_rota_completa": "Data última rota completa",
             "tempo_online_%": "Tempo online (%)",
             "ofertadas": "Ofertadas",
             "aceitas": "Aceitas",
@@ -445,6 +503,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
 
     cols_show = [
         "Entregador",
+        "Data última rota completa",
         "Tempo online (%)",
         "Turnos",
         "SH",
@@ -461,6 +520,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
     st.dataframe(
         tabela[cols_show].style.format(
             {
+                "Data última rota completa": lambda x: "" if pd.isna(x) else pd.to_datetime(x).strftime("%d/%m/%Y"),
                 "Tempo online (%)": "{:.2f}",
                 "SH": "{:.2f}",
                 "Aceitação (%)": "{:.2f}",
@@ -472,11 +532,13 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         use_container_width=True,
     )
 
+    xlsx_bytes = _to_xlsx_bytes(tabela[cols_show], sheet_name="Desempenhos")
+
     st.download_button(
-        "⬇️ Baixar CSV — desempenhos individuais",
-        data=tabela[cols_show].to_csv(index=False, decimal=",").encode("utf-8"),
-        file_name="desempenhos_individuais.csv",
-        mime="text/csv",
+        "⬇️ Baixar XLSX — desempenhos individuais",
+        data=xlsx_bytes,
+        file_name="desempenhos_individuais.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
 
