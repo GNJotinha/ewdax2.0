@@ -1,4 +1,4 @@
-
+# views/relatorios_unificado.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -430,6 +430,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         columns={
             "pessoa_entregadora": "Entregador",
             "turnos": "Turnos",
+            "horas": "SH",
             "tempo_online_%": "Tempo online (%)",
             "ofertadas": "Ofertadas",
             "aceitas": "Aceitas",
@@ -446,6 +447,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         "Entregador",
         "Tempo online (%)",
         "Turnos",
+        "SH",
         "Aceitação (%)",
         "Rejeição (%)",
         "Conclusão (%)",
@@ -460,6 +462,7 @@ def render(df: pd.DataFrame, _USUARIOS: dict):
         tabela[cols_show].style.format(
             {
                 "Tempo online (%)": "{:.2f}",
+                "SH": "{:.2f}",
                 "Aceitação (%)": "{:.2f}",
                 "Rejeição (%)": "{:.2f}",
                 "Conclusão (%)": "{:.2f}",
