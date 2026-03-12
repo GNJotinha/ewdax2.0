@@ -29,7 +29,7 @@ def gerar_texto(
 
 Dias esperados: {dias_esperados}
 Presenças: {presencas}
-Faltas: {faltas}
+Neutro: {faltas}
 
 Tempo online: {tempo_pct}%
 
