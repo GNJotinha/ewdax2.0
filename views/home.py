@@ -1,90 +1,81 @@
 import streamlit as st
 import pandas as pd
+from datetime import date, timedelta
+
+from db import db_conn, fetch_all, ensure_table_exists
 
 
-def _pick_col(cols, candidates):
-    for c in candidates:
-        if c in cols:
-            return c
-    return None
+IMPORTS_TABLE = "imports"
 
 
-def _last_date_str(df: pd.DataFrame) -> str:
-    if df is None or df.empty:
-        return ""
-    col = _pick_col(list(df.columns), ["data_do_periodo", "data", "Data", "DATA", "dt", "timestamp", "ts"])
-    if not col:
-        return ""
+def _datas_importadas_faltando() -> list[date]:
+    """Retorna os dias faltantes na sequência de file_date da tabela imports.
+
+    Regras:
+    - usa somente imports.file_date válidas
+    - compara do menor dia importado até o menor entre:
+      * maior file_date importado
+      * ontem
+    - hoje nunca entra como faltando
+    - se não houver base suficiente, retorna []
+    """
     try:
-        dtmax = pd.to_datetime(df[col], errors="coerce").max()
-        if pd.notna(dtmax):
-            return dtmax.strftime("%d/%m/%Y")
-    except Exception:
-        pass
-    return ""
+        with db_conn() as conn:
+            if not ensure_table_exists(conn, IMPORTS_TABLE):
+                return []
 
-
-def _logout():
-    for k in list(st.session_state.keys()):
-        del st.session_state[k]
-
-
-def _goto(module: str, cat=None):
-    st.session_state.module = module
-    st.session_state.open_cat = cat
-    st.rerun()
-
-
-def render(df: pd.DataFrame, _USUARIOS: dict):
-    last_day = _last_date_str(df)
-    fonte = getattr(df, "attrs", {}).get("fonte", "") if df is not None else ""
-
-    # Centraliza o conteúdo (pra não ficar largado no vazio)
-    _, mid, _ = st.columns([1, 2.6, 1], vertical_alignment="top")
-
-    with mid:
-        # Topo: Título + meta + botões
-        L, R = st.columns([3.6, 1.4], vertical_alignment="center")
-
-        with L:
-            st.markdown(
-                f"""
-                <div class="home-wrap">
-                  <div class="home-title">Painel de Entregadores</div>
-                  <div class="home-meta">
-                    Último dia na base: <b>{last_day or "—"}</b>
-                    {f'<span class="home-chip">{fonte}</span>' if fonte else ""}
-                  </div>
-                </div>
+            cols, rows = fetch_all(
+                conn,
+                """
+                select file_date
+                from public.imports
+                where file_date is not null
+                order by file_date asc
                 """,
-                unsafe_allow_html=True,
             )
+    except Exception:
+        return []
 
-        with R:
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("Perfil", type="secondary", use_container_width=True, key="home_profile"):
-                    _goto("views.perfil", None)
-            with c2:
-                if st.button("Sair", type="secondary", use_container_width=True, key="home_logout"):
-                    _logout()
-                    st.rerun()
+    if not rows:
+        return []
 
-        st.markdown("<div class='neo-divider'></div>", unsafe_allow_html=True)
+    datas = pd.to_datetime([r[0] for r in rows], errors="coerce").dropna()
+    if len(datas) == 0:
+        return []
 
-        # Admin (somente o que NÃO está na lateral)
-        if st.session_state.get("is_admin"):
-            st.markdown("""<div class="neo-section">Admin</div>""", unsafe_allow_html=True)
+    datas_set = {d.date() for d in datas}
+    if not datas_set:
+        return []
 
-            a1, a2, _sp = st.columns([1, 1, 2.8])
-            with a1:
-                if st.button("Usuários", use_container_width=True, key="home_admin_users"):
-                    _goto("views.admin_usuarios", None)
-            with a2:
-                if st.button("Auditoria", use_container_width=True, key="home_admin_audit"):
-                    _goto("views.auditoria", None)
+    inicio = min(datas_set)
+    fim_importado = max(datas_set)
+    ontem = date.today() - timedelta(days=1)
+    fim = min(fim_importado, ontem)
 
-        # Rodapé discreto
-        st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-        st.caption(f"Login: {st.session_state.get('usuario','-')}")
-        st.caption(f"Departamento: {st.session_state.get('department','-')}")
+    if inicio > fim:
+        return []
+
+    faltando: list[date] = []
+    cursor = inicio
+    while cursor <= fim:
+        if cursor not in datas_set:
+            faltando.append(cursor)
+        cursor += timedelta(days=1)
+
+    return faltando
+
+
+def _fmt_datas_br(datas: list[date]) -> str:
+    return ", ".join(d.strftime("%d/%m/%Y") for d in datas)
+
+
+def render(_df: pd.DataFrame, _USUARIOS: dict):
+    faltando = _datas_importadas_faltando()
+
+    if faltando:
+        st.error(
+            "⚠️ Atenção: há dia(s) sem importação detectados: "
+            f"{_fmt_datas_br(faltando)}"
+        )
+
+    st.markdown("# PÁGINA INICIAL EM MANUTENÇÃO")
