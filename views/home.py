@@ -79,40 +79,40 @@ def _render_home_cards():
           }}
 
           .home-shell {{
-            min-height: 82vh;
+            min-height: 42vh;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px 8px;
-            background:
-              radial-gradient(circle at top left, rgba(34, 197, 94, .10), transparent 25%),
-              radial-gradient(circle at top right, rgba(59, 130, 246, .16), transparent 30%),
-              radial-gradient(circle at bottom center, rgba(14, 165, 233, .10), transparent 28%);
+            align-items: flex-start;
+            justify-content: flex-start;
+            padding: 10px 6px;
           }}
 
           .card-grid {{
             width: 100%;
-            max-width: 980px;
             display: grid;
-            grid-template-columns: repeat(12, minmax(0, 1fr));
-            gap: 18px;
+            grid-template-columns: repeat(auto-fill, minmax(210px, 210px));
+            gap: 16px;
+            justify-content: flex-start;
           }}
 
           .home-card {{
-            grid-column: 2 / span 10;
             position: relative;
+            width: 210px;
+            min-height: 210px;
             display: flex;
             flex-direction: column;
-            gap: 28px;
-            min-height: 300px;
-            padding: 32px;
-            border-radius: 30px;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 18px;
+            border-radius: 24px;
             text-decoration: none;
             color: inherit;
             overflow: hidden;
             border: 1px solid rgba(255,255,255,.08);
-            box-shadow: 0 28px 70px rgba(2, 6, 23, .28);
-            transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+            background:
+              linear-gradient(180deg, rgba(15, 23, 42, .97), rgba(17, 24, 39, .95)),
+              linear-gradient(135deg, #0f172a, #111827);
+            box-shadow: 0 18px 40px rgba(2, 6, 23, .18);
+            transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
           }}
 
           .home-card::before {{
@@ -120,21 +120,15 @@ def _render_home_cards():
             position: absolute;
             inset: 0;
             background:
-              radial-gradient(circle at 15% 18%, rgba(255,255,255,.16), transparent 22%),
-              radial-gradient(circle at 86% 82%, rgba(125, 211, 252, .18), transparent 24%);
+              radial-gradient(circle at 16% 16%, rgba(255,255,255,.14), transparent 24%),
+              radial-gradient(circle at 84% 84%, rgba(56, 189, 248, .16), transparent 26%);
             pointer-events: none;
           }}
 
           .home-card:hover {{
-            transform: translateY(-4px);
+            transform: translateY(-3px);
             border-color: rgba(255,255,255,.16);
-            box-shadow: 0 36px 90px rgba(2, 6, 23, .38);
-          }}
-
-          .home-card.primary {{
-            background:
-              linear-gradient(135deg, rgba(15, 23, 42, .96), rgba(17, 24, 39, .94)),
-              linear-gradient(180deg, #0f172a, #111827);
+            box-shadow: 0 24px 48px rgba(2, 6, 23, .26);
           }}
 
           .card-head,
@@ -144,58 +138,57 @@ def _render_home_cards():
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 16px;
+            gap: 10px;
           }}
 
           .card-icon {{
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 60px;
-            height: 60px;
-            border-radius: 18px;
-            font-size: 30px;
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            font-size: 22px;
             background: rgba(255,255,255,.08);
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
           }}
 
           .card-badge {{
             display: inline-flex;
             align-items: center;
-            padding: 8px 12px;
+            padding: 5px 9px;
             border-radius: 999px;
-            font-size: 12px;
+            font-size: 10px;
             font-weight: 700;
-            letter-spacing: .03em;
+            letter-spacing: .04em;
             text-transform: uppercase;
             color: #dbeafe;
             background: rgba(59,130,246,.14);
-            border: 1px solid rgba(96,165,250,.24);
+            border: 1px solid rgba(96,165,250,.22);
           }}
 
           .card-body {{
             position: relative;
             z-index: 1;
-            max-width: 620px;
           }}
 
           .card-body h3 {{
-            margin: 0 0 12px;
-            font-size: clamp(28px, 3.6vw, 40px);
-            line-height: 1.04;
+            margin: 0 0 8px;
+            font-size: 18px;
+            line-height: 1.15;
             font-weight: 800;
-            letter-spacing: -.04em;
+            letter-spacing: -.02em;
           }}
 
           .card-body p {{
             margin: 0;
-            font-size: 17px;
-            line-height: 1.7;
+            font-size: 12px;
+            line-height: 1.45;
             color: #cbd5e1;
           }}
 
           .card-foot span:first-child {{
-            font-size: 15px;
+            font-size: 12px;
             font-weight: 700;
             color: #e2e8f0;
           }}
@@ -204,26 +197,27 @@ def _render_home_cards():
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 42px;
-            height: 42px;
+            width: 30px;
+            height: 30px;
             border-radius: 999px;
-            font-size: 24px;
+            font-size: 16px;
             background: rgba(255,255,255,.09);
             border: 1px solid rgba(255,255,255,.08);
           }}
 
-          @media (max-width: 900px) {{
+          @media (max-width: 700px) {{
             .home-shell {{
-              min-height: 70vh;
-              padding-top: 10px;
+              min-height: auto;
+            }}
+
+            .card-grid {{
+              grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
             }}
 
             .home-card {{
-              grid-column: span 12;
-              min-height: 240px;
-              padding: 22px;
-              border-radius: 26px;
-              gap: 20px;
+              width: 100%;
+              min-height: 180px;
+              padding: 16px;
             }}
           }}
         </style>
@@ -234,7 +228,7 @@ def _render_home_cards():
           </section>
         </div>
         """,
-        height=560,
+        height=320,
     )
 
 
