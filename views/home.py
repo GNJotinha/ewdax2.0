@@ -20,28 +20,6 @@ HOME_CARDS = [
 ]
 
 
-IDEIAS_CARDS = [
-    {
-        "title": "Indicadores do dia",
-        "subtitle": "Resumo com ativos, elite, faltas e alertas do turno.",
-        "badge": "Ideia boa",
-        "icon": "📈",
-    },
-    {
-        "title": "Busca de entregador",
-        "subtitle": "Abrir perfil rápido por nome, matrícula ou telefone.",
-        "badge": "Útil pra caralho",
-        "icon": "🔎",
-    },
-    {
-        "title": "Pendências críticas",
-        "subtitle": "Fila simples com quem precisa de ação imediata.",
-        "badge": "Resolve rápido",
-        "icon": "⚠️",
-    },
-]
-
-
 def _logout():
     for k in list(st.session_state.keys()):
         del st.session_state[k]
@@ -85,30 +63,8 @@ def _build_card(card: dict) -> str:
 
 
 
-def _build_idea_card(card: dict) -> str:
-    title = html.escape(card.get("title", ""))
-    subtitle = html.escape(card.get("subtitle", ""))
-    badge = html.escape(card.get("badge", ""))
-    icon = html.escape(card.get("icon", ""))
-
-    return f"""
-    <div class="idea-card">
-      <div class="idea-top">
-        <span class="idea-icon">{icon}</span>
-        <span class="idea-badge">{badge}</span>
-      </div>
-      <div class="idea-body">
-        <h4>{title}</h4>
-        <p>{subtitle}</p>
-      </div>
-    </div>
-    """
-
-
-
 def _render_home_cards():
     cards_html = "".join(_build_card(card) for card in HOME_CARDS)
-    ideas_html = "".join(_build_idea_card(card) for card in IDEIAS_CARDS)
 
     components.html(
         f"""
@@ -123,67 +79,33 @@ def _render_home_cards():
           }}
 
           .home-shell {{
-            min-height: 84vh;
-            padding: 18px 6px 22px;
+            min-height: 82vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px 8px;
             background:
               radial-gradient(circle at top left, rgba(34, 197, 94, .10), transparent 25%),
               radial-gradient(circle at top right, rgba(59, 130, 246, .16), transparent 30%),
               radial-gradient(circle at bottom center, rgba(14, 165, 233, .10), transparent 28%);
           }}
 
-          .hero {{
-            margin-bottom: 24px;
-            padding: 14px 6px 2px;
-          }}
-
-          .hero-kicker {{
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: .04em;
-            text-transform: uppercase;
-            color: #cbd5e1;
-            background: rgba(15, 23, 42, .68);
-            border: 1px solid rgba(255,255,255,.08);
-            box-shadow: 0 10px 30px rgba(0,0,0,.14);
-          }}
-
-          .hero h1 {{
-            margin: 16px 0 10px;
-            font-size: clamp(30px, 4vw, 46px);
-            line-height: 1.02;
-            font-weight: 800;
-            letter-spacing: -.04em;
-            color: #f8fafc;
-          }}
-
-          .hero p {{
-            margin: 0;
-            max-width: 760px;
-            font-size: 16px;
-            line-height: 1.65;
-            color: #94a3b8;
-          }}
-
           .card-grid {{
+            width: 100%;
+            max-width: 980px;
             display: grid;
             grid-template-columns: repeat(12, minmax(0, 1fr));
             gap: 18px;
-            margin-bottom: 28px;
           }}
 
           .home-card {{
-            grid-column: span 12;
+            grid-column: 2 / span 10;
             position: relative;
             display: flex;
             flex-direction: column;
             gap: 28px;
-            min-height: 280px;
-            padding: 28px;
+            min-height: 300px;
+            padding: 32px;
             border-radius: 30px;
             text-decoration: none;
             color: inherit;
@@ -229,10 +151,10 @@ def _render_home_cards():
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 56px;
-            height: 56px;
+            width: 60px;
+            height: 60px;
             border-radius: 18px;
-            font-size: 28px;
+            font-size: 30px;
             background: rgba(255,255,255,.08);
             box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
           }}
@@ -290,143 +212,29 @@ def _render_home_cards():
             border: 1px solid rgba(255,255,255,.08);
           }}
 
-          .ideas-header {{
-            display: flex;
-            align-items: end;
-            justify-content: space-between;
-            gap: 16px;
-            margin: 4px 2px 14px;
-          }}
-
-          .ideas-header h2 {{
-            margin: 0;
-            font-size: 22px;
-            font-weight: 800;
-            letter-spacing: -.03em;
-            color: #f8fafc;
-          }}
-
-          .ideas-header p {{
-            margin: 0;
-            color: #94a3b8;
-            font-size: 14px;
-          }}
-
-          .ideas-grid {{
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 16px;
-          }}
-
-          .idea-card {{
-            min-height: 190px;
-            padding: 20px;
-            border-radius: 24px;
-            background: rgba(15, 23, 42, .7);
-            border: 1px solid rgba(255,255,255,.07);
-            box-shadow: 0 18px 48px rgba(2,6,23,.18);
-          }}
-
-          .idea-top {{
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 24px;
-          }}
-
-          .idea-icon {{
-            font-size: 24px;
-          }}
-
-          .idea-badge {{
-            padding: 7px 10px;
-            border-radius: 999px;
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: .03em;
-            text-transform: uppercase;
-            color: #cbd5e1;
-            background: rgba(255,255,255,.06);
-            border: 1px solid rgba(255,255,255,.07);
-          }}
-
-          .idea-body h4 {{
-            margin: 0 0 10px;
-            font-size: 18px;
-            line-height: 1.2;
-            font-weight: 700;
-            color: #f8fafc;
-          }}
-
-          .idea-body p {{
-            margin: 0;
-            font-size: 14px;
-            line-height: 1.65;
-            color: #94a3b8;
-          }}
-
           @media (max-width: 900px) {{
             .home-shell {{
-              min-height: auto;
+              min-height: 70vh;
               padding-top: 10px;
             }}
 
-            .hero h1 {{
-              font-size: 30px;
-            }}
-
-            .hero p {{
-              font-size: 15px;
-            }}
-
             .home-card {{
+              grid-column: span 12;
               min-height: 240px;
               padding: 22px;
               border-radius: 26px;
               gap: 20px;
             }}
-
-            .ideas-grid {{
-              grid-template-columns: 1fr;
-            }}
-
-            .ideas-header {{
-              flex-direction: column;
-              align-items: start;
-            }}
           }}
         </style>
 
         <div class="home-shell">
-          <section class="hero">
-            <span class="hero-kicker">Painel inicial</span>
-            <h1>Escolhe o que você quer abrir.</h1>
-            <p>
-              Agora a home virou uma vitrine limpa. Clicou no card, abriu a funcionalidade.
-              Sem mapa jogado na tela, sem poluição, sem aquela cara estranha de embed perdido.
-            </p>
-          </section>
-
           <section class="card-grid">
             {cards_html}
           </section>
-
-          <section>
-            <div class="ideas-header">
-              <div>
-                <h2>Próximos cards que fazem sentido</h2>
-                <p>Essas ideias já combinam com operação e não deixam a home virar bagunça.</p>
-              </div>
-            </div>
-
-            <div class="ideas-grid">
-              {ideas_html}
-            </div>
-          </section>
         </div>
         """,
-        height=760,
+        height=560,
     )
 
 
